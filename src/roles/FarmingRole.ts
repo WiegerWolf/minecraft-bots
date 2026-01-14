@@ -14,6 +14,7 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
     private state: 'IDLE' | 'FINDING' | 'MOVING' | 'ACTING' | 'COLLECTING' | 'CRAFTING' = 'IDLE';
     private lastActionTime = 0;
     private isUpdating = false;
+    private failedBlocks: Set<string> = new Set();
 
     protected override log(message: string, ...args: any[]) {
         console.log(`[Farming] ${message}`, ...args);
@@ -30,24 +31,27 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         this.active = false;
         this.state = 'IDLE';
         this.targetBlock = null;
+        this.failedBlocks.clear();
         bot.pathfinder.setGoal(null);
         bot.chat('🛑 Stopped farming.');
         this.log('Stopped farming role.');
     }
 
+    private intention: 'NONE' | 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' = 'NONE';
+    // lastRequestTime is inherited from CraftingMixin
+
     async update(bot: Bot) {
         if (!this.active || !bot.entity || this.isUpdating) return;
         this.isUpdating = true;
         try {
-            // this.log(`Update loop. State: ${this.state}`); // Verbose
             switch (this.state) {
                 case 'FINDING':
                     await this.findTask(bot);
                     break;
                 case 'MOVING':
-                    // Pathfinder handles movement, we wait for goal reached or check if target is near
-                    if (this.targetBlock && bot.entity?.position && bot.entity.position.distanceTo(this.targetBlock.position) < 2) {
+                    if (this.targetBlock && bot.entity?.position && bot.entity.position.distanceTo(this.targetBlock.position) < 2.5) {
                         this.log('Reached target. Switching to ACTING.');
+                        bot.pathfinder.setGoal(null); // Stop moving
                         this.state = 'ACTING';
                     }
                     break;
@@ -58,7 +62,6 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                     await this.collectItems(bot);
                     break;
                 case 'CRAFTING':
-                    // Crafting logic would go here, for now it will transition back via checkNeeds
                     break;
             }
         } finally {
@@ -82,6 +85,7 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
 
         if (harvestable) {
             this.targetBlock = harvestable;
+            this.intention = 'HARVEST';
             this.state = 'MOVING';
             this.log(`Found harvestable ${harvestable.name} at ${harvestable.position}. Moving...`);
             bot.pathfinder.setGoal(new GoalNear(harvestable.position.x, harvestable.position.y, harvestable.position.z, 1));
@@ -94,10 +98,7 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                 if (!block || !block.position || block.name !== 'farmland') return false;
                 const blockAbove = bot.blockAt(block.position.offset(0, 1, 0));
                 if (!blockAbove || blockAbove.name !== 'air') return false;
-
-                // Check light level (must be >= 9)
                 if (blockAbove.light < 9) return false;
-
                 return true;
             },
             maxDistance: 16,
@@ -105,7 +106,6 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         });
 
         if (emptyFarmlands.length > 0) {
-            // Sort by hydration and distance
             const bestFarmland = emptyFarmlands
                 .map(pos => bot.blockAt(pos)!)
                 .sort((a, b) => {
@@ -121,12 +121,11 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                 const cropToPlant = this.getOptimalCrop(bot, bestFarmland.position);
                 if (cropToPlant) {
                     this.targetBlock = bestFarmland;
+                    this.intention = 'PLANT';
                     this.state = 'MOVING';
                     this.log(`Found farmland at ${bestFarmland.position}. Plan to plant ${cropToPlant}. Moving...`);
                     bot.pathfinder.setGoal(new GoalNear(bestFarmland.position.x, bestFarmland.position.y, bestFarmland.position.z, 1));
                     return;
-                } else {
-                    this.log(`Found farmland at ${bestFarmland.position} but no optimal crop identified.`);
                 }
             }
         }
@@ -134,43 +133,46 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         // 3. Find dirt/grass to till (if we have a hoe)
         const hoe = bot.inventory.items().find(item => item.name.includes('hoe'));
         if (hoe) {
+            this.log(`Hoe found: ${hoe.name}. Looking for existing tillable blocks near water...`);
+
+            // Prioritize blocks near existing farmland or water first
             const tillable = bot.findBlocks({
                 matching: (block) => {
-                    if (!block || !block.position || (block.name !== 'grass_block' && block.name !== 'dirt')) return false;
+                    if (!block || !block.position) return false;
+                    if (this.failedBlocks.has(block.position.toString())) return false; // Skip failed blocks
+                    const isDirtOrGrass = block.name === 'grass_block' || block.name === 'dirt';
+                    if (!isDirtOrGrass) return false;
                     const blockAbove = bot.blockAt(block.position.offset(0, 1, 0));
-                    return !!(blockAbove && blockAbove.name === 'air');
+                    const isAirAbove = !!(blockAbove && blockAbove.name === 'air');
+                    return isDirtOrGrass && isAirAbove && this.isHydrated(bot, block.position); // Only valid if hydrated already
                 },
-                maxDistance: 8,
+                maxDistance: 16,
                 count: 10
             });
 
             if (tillable.length > 0) {
-                const bestTillable = tillable
-                    .map(pos => bot.blockAt(pos)!)
-                    .sort((a, b) => {
-                        const aHydrated = this.isHydrated(bot, a.position) ? 1 : 0;
-                        const bHydrated = this.isHydrated(bot, b.position) ? 1 : 0;
-                        if (aHydrated !== bHydrated) return bHydrated - aHydrated;
-                        const botPos = bot.entity?.position;
-                        if (!botPos) return 0;
-                        return botPos.distanceTo(a.position) - botPos.distanceTo(b.position);
-                    })[0];
+                const bestTillable = tillable.map(pos => bot.blockAt(pos)!).sort((a, b) => {
+                    const botPos = bot.entity?.position;
+                    if (!botPos) return 0;
+                    return botPos.distanceTo(a.position) - botPos.distanceTo(b.position);
+                })[0];
 
                 if (bestTillable) {
                     this.targetBlock = bestTillable;
+                    this.intention = 'TILL';
                     this.state = 'MOVING';
-                    this.log(`Found tillable ground at ${bestTillable.position}. Moving...`);
+                    this.log(`Found tillable ground (hydrated) at ${bestTillable.position}. Moving...`);
                     bot.pathfinder.setGoal(new GoalNear(bestTillable.position.x, bestTillable.position.y, bestTillable.position.z, 1));
                     return;
                 }
             }
-        } else {
-            // this.log('No hoe found in inventory, skipping tilling check.');
         }
 
-        // No tasks found, check if we need anything
-        await this.checkNeeds(bot);
-        // No tasks found, check if we need anything
+        // 4. If no immediate tasks, try to plan a new field (find water or make it)
+        await this.planField(bot);
+        if (this.state !== 'FINDING' && this.state !== 'IDLE') return; // planField might have set state
+
+        // 5. Check needs (crafting etc)
         this.log('No immediate tasks found. Checking needs...');
         await this.checkNeeds(bot);
 
@@ -181,6 +183,74 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                     this.state = 'FINDING';
                 }
             }, 2000);
+        }
+    }
+
+    private async planField(bot: Bot) {
+        this.log('Planning mode: Searching for water or suitable farm location...');
+
+        // Strategy A: Find existing water
+        const waterBlock = bot.findBlock({
+            matching: block => block.name === 'water' || block.name === 'flowing_water',
+            maxDistance: 32
+        });
+
+        if (waterBlock) {
+            // Check for tillable land next to it
+            // We want a spot that is dirt/grass and has air above
+            const neighbors = [
+                waterBlock.position.offset(1, 0, 0), waterBlock.position.offset(-1, 0, 0),
+                waterBlock.position.offset(0, 0, 1), waterBlock.position.offset(0, 0, -1)
+            ];
+
+            for (const pos of neighbors) {
+                if (this.failedBlocks.has(pos.toString())) continue;
+
+                const block = bot.blockAt(pos);
+                const above = bot.blockAt(pos.offset(0, 1, 0));
+                if (block && (block.name === 'grass_block' || block.name === 'dirt') && above && above.name === 'air') {
+                    this.targetBlock = block;
+                    this.intention = 'TILL'; // It's near water, so regular till applies
+                    this.state = 'MOVING';
+                    this.log(`Found water at ${waterBlock.position}. Targeting adjacent land at ${pos} to till.`);
+                    bot.pathfinder.setGoal(new GoalNear(pos.x, pos.y, pos.z, 1));
+                    return;
+                }
+            }
+        }
+
+        // Strategy B: Create water source
+        const waterBucket = bot.inventory.items().find(i => i.name === 'water_bucket');
+        if (waterBucket) {
+            this.log('Have water bucket. Looking for a spot to dig a hole for water...');
+            // Find a flat spot (dirt/grass)
+            const flatSpot = bot.findBlock({
+                matching: block => (block.name === 'grass_block' || block.name === 'dirt'),
+                maxDistance: 16,
+                useExtraInfo: (block) => {
+                    const above = bot.blockAt(block.position.offset(0, 1, 0));
+                    return !!(above && above.name === 'air');
+                }
+            });
+
+            if (flatSpot) {
+                this.targetBlock = flatSpot;
+                this.intention = 'MAKE_WATER';
+                this.state = 'MOVING';
+                this.log(`Found spot for water source at ${flatSpot.position}. Moving to dig...`);
+                bot.pathfinder.setGoal(new GoalNear(flatSpot.position.x, flatSpot.position.y, flatSpot.position.z, 2)); // Stand nearby, not on top
+                return;
+            }
+        } else {
+            // Don't spam request
+            if (Date.now() - this.lastRequestTime > 30000) {
+                // Check if we are totally dry (no crops, no water)
+                const crops = bot.findBlock({ matching: b => ['wheat', 'carrots', 'potatoes', 'beetroots'].includes(b.name), maxDistance: 32 });
+                if (!crops && !waterBlock) {
+                    bot.chat("I can't find any water or farms! If you give me a water bucket, I can make a farm.");
+                    this.lastRequestTime = Date.now();
+                }
+            }
         }
     }
 
@@ -196,37 +266,31 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
             return;
         }
 
-        this.log(`Performing action on ${block.name} at ${block.position}...`);
+        this.log(`Performing action ${this.intention} on ${block.name} at ${block.position}...`);
         this.lastActionTime = Date.now();
 
         try {
             if (this.craftingItem) {
                 const success = await this.performCraftingAction(bot, block);
-                if (success) {
-                    this.state = 'FINDING';
-                } else {
-                    this.state = 'FINDING'; // Reset even if failed to avoid loop
-                    this.log('Crafting action failed (performCraftingAction returned false).');
-                }
+                // Keep creating/finding until done
+                this.state = 'FINDING';
                 return;
             }
 
-            if (['wheat', 'carrots', 'potatoes', 'beetroots'].includes(block.name)) {
-                // Harvest
+            if (this.intention === 'HARVEST') {
                 try {
                     await bot.dig(block);
                     this.state = 'COLLECTING';
                     this.log('Dig success. Switching to COLLECTING.');
                 } catch (err: any) {
                     if (err.message === 'Digging aborted') {
-                        this.state = 'FINDING'; // Reset to finding if aborted
+                        this.state = 'FINDING';
                         this.log('Digging aborted.');
                     } else {
                         throw err;
                     }
                 }
-            } else if (block.name === 'farmland') {
-                // Plant
+            } else if (this.intention === 'PLANT') {
                 const cropToPlant = this.getOptimalCrop(bot, block.position);
                 if (cropToPlant) {
                     const seedItem = bot.inventory.items().find(item => item.name === cropToPlant);
@@ -234,27 +298,69 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                         await bot.equip(seedItem, 'hand');
                         await bot.placeBlock(block, new Vec3(0, 1, 0));
                         this.log(`Planted ${cropToPlant}.`);
-                    } else {
-                        this.log(`Wanted to plant ${cropToPlant} but seed item not found in inventory.`);
                     }
-                } else {
-                    this.log('No optimal crop decision for this block.');
                 }
                 this.state = 'FINDING';
-            } else if (block.name === 'grass_block' || block.name === 'dirt') {
-                // Till
+            } else if (this.intention === 'TILL') {
                 const hoe = bot.inventory.items().find(item => item.name.includes('_hoe'));
                 if (hoe) {
                     await bot.equip(hoe, 'hand');
                     await bot.activateBlock(block);
-                    this.log('Tilled dirt/grass.');
+                    this.log(`Tilled ${block.name} at ${block.position}. Verifying...`);
+
+                    // Wait briefly for server update
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    const updatedBlock = bot.blockAt(block.position);
+                    if (updatedBlock && updatedBlock.name === 'farmland') {
+                        this.log('Verification success: Block is now farmland.');
+                        // Success! Ensure it's not in failedBlocks (unlikely if we just picked it, but good practice)
+                        if (this.failedBlocks.has(block.position.toString())) {
+                            this.failedBlocks.delete(block.position.toString());
+                        }
+                    } else {
+                        this.log(`Verification failed: Block is ${updatedBlock?.name}, not farmland. Blacklisting ${block.position}.`);
+                        this.failedBlocks.add(block.position.toString());
+                    }
+                } else {
+                    this.log('No hoe found for tilling.');
                 }
                 this.state = 'FINDING';
+            } else if (this.intention === 'MAKE_WATER') {
+                // 1. Dig the block
+                this.log('Digging hole for water...');
+                const shovel = bot.inventory.items().find(i => i.name.includes('shovel'));
+                if (shovel) await bot.equip(shovel, 'hand');
+
+                await bot.dig(block);
+
+                // 2. Place water
+                // We need to place it against a solid face.
+                // Since we dug 'block', it is now air.
+                // We can place against the block BELOW it.
+                const blockBelow = bot.blockAt(block.position.offset(0, -1, 0));
+
+                const bucket = bot.inventory.items().find(i => i.name === 'water_bucket');
+                if (bucket && blockBelow) {
+                    this.log('Placing water bucket...');
+                    await bot.equip(bucket, 'hand');
+                    await bot.placeBlock(blockBelow, new Vec3(0, 1, 0)); // Place on top of the block below
+                    this.log('Water source created!');
+                } else {
+                    this.log('Failed to place water (missing bucket or block below).');
+                }
+                this.state = 'FINDING';
+            } else {
+                this.log(`Unknown intention ${this.intention}, resetting.`);
+                this.state = 'FINDING';
             }
+
         } catch (err) {
             console.error('Error performing action:', err);
             this.log(`Error performing action: ${err}`);
             this.state = 'FINDING';
+        } finally {
+            this.intention = 'NONE';
         }
     }
 
