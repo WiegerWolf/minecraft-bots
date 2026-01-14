@@ -5,8 +5,9 @@
   "main": "src/bot.ts",
   "type": "module",
   "scripts": {
-    "start": "bun run src/bot.ts",
-    "dev": "bun --watch src/bot.ts"
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch src/bot.ts",
+    "dev:manager": "bun run src/index.ts"
   },
   "keywords": [
     "minecraft",

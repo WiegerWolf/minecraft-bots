@@ -63,3 +63,4 @@ bot.on('end', () => {
 bot.once('login', () => {
     console.log('🎮 Bot logged in successfully!');
 });
+
