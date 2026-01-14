@@ -52,16 +52,19 @@ bot.on('chat', (username: string, message: string) => {
 // Event: Bot kicked from server
 bot.on('kicked', (reason: string) => {
     console.log('❌ Bot was kicked:', reason);
+    process.exit(1);
 });
 
 // Event: Connection error
 bot.on('error', (err: Error) => {
     console.error('❌ Error:', err.message);
+    process.exit(1);
 });
 
 // Event: Bot disconnected
 bot.on('end', () => {
     console.log('🔌 Bot disconnected');
+    process.exit(1);
 });
 
 // Log when bot is ready
