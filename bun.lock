@@ -5,6 +5,7 @@
     "": {
       "name": "minecraft-bots",
       "dependencies": {
+        "@faker-js/faker": "^10.2.0",
         "mineflayer": "^4.33.0",
         "mineflayer-pathfinder": "^2.4.5",
       },
@@ -14,6 +15,8 @@
     "@azure/msal-common": ["@azure/msal-common@14.16.1", "", {}, "sha512-nyxsA6NA4SVKh5YyRpbSXiMr7oQbwark7JU9LMeg6tJYTSPyAGkdx61wPT4gyxZfxlSxMMEyAsWaubBlNyIa1w=="],
 
     "@azure/msal-node": ["@azure/msal-node@2.16.3", "", { "dependencies": { "@azure/msal-common": "14.16.1", "jsonwebtoken": "^9.0.0", "uuid": "^8.3.0" } }, "sha512-CO+SE4weOsfJf+C5LM8argzvotrXw252/ZU6SM2Tz63fEblhH1uuVaaO4ISYFuN4Q6BhTo7I3qIdi8ydUQCqhw=="],
+
+    "@faker-js/faker": ["@faker-js/faker@10.2.0", "", {}, "sha512-rTXwAsIxpCqzUnZvrxVh3L0QA0NzToqWBLAhV+zDV3MIIwiQhAZHMdPCIaj5n/yADu/tyk12wIPgL6YHGXJP+g=="],
 
     "@types/node": ["@types/node@25.0.8", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-powIePYMmC3ibL0UJ2i2s0WIbq6cg6UyVFQxSCpaPxxzAaziRfimGivjdF943sSGV6RADVbk0Nvlm5P/FB44Zg=="],
 

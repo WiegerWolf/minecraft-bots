@@ -1,13 +1,18 @@
 import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
 import { pathfinder, goals } from 'mineflayer-pathfinder';
+import { faker } from '@faker-js/faker';
 
 const { GoalNear } = goals;
+
+// Generate a random bot name (max 16 characters for Minecraft)
+const botName = faker.internet.username().slice(0, 16);
+console.log(`🎲 Generated random name: ${botName}`);
 
 // Bot configuration
 const config: BotOptions = {
     host: 'localhost',     // Minecraft server address
     port: 25565,           // Minecraft server port
-    username: 'Bot',       // Bot username (for offline mode)
+    username: botName,     // Bot username (for offline mode)
     // auth: 'microsoft', // Uncomment for online/premium servers
     version: undefined,    // Auto-detect server version
 };
