@@ -217,6 +217,10 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
 
         if (shouldLog) {
             this.log('Checking for tasks...');
+            const inventory = bot.inventory.items();
+            if (now - this.lastActionTime > 30000) {
+                this.log(`Inventory: ${inventory.length > 0 ? inventory.map(i => `${i.name}x${i.count}`).join(', ') : 'empty'}`);
+            }
             this.lastLogTime = now;
         }
         const harvestable = bot.findBlock({
@@ -239,21 +243,37 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         }
 
         // 2. Find empty farmland to plant
+        if (shouldLog && bot.entity?.position) {
+            this.log(`Bot position: ${bot.entity.position.floored()}. Searching for farmland (maxDist: 16)...`);
+        }
         const emptyFarmlands = bot.findBlocks({
             matching: (block) => {
                 if (!block || !block.position || block.name !== 'farmland') return false;
-                // Fix 4: Skip blocks that have failed before
-                if (this.failedBlocks.has(block.position.toString())) return false;
+
+                const posStr = block.position.toString();
+                if (this.failedBlocks.has(posStr)) {
+                    if (shouldLog) this.log(`Skipping farmland at ${posStr}: in failedBlocks.`);
+                    return false;
+                }
+
                 const blockAbove = bot.blockAt(block.position.offset(0, 1, 0));
-                if (!blockAbove || blockAbove.name !== 'air') return false;
-                if (blockAbove.light < 9) return false;
+                const isAir = blockAbove && (blockAbove.name === 'air' || blockAbove.name === 'cave_air' || blockAbove.name === 'void_air');
+
+                if (!isAir) {
+                    if (shouldLog) this.log(`Skipping farmland at ${posStr}: covered by ${blockAbove?.name}.`);
+                    return false;
+                }
+
                 return true;
             },
             maxDistance: 16,
-            count: 10
+            count: 20
         });
 
         if (emptyFarmlands.length > 0) {
+            if (shouldLog) {
+                this.log(`Found ${emptyFarmlands.length} empty farmlands.`);
+            }
             const bestFarmland = emptyFarmlands
                 .map(pos => bot.blockAt(pos)!)
                 .sort((a, b) => {
@@ -271,6 +291,11 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                     this.log(`Found farmland at ${bestFarmland.position}. Plan to plant ${cropToPlant}.`);
                     this.setMovementTarget(bot, bestFarmland, 'PLANT');
                     return;
+                } else if (shouldLog) {
+                    const seeds = bot.inventory.items().filter(item =>
+                        item.name.includes('seeds') || item.name === 'carrot' || item.name === 'potato' || item.name === 'beetroot'
+                    );
+                    this.log(`Found farmland but getOptimalCrop returned null. Seeds in inventory: ${seeds.length > 0 ? seeds.map(s => s.name).join(', ') : 'none'}`);
                 }
             }
         }
@@ -556,9 +581,15 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
     private getOptimalCrop(bot: Bot, position: Vec3): string | null {
         const inventory = bot.inventory.items();
         const availableSeeds = inventory.filter(item =>
-            item.name.includes('seeds') || item.name === 'carrot' || item.name === 'potato' || item.name === 'beetroot'
+            item.name.includes('seeds') || item.name === 'carrot' || item.name === 'potato' || item.name === 'beetroot' ||
+            item.name === 'wheat_seeds' || item.name === 'beetroot_seeds' || item.name === 'melon_seeds' || item.name === 'pumpkin_seeds'
         );
-        if (availableSeeds.length === 0) return null;
+        if (availableSeeds.length === 0) {
+            // Log items if we have none available but we were expected to plant
+            // This is handled by the caller logging, but let's be extra sure
+            return null;
+        }
+
         const neighbors = [
             bot.blockAt(position.offset(1, 0, 0)),
             bot.blockAt(position.offset(-1, 0, 0)),
@@ -568,14 +599,20 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         const neighborCrops = neighbors
             .filter(n => n && ['wheat', 'carrots', 'potatoes', 'beetroots'].includes(n.name))
             .map(n => n!.name);
+
         for (const seed of availableSeeds) {
             let cropName = seed.name.replace('_seeds', '');
             if (cropName === 'seeds') cropName = 'wheat';
             if (cropName === 'beetroot') cropName = 'beetroots';
             if (cropName === 'carrot') cropName = 'carrots';
             if (cropName === 'potato') cropName = 'potatoes';
-            if (!neighborCrops.includes(cropName)) return seed.name;
+
+            if (!neighborCrops.includes(cropName)) {
+                return seed.name;
+            }
         }
+
+        // If all seeds are already neighbors, just pick the first one
         return availableSeeds[0]?.name ?? null;
     }
 
