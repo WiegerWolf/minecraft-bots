@@ -4,6 +4,7 @@ import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { CraftingMixin } from './mixins/CraftingMixin';
 const minecraftData = require('minecraft-data');
+let mcData: any = null;
 
 const { GoalNear } = goals;
 
@@ -16,7 +17,8 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
     private lastLogTime = 0;
     private lastPlanTime = 0;
     private isUpdating = false;
-    private failedBlocks: Set<string> = new Set();
+    private failedBlocks: Map<string, number> = new Map(); // position string -> timestamp
+    private readonly RETRY_COOLDOWN = 5 * 60 * 1000; // 5 minutes
 
     // Fix 1: Movement timeout tracking
     private movementStartTime: number = 0;
@@ -40,6 +42,7 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         this.active = true;
         this.state = 'FINDING';
         this.bot = bot;
+        if (!mcData) mcData = minecraftData(bot.version);
 
         // Fix 2: Set up pathfinder event handlers
         this.boundOnGoalReached = this.onGoalReached.bind(this);
@@ -92,7 +95,7 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         if (result.status === 'noPath' || result.status === 'timeout') {
             this.log(`Pathfinding failed: ${result.status}. Marking block as failed.`);
             if (this.targetBlock) {
-                this.failedBlocks.add(this.targetBlock.position.toString());
+                this.failedBlocks.set(this.targetBlock.position.toString(), Date.now());
             }
             this.targetBlock = null;
             this.intention = 'NONE';
@@ -119,7 +122,7 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                     if (Date.now() - this.movementStartTime > this.MOVEMENT_TIMEOUT) {
                         this.log('Movement timeout! Marking block as failed and returning to FINDING.');
                         if (this.targetBlock) {
-                            this.failedBlocks.add(this.targetBlock.position.toString());
+                            this.failedBlocks.set(this.targetBlock.position.toString(), Date.now());
                         }
                         this.targetBlock = null;
                         this.intention = 'NONE';
@@ -226,14 +229,16 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         const harvestable = bot.findBlock({
             matching: (block) => {
                 if (!block || !block.position) return false;
-                // Fix 4: Skip blocks that have failed before
-                if (this.failedBlocks.has(block.position.toString())) return false;
+                const posStr = block.position.toString();
+                const failedAt = this.failedBlocks.get(posStr);
+                if (failedAt && Date.now() - failedAt < this.RETRY_COOLDOWN) return false;
+
                 const names = ['wheat', 'carrots', 'potatoes', 'beetroots'];
                 if (!names.includes(block.name)) return false;
                 const metadata = block.metadata as any;
                 return (block.name === 'beetroots') ? metadata === 3 : metadata === 7;
             },
-            maxDistance: 16
+            maxDistance: 32
         });
 
         if (harvestable) {
@@ -244,35 +249,45 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
 
         // 2. Find empty farmland to plant
         if (shouldLog && bot.entity?.position) {
-            this.log(`Bot position: ${bot.entity.position.floored()}. Searching for farmland (maxDist: 16)...`);
+            this.log(`Bot position: ${bot.entity.position.floored()}. Searching for farmland (maxDist: 32)...`);
         }
-        const emptyFarmlands = bot.findBlocks({
-            matching: (block) => {
-                if (!block || !block.position || block.name !== 'farmland') return false;
 
-                const posStr = block.position.toString();
-                if (this.failedBlocks.has(posStr)) {
-                    if (shouldLog) this.log(`Skipping farmland at ${posStr}: in failedBlocks.`);
-                    return false;
-                }
+        const farmlandId = mcData?.blocksByName?.farmland?.id;
+        const allFarmlands = bot.findBlocks({
+            matching: (block) => farmlandId ? block.type === farmlandId : block.name === 'farmland',
+            maxDistance: 32,
+            count: 256
+        });
 
-                const blockAbove = bot.blockAt(block.position.offset(0, 1, 0));
-                const isAir = blockAbove && (blockAbove.name === 'air' || blockAbove.name === 'cave_air' || blockAbove.name === 'void_air');
+        if (shouldLog) {
+            this.log(`Found ${allFarmlands.length} farmland blocks total in range.`);
+        }
 
-                if (!isAir) {
-                    if (shouldLog) this.log(`Skipping farmland at ${posStr}: covered by ${blockAbove?.name}.`);
-                    return false;
-                }
+        const emptyFarmlands = allFarmlands.filter(pos => {
+            const block = bot.blockAt(pos);
+            if (!block) return false;
 
-                return true;
-            },
-            maxDistance: 16,
-            count: 20
+            const posStr = block.position.toString();
+            const failedAt = this.failedBlocks.get(posStr);
+            if (failedAt && Date.now() - failedAt < this.RETRY_COOLDOWN) {
+                return false;
+            }
+
+            const blockAbove = bot.blockAt(block.position.offset(0, 1, 0));
+            const isAir = blockAbove && (
+                blockAbove.name === 'air' ||
+                blockAbove.name === 'cave_air' ||
+                blockAbove.name === 'void_air' ||
+                blockAbove.name === 'grass' ||
+                blockAbove.name === 'tall_grass'
+            );
+
+            return isAir;
         });
 
         if (emptyFarmlands.length > 0) {
             if (shouldLog) {
-                this.log(`Found ${emptyFarmlands.length} empty farmlands.`);
+                this.log(`Found ${emptyFarmlands.length} empty and suitable farmlands.`);
             }
             const bestFarmland = emptyFarmlands
                 .map(pos => bot.blockAt(pos)!)
@@ -309,23 +324,30 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
 
             // OPTIMIZATION: Instead of scanning all dirt and then checking for water nearby (O(N*M)),
             // we find water sources and check their 9x9 area (O(W*81)).
+            const waterIds = ['water', 'flowing_water'].map(name => mcData?.blocksByName?.[name]?.id).filter(id => id !== undefined);
             const waterBlocks = bot.findBlocks({
-                matching: (block) => block.name === 'water' || block.name === 'flowing_water',
-                maxDistance: 16,
-                count: 5
+                matching: (block) => waterIds.length > 0 ? waterIds.includes(block.type) : (block.name === 'water' || block.name === 'flowing_water'),
+                maxDistance: 32,
+                count: 10
             });
+
+            if (shouldLog && waterBlocks.length === 0) {
+                this.log('No water sources found nearby for tilling.');
+            }
 
             for (const waterPos of waterBlocks) {
                 for (let x = -4; x <= 4; x++) {
                     for (let z = -4; z <= 4; z++) {
                         if (x === 0 && z === 0) continue;
                         const pos = waterPos.offset(x, 0, z);
-                        if (this.failedBlocks.has(pos.toString())) continue;
+                        const posStr = pos.toString();
+                        const failedAt = this.failedBlocks.get(posStr);
+                        if (failedAt && Date.now() - failedAt < this.RETRY_COOLDOWN) continue;
 
                         const block = bot.blockAt(pos);
                         if (block && (block.name === 'grass_block' || block.name === 'dirt')) {
                             const above = bot.blockAt(pos.offset(0, 1, 0));
-                            if (above && above.name === 'air') {
+                            if (above && (above.name === 'air' || above.name === 'cave_air' || above.name === 'void_air')) {
                                 this.log(`Found tillable ground (near water at ${waterPos}) at ${pos}.`);
                                 this.setMovementTarget(bot, block, 'TILL');
                                 return;
@@ -481,10 +503,16 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                 if (cropToPlant) {
                     const seedItem = bot.inventory.items().find(item => item.name === cropToPlant);
                     if (seedItem) {
+                        this.log(`Equipping ${seedItem.name} for planting...`);
                         await bot.equip(seedItem, 'hand');
+                        this.log(`Attempting to plant ${cropToPlant} on ${block.name} at ${block.position}...`);
                         await bot.placeBlock(block, new Vec3(0, 1, 0));
-                        this.log(`Planted ${cropToPlant}.`);
+                        this.log(`Successfully planted ${cropToPlant}.`);
+                    } else {
+                        this.log(`Could not find seed item ${cropToPlant} in inventory!`);
                     }
+                } else {
+                    this.log('getOptimalCrop returned null in performAction.');
                 }
                 this.state = 'FINDING';
             } else if (this.intention === 'TILL') {
@@ -497,12 +525,10 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                     const updatedBlock = bot.blockAt(block.position);
                     if (updatedBlock && updatedBlock.name === 'farmland') {
                         this.log('Verification success: Block is now farmland.');
-                        if (this.failedBlocks.has(block.position.toString())) {
-                            this.failedBlocks.delete(block.position.toString());
-                        }
+                        this.failedBlocks.delete(block.position.toString());
                     } else {
-                        this.log(`Verification failed: Block is ${updatedBlock?.name}. Blacklisting ${block.position}.`);
-                        this.failedBlocks.add(block.position.toString());
+                        this.log(`Verification failed: Block is ${updatedBlock?.name}. Blacklisting ${block.position} for cooldown.`);
+                        this.failedBlocks.set(block.position.toString(), Date.now());
                     }
                 } else { this.log('No hoe found for tilling.'); }
                 this.state = 'FINDING';
