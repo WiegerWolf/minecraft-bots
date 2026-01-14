@@ -72,6 +72,7 @@ export class FarmingRole implements Role {
             const emptyFarmland = bot.findBlock({
                 matching: (block) => {
                     if (block.name === 'farmland') {
+                        if (!block.position) return true; // Palette check, assume maybe
                         const blockAbove = bot.blockAt(block.position.offset(0, 1, 0));
                         return !!(blockAbove && blockAbove.name === 'air');
                     }
@@ -94,6 +95,7 @@ export class FarmingRole implements Role {
             const tillable = bot.findBlock({
                 matching: (block) => {
                     if (block.name === 'grass_block' || block.name === 'dirt') {
+                        if (!block.position) return true; // Palette check, assume maybe
                         const blockAbove = bot.blockAt(block.position.offset(0, 1, 0));
                         return !!(blockAbove && blockAbove.name === 'air');
                     }
