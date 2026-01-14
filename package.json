@@ -1,0 +1,20 @@
+{
+  "name": "minecraft-bots",
+  "version": "1.0.0",
+  "description": "Minecraft bot using Mineflayer",
+  "main": "src/bot.js",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/bot.js",
+    "dev": "bun --watch src/bot.js"
+  },
+  "keywords": [
+    "minecraft",
+    "bot",
+    "mineflayer"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "mineflayer": "^4.33.0"
+  }
+}
