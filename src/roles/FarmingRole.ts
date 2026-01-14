@@ -337,42 +337,75 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         const hoe = bot.inventory.items().find(item => item.name.includes('hoe'));
         if (hoe) {
             if (shouldLog) {
-                this.log(`Hoe found: ${hoe.name}. Looking for existing tillable blocks near water...`);
+                this.log(`Hoe found: ${hoe.name}. Looking for tillable blocks near water...`);
             }
 
-            // OPTIMIZATION: Instead of scanning all dirt and then checking for water nearby (O(N*M)),
-            // we find water sources and check their 9x9 area (O(W*81)).
             const waterIds = ['water', 'flowing_water'].map(name => mcData?.blocksByName?.[name]?.id).filter(id => id !== undefined);
             const waterBlocks = bot.findBlocks({
                 matching: (block) => waterIds.length > 0 ? waterIds.includes(block.type) : (block.name === 'water' || block.name === 'flowing_water'),
                 maxDistance: 32,
-                count: 10
+                count: 20
             });
 
             if (shouldLog && waterBlocks.length === 0) {
                 this.log('No water sources found nearby for tilling.');
             }
 
-            for (const waterPos of waterBlocks) {
-                for (let x = -4; x <= 4; x++) {
-                    for (let z = -4; z <= 4; z++) {
-                        if (x === 0 && z === 0) continue;
-                        const pos = waterPos.offset(x, 0, z);
-                        const posStr = pos.toString();
-                        const failedAt = this.failedBlocks.get(posStr);
-                        if (failedAt && Date.now() - failedAt < this.RETRY_COOLDOWN) continue;
+            const candidates: { pos: Vec3, block: any, score: number }[] = [];
+            const checkedPos = new Set<string>();
 
-                        const block = bot.blockAt(pos);
-                        if (block && (block.name === 'grass_block' || block.name === 'dirt')) {
-                            const above = bot.blockAt(pos.offset(0, 1, 0));
-                            if (above && (above.name === 'air' || above.name === 'cave_air' || above.name === 'void_air')) {
-                                this.log(`Found tillable ground (near water at ${waterPos}) at ${pos}.`);
-                                this.setMovementTarget(bot, block, 'TILL');
-                                return;
+            for (const waterPos of waterBlocks) {
+                // Check ±4 blocks horizontally, and water can be at Y or Y+1 relative to farmland
+                // So farmland can be at waterPos.Y or waterPos.Y-1
+                for (let dy = -1; dy <= 0; dy++) {
+                    for (let dx = -4; dx <= 4; dx++) {
+                        for (let dz = -4; dz <= 4; dz++) {
+                            const pos = waterPos.offset(dx, dy, dz);
+                            const posStr = pos.toString();
+                            if (checkedPos.has(posStr)) continue;
+                            checkedPos.add(posStr);
+
+                            const failedAt = this.failedBlocks.get(posStr);
+                            if (failedAt && Date.now() - failedAt < this.RETRY_COOLDOWN) continue;
+
+                            const block = bot.blockAt(pos);
+                            if (block && (block.name === 'grass_block' || block.name === 'dirt')) {
+                                const above = bot.blockAt(pos.offset(0, 1, 0));
+                                if (above && (above.name === 'air' || above.name === 'cave_air' || above.name === 'void_air')) {
+                                    // Scoring system
+                                    let score = 0;
+
+                                    // Prefer blocks adjacent to existing farmland (contiguous growth)
+                                    const neighbors = [
+                                        pos.offset(1, 0, 0), pos.offset(-1, 0, 0),
+                                        pos.offset(0, 0, 1), pos.offset(0, 0, -1)
+                                    ];
+                                    for (const nPos of neighbors) {
+                                        const nBlock = bot.blockAt(nPos);
+                                        if (nBlock && nBlock.name === 'farmland') score += 10;
+                                    }
+
+                                    // Prefer same level as water
+                                    if (dy === 0) score += 5;
+
+                                    // Slight penalty for distance to bot
+                                    const dist = bot.entity.position.distanceTo(pos);
+                                    score -= dist * 0.5;
+
+                                    candidates.push({ pos, block, score });
+                                }
                             }
                         }
                     }
                 }
+            }
+
+            if (candidates.length > 0) {
+                candidates.sort((a, b) => b.score - a.score);
+                const best = candidates[0]!;
+                this.log(`Selected best tilling spot at ${best.pos} with score ${best.score.toFixed(1)} (Total candidates: ${candidates.length})`);
+                this.setMovementTarget(bot, best.block, 'TILL');
+                return;
             }
         }
 
@@ -434,19 +467,38 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         });
 
         if (waterBlock) {
-            for (let x = -4; x <= 4; x++) {
-                for (let z = -4; z <= 4; z++) {
-                    if (x === 0 && z === 0) continue;
-                    const pos = waterBlock.position.offset(x, 0, z);
-                    if (this.failedBlocks.has(pos.toString())) continue;
-                    const block = bot.blockAt(pos);
-                    const above = bot.blockAt(pos.offset(0, 1, 0));
-                    if (block && (block.name === 'grass_block' || block.name === 'dirt') && above && above.name === 'air') {
-                        this.log(`Found water at ${waterBlock.position}. Targeting land at ${pos}.`);
-                        this.setMovementTarget(bot, block, 'TILL');
-                        return;
+            const candidates: { pos: Vec3, block: any, score: number }[] = [];
+            for (let dy = -1; dy <= 0; dy++) {
+                for (let x = -4; x <= 4; x++) {
+                    for (let z = -4; z <= 4; z++) {
+                        const pos = waterBlock.position.offset(x, dy, z);
+                        if (this.failedBlocks.has(pos.toString())) continue;
+                        const block = bot.blockAt(pos);
+                        const above = bot.blockAt(pos.offset(0, 1, 0));
+                        if (block && (block.name === 'grass_block' || block.name === 'dirt') && above && above.name === 'air') {
+                            let score = 0;
+                            const neighbors = [
+                                pos.offset(1, 0, 0), pos.offset(-1, 0, 0),
+                                pos.offset(0, 0, 1), pos.offset(0, 0, -1)
+                            ];
+                            for (const nPos of neighbors) {
+                                const nBlock = bot.blockAt(nPos);
+                                if (nBlock && nBlock.name === 'farmland') score += 10;
+                            }
+                            if (dy === 0) score += 5;
+                            const dist = bot.entity.position.distanceTo(pos);
+                            score -= dist * 0.5;
+                            candidates.push({ pos, block, score });
+                        }
                     }
                 }
+            }
+            if (candidates.length > 0) {
+                candidates.sort((a, b) => b.score - a.score);
+                const best = candidates[0]!;
+                this.log(`Found water at ${waterBlock.position}. Planning field starting at ${best.pos} (score ${best.score.toFixed(1)})`);
+                this.setMovementTarget(bot, best.block, 'TILL');
+                return;
             }
         }
 
@@ -612,6 +664,8 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
     private isHydrated(bot: Bot, position: Vec3): boolean {
         const block = bot.blockAt(position);
         if (block && block.name === 'farmland' && block.metadata > 0) return true;
+        // Farmland is hydrated if water is within 4 blocks horizontally AND 
+        // at the same Y level or 1 block above the farmland.
         for (let x = -4; x <= 4; x++) {
             for (let z = -4; z <= 4; z++) {
                 for (let y = 0; y <= 1; y++) {
