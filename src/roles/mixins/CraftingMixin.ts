@@ -67,50 +67,36 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
 
             this.log(`Trying to craft ${itemName}...`);
 
-            // Find a crafting table nearby
-            let craftingTable = this.findCraftingTable(bot);
-            if (craftingTable) this.log(`Found existing crafting table at ${craftingTable.position}`);
-
-            // If no crafting table nearby, check if we need one (3x3 recipe)
-            const recipes = bot.recipesFor(item.id, null, 1, craftingTable);
-
-            // Fix: If we have a recipe and don't need a table (or found one), but craftingTable is null (meaning it's a 2x2 recipe), do it.
-            if (!craftingTable && recipes.length > 0) {
-                this.log(`Crafting ${itemName} using 2x2 inventory recipe...`);
+            // 1. Always check if we can craft in 2x2 first (efficient, no movement needed)
+            const recipes2x2 = bot.recipesFor(item.id, null, 1, null);
+            if (recipes2x2.length > 0) {
                 try {
-                    const recipe = recipes[0];
-                    if (recipe) {
-                        await bot.craft(recipe, 1, undefined);
+                    this.log(`Crafting ${itemName} using 2x2 inventory recipe...`);
+                    const recipe2x2 = recipes2x2[0];
+                    if (recipe2x2) {
+                        await bot.craft(recipe2x2, 1, undefined);
                         return true;
                     }
                 } catch (err) {
                     console.error('Crafting 2x2 failed:', err);
                     this.log(`Failed to craft 2x2: ${err}`);
-                    return false;
                 }
             }
 
-            if (recipes.length === 0) {
-                this.log(`No recipe found for ${itemName} with current table/inventory. Checking 2x2...`);
-                // Check if we can craft it in 2x2
-                const recipes2x2 = bot.recipesFor(item.id, null, 1, null);
-                if (recipes2x2.length > 0) {
-                    try {
-                        bot.chat(`Crafting ${itemName}...`);
-                        this.log(`Crafting ${itemName} using 2x2 recipe.`);
-                        const recipe2x2 = recipes2x2[0];
-                        if (recipe2x2) {
-                            await bot.craft(recipe2x2, 1, undefined);
-                        }
-                        return true;
-                    } catch (err) {
-                        console.error('Crafting 2x2 failed:', err);
-                        this.log(`Failed to craft 2x2: ${err}`);
-                    }
-                }
+            // Find a crafting table nearby
+            let craftingTable = this.findCraftingTable(bot);
+            if (craftingTable) this.log(`Found existing crafting table at ${craftingTable.position}`);
 
-                // If it needs 3x3 but no table is nearby, try to get a table
-                if (!craftingTable) {
+            // If no crafting table nearby (and we couldn't do 2x2 which we already checked), check if we need one
+            if (!craftingTable) {
+                // Check if the item actually needs a table
+                // We simulate a table by creating a fake block instance
+                const Block = require('prismarine-block')(bot.version);
+                const fakeTable = new Block(mcData.blocksByName.crafting_table.id, 0, 0);
+                const recipes3x3 = bot.recipesFor(item.id, null, 1, fakeTable);
+
+                if (recipes3x3.length > 0) {
+                    // We need a table
                     const tableInInventory = bot.inventory.items().find(i => i.name === 'crafting_table');
                     if (tableInInventory) {
                         const success = await this.placeCraftingTable(bot);
@@ -121,8 +107,8 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
                     } else {
                         // Try to craft a table in 2x2
                         this.log('No table found or in inventory. Trying to craft one.');
-                        const tableItem = mcData.itemsByName['crafting_table'];
-                        const tableRecipes = bot.recipesFor(tableItem.id, null, 1, null);
+                        const tableItemData = mcData.itemsByName['crafting_table'];
+                        const tableRecipes = bot.recipesFor(tableItemData.id, null, 1, null);
                         const tableRecipe = tableRecipes[0];
                         if (tableRecipe) {
                             bot.chat('I need a crafting table, making one...');
@@ -135,17 +121,17 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
                         }
                     }
                 }
+            }
 
-                // Try again with the potential new table
-                const recipesAfterTable = bot.recipesFor(item.id, null, 1, craftingTable);
-                if (recipesAfterTable.length === 0) {
-                    if (Date.now() - this.lastRequestTime > 30000) {
-                        bot.chat(`I have materials for ${itemName}, but I can't find or make a crafting table!`);
-                        this.lastRequestTime = Date.now();
-                    }
-                    return false;
+            // Try again with the potential new table or existing one
+            // Note: If we found no table and couldn't make one, this might fail if it really needs 3x3
+            const recipes = bot.recipesFor(item.id, null, 1, craftingTable);
+            if (recipes.length === 0) {
+                if (Date.now() - this.lastRequestTime > 30000) {
+                    bot.chat(`I have materials for ${itemName}, but I can't find or make a crafting table!`);
+                    this.lastRequestTime = Date.now();
                 }
-                this.log(`Recipe found using table.`);
+                return false;
             }
 
             if (craftingTable) {
@@ -157,10 +143,8 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
                 bot.pathfinder.setGoal(new GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 1));
                 return true;
             } else {
-                if (Date.now() - this.lastRequestTime > 30000) {
-                    bot.chat(`I have materials for ${itemName}, but I can't find a crafting table!`);
-                    this.lastRequestTime = Date.now();
-                }
+                // Should have been caught by 2x2 check early on, but just in case
+                this.log(`Recipe found but no table and not 2x2? Logic error.`);
                 return false;
             }
         }

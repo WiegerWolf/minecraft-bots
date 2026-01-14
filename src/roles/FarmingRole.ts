@@ -173,13 +173,15 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         // No tasks found, check if we need anything
         this.log('No immediate tasks found. Checking needs...');
         await this.checkNeeds(bot);
-        this.state = 'IDLE';
-        setTimeout(() => {
-            if (this.active) {
-                this.state = 'FINDING';
-                // this.log('Timeout finished. Returning to FINDING.'); 
-            }
-        }, 2000);
+
+        if (this.state === 'FINDING') {
+            this.state = 'IDLE';
+            setTimeout(() => {
+                if (this.active) {
+                    this.state = 'FINDING';
+                }
+            }, 2000);
+        }
     }
 
     private async performAction(bot: Bot) {
@@ -360,7 +362,10 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                     const plankName = logItem.name.replace('_log', '_planks').replace('_stem', '_planks');
                     // Craft planks from logs
                     this.log(`Crafting planks from ${logItem.name}...`);
-                    await this.tryCraft(bot, plankName);
+                    await this.tryCraft(bot, plankName, (target) => {
+                        this.targetBlock = target;
+                        this.state = 'MOVING';
+                    });
                     return;
                 }
             }
@@ -368,7 +373,10 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
             // 2. Try to craft sticks if we don't have enough (need 2)
             if (numSticks < 2 && numPlanks >= 2) {
                 this.log('Crafting sticks...');
-                await this.tryCraft(bot, 'stick');
+                await this.tryCraft(bot, 'stick', (target) => {
+                    this.targetBlock = target;
+                    this.state = 'MOVING';
+                });
                 return;
             }
 
