@@ -10,10 +10,16 @@ const BOT_PATH = resolve(__dirname, "bot.ts");
 
 let botProcess: Subprocess | null = null;
 let reconnectAttempts = 0;
+let retryTimeout: ReturnType<typeof setTimeout> | null = null;
 const MAX_BACKOFF = 30000; // 30 seconds
 const INITIAL_BACKOFF = 1000; // 1 second
 
 function startBot(isRestart = false) {
+    if (retryTimeout) {
+        clearTimeout(retryTimeout);
+        retryTimeout = null;
+    }
+
     if (botProcess) {
         console.log("♻️ Restarting bot due to file change...");
         botProcess.kill();
@@ -49,14 +55,18 @@ function startBot(isRestart = false) {
     };
     handleStdout();
 
-    botProcess.exited.then((exitCode: number) => {
-        if (botProcess === null) return; // Process was killed by manager (e.g. file change)
+    const currentProcess = botProcess;
+    currentProcess.exited.then((exitCode: number) => {
+        if (botProcess !== currentProcess) return; // This process was replaced/killed intentionally
 
         if (exitCode !== 0) {
             const delay = Math.min(INITIAL_BACKOFF * Math.pow(2, reconnectAttempts), MAX_BACKOFF);
             console.log(`⚠️ Bot exited with code ${exitCode}. Reconnecting in ${delay / 1000}s... (Attempt ${reconnectAttempts + 1})`);
             reconnectAttempts++;
-            setTimeout(() => startBot(true), delay);
+            retryTimeout = setTimeout(() => {
+                retryTimeout = null;
+                startBot(true);
+            }, delay);
         } else {
             console.log("✅ Bot exited cleanly.");
         }
@@ -66,15 +76,21 @@ function startBot(isRestart = false) {
 // Initial start
 startBot();
 
-// Watch for changes in bot.ts
-console.log(`👀 Watching ${BOT_PATH} for changes...`);
-watch(BOT_PATH, (event, filename) => {
-    if (event === "change") {
-        console.log(`📝 Change detected in ${filename}`);
-        const oldProcess = botProcess;
-        botProcess = null; // Set to null so exited handler knows it was intentional
-        if (oldProcess) oldProcess.kill();
-        startBot();
+// Watch for changes in the src directory
+console.log(`👀 Watching ${__dirname} for changes...`);
+let watchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+watch(__dirname, { recursive: true }, (event, filename) => {
+    if (filename && (filename.endsWith(".ts") || filename.endsWith(".js") || filename.endsWith(".json"))) {
+        if (watchTimeout) clearTimeout(watchTimeout);
+
+        watchTimeout = setTimeout(() => {
+            console.log(`📝 Change detected in ${filename}`);
+            const oldProcess = botProcess;
+            botProcess = null; // Set to null so exited handler knows it was intentional
+            if (oldProcess) oldProcess.kill();
+            startBot();
+        }, 100); // 100ms debounce
     }
 });
 
