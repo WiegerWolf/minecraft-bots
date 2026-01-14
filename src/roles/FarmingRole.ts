@@ -15,6 +15,21 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
     private lastActionTime = 0;
     private isUpdating = false;
     private failedBlocks: Set<string> = new Set();
+    
+    // Fix 1: Movement timeout tracking
+    private movementStartTime: number = 0;
+    private readonly MOVEMENT_TIMEOUT = 30000; // 30 seconds
+    
+    // Fix 3: Collection tracking
+    private collectionStartTime: number = 0;
+    private readonly COLLECTION_TIMEOUT = 10000; // 10 seconds
+    
+    // Bot reference for event handlers
+    private bot: Bot | null = null;
+    
+    // Bound event handlers for proper cleanup
+    private boundOnGoalReached: (() => void) | null = null;
+    private boundOnPathUpdate: ((result: any) => void) | null = null;
 
     protected override log(message: string, ...args: any[]) {
         console.log(`[Farming] ${message}`, ...args);
@@ -23,6 +38,14 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
     start(bot: Bot) {
         this.active = true;
         this.state = 'FINDING';
+        this.bot = bot;
+        
+        // Fix 2: Set up pathfinder event handlers
+        this.boundOnGoalReached = this.onGoalReached.bind(this);
+        this.boundOnPathUpdate = this.onPathUpdate.bind(this);
+        bot.on('goal_reached', this.boundOnGoalReached);
+        bot.on('path_update', this.boundOnPathUpdate);
+        
         bot.chat('🌾 Starting farming...');
         this.log('Started farming role.');
     }
@@ -32,12 +55,51 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         this.state = 'IDLE';
         this.targetBlock = null;
         this.failedBlocks.clear();
+        
+        // Fix 2: Clean up pathfinder event handlers
+        if (this.boundOnGoalReached) {
+            bot.removeListener('goal_reached', this.boundOnGoalReached);
+        }
+        if (this.boundOnPathUpdate) {
+            bot.removeListener('path_update', this.boundOnPathUpdate);
+        }
+        this.bot = null;
+        
         bot.pathfinder.setGoal(null);
         bot.chat('🛑 Stopped farming.');
         this.log('Stopped farming role.');
     }
+    
+    // Fix 2: Handle pathfinder goal_reached event
+    private onGoalReached() {
+        if (!this.active) return;
+        
+        if (this.state === 'MOVING') {
+            this.log('Goal reached via event. Switching to ACTING.');
+            this.state = 'ACTING';
+        } else if (this.state === 'COLLECTING') {
+            // Item collected, look for more or go back to finding
+            this.log('Reached item position.');
+        }
+    }
+    
+    // Fix 2: Handle pathfinder path_update event (detects unreachable goals)
+    private onPathUpdate(result: any) {
+        if (!this.active || this.state !== 'MOVING') return;
+        
+        // result.status can be 'noPath', 'timeout', 'success', etc.
+        if (result.status === 'noPath' || result.status === 'timeout') {
+            this.log(`Pathfinding failed: ${result.status}. Marking block as failed.`);
+            if (this.targetBlock) {
+                this.failedBlocks.add(this.targetBlock.position.toString());
+            }
+            this.targetBlock = null;
+            this.intention = 'NONE';
+            this.state = 'FINDING';
+        }
+    }
 
-    private intention: 'NONE' | 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' = 'NONE';
+    private intention: 'NONE' | 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' | 'GATHER_WOOD' = 'NONE';
     // lastRequestTime is inherited from CraftingMixin
 
     async update(bot: Bot) {
@@ -49,6 +111,20 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                     await this.findTask(bot);
                     break;
                 case 'MOVING':
+                    // Fix 1: Check for movement timeout
+                    if (Date.now() - this.movementStartTime > this.MOVEMENT_TIMEOUT) {
+                        this.log('Movement timeout! Marking block as failed and returning to FINDING.');
+                        if (this.targetBlock) {
+                            this.failedBlocks.add(this.targetBlock.position.toString());
+                        }
+                        this.targetBlock = null;
+                        this.intention = 'NONE';
+                        bot.pathfinder.setGoal(null);
+                        this.state = 'FINDING';
+                        break;
+                    }
+                    
+                    // Original distance check (kept as backup for goal_reached event)
                     if (this.targetBlock && bot.entity?.position && bot.entity.position.distanceTo(this.targetBlock.position) < 2.5) {
                         this.log('Reached target. Switching to ACTING.');
                         bot.pathfinder.setGoal(null); // Stop moving
@@ -69,12 +145,63 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         }
     }
 
+    // Helper to set movement target and start movement timer
+    private setMovementTarget(bot: Bot, block: any, intention: 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' | 'GATHER_WOOD', goalRange: number = 1) {
+        this.targetBlock = block;
+        this.intention = intention;
+        this.state = 'MOVING';
+        this.movementStartTime = Date.now(); // Fix 1: Track when movement started
+        bot.pathfinder.setGoal(new GoalNear(block.position.x, block.position.y, block.position.z, goalRange));
+    }
+    
+    // Fix 4: Validate that the block matches what we expect for our intention
+    private validateBlockForIntention(block: any): boolean {
+        if (!block) return false;
+        
+        switch (this.intention) {
+            case 'HARVEST':
+                // Must be a mature crop
+                const cropNames = ['wheat', 'carrots', 'potatoes', 'beetroots'];
+                if (!cropNames.includes(block.name)) return false;
+                const metadata = block.metadata as any;
+                return (block.name === 'beetroots') ? metadata === 3 : metadata === 7;
+                
+            case 'PLANT':
+                // Must be farmland with air above
+                return block.name === 'farmland';
+                
+            case 'TILL':
+                // Must be dirt or grass
+                return block.name === 'grass_block' || block.name === 'dirt';
+                
+            case 'MAKE_WATER':
+                // Must be diggable (dirt/grass)
+                return block.name === 'grass_block' || block.name === 'dirt';
+
+            case 'GATHER_WOOD':
+                // Must be a log or stem
+                return block.name.includes('_log') || block.name.includes('_stem');
+
+            case 'NONE':
+                // If crafting, allow crafting table
+                if (this.craftingItem) {
+                    return block.name === 'crafting_table';
+                }
+                return false;
+                
+            default:
+                return false;
+        }
+    }
+
     private async findTask(bot: Bot) {
         // 1. Find mature crops to harvest
         this.log('Looking for tasks...');
         const harvestable = bot.findBlock({
             matching: (block) => {
-                if (!block) return false;
+                if (!block || !block.position) return false;
+                // Fix 4: Skip blocks that have failed before
+                if (this.failedBlocks.has(block.position.toString())) return false;
                 const names = ['wheat', 'carrots', 'potatoes', 'beetroots'];
                 if (!names.includes(block.name)) return false;
                 const metadata = block.metadata as any;
@@ -84,11 +211,8 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         });
 
         if (harvestable) {
-            this.targetBlock = harvestable;
-            this.intention = 'HARVEST';
-            this.state = 'MOVING';
             this.log(`Found harvestable ${harvestable.name} at ${harvestable.position}. Moving...`);
-            bot.pathfinder.setGoal(new GoalNear(harvestable.position.x, harvestable.position.y, harvestable.position.z, 1));
+            this.setMovementTarget(bot, harvestable, 'HARVEST');
             return;
         }
 
@@ -96,6 +220,8 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         const emptyFarmlands = bot.findBlocks({
             matching: (block) => {
                 if (!block || !block.position || block.name !== 'farmland') return false;
+                // Fix 4: Skip blocks that have failed before
+                if (this.failedBlocks.has(block.position.toString())) return false;
                 const blockAbove = bot.blockAt(block.position.offset(0, 1, 0));
                 if (!blockAbove || blockAbove.name !== 'air') return false;
                 if (blockAbove.light < 9) return false;
@@ -120,11 +246,8 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
             if (bestFarmland) {
                 const cropToPlant = this.getOptimalCrop(bot, bestFarmland.position);
                 if (cropToPlant) {
-                    this.targetBlock = bestFarmland;
-                    this.intention = 'PLANT';
-                    this.state = 'MOVING';
                     this.log(`Found farmland at ${bestFarmland.position}. Plan to plant ${cropToPlant}. Moving...`);
-                    bot.pathfinder.setGoal(new GoalNear(bestFarmland.position.x, bestFarmland.position.y, bestFarmland.position.z, 1));
+                    this.setMovementTarget(bot, bestFarmland, 'PLANT');
                     return;
                 }
             }
@@ -158,11 +281,8 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                 })[0];
 
                 if (bestTillable) {
-                    this.targetBlock = bestTillable;
-                    this.intention = 'TILL';
-                    this.state = 'MOVING';
                     this.log(`Found tillable ground (hydrated) at ${bestTillable.position}. Moving...`);
-                    bot.pathfinder.setGoal(new GoalNear(bestTillable.position.x, bestTillable.position.y, bestTillable.position.z, 1));
+                    this.setMovementTarget(bot, bestTillable, 'TILL');
                     return;
                 }
             }
@@ -175,6 +295,22 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         // 5. Check needs (crafting etc)
         this.log('No immediate tasks found. Checking needs...');
         await this.checkNeeds(bot);
+
+        // 6. If still no hoe, try to gather wood
+        if (this.state === 'FINDING') {
+            const hasHoe = bot.inventory.items().some(item => item.name.includes('hoe'));
+            if (!hasHoe) {
+                const logBlock = bot.findBlock({
+                    matching: block => block && (block.name.includes('_log') || block.name.includes('_stem')),
+                    maxDistance: 16
+                });
+                if (logBlock && !this.failedBlocks.has(logBlock.position.toString())) {
+                    this.log(`Found log at ${logBlock.position}. Moving to gather wood.`);
+                    this.setMovementTarget(bot, logBlock, 'GATHER_WOOD');
+                    return;
+                }
+            }
+        }
 
         if (this.state === 'FINDING') {
             this.state = 'IDLE';
@@ -189,9 +325,16 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
     private async planField(bot: Bot) {
         this.log('Planning mode: Searching for water or suitable farm location...');
 
+        // Check if we have a hoe - can't till without one
+        const hoe = bot.inventory.items().find(item => item.name.includes('hoe'));
+        if (!hoe) {
+            this.log('No hoe found. Cannot plan or till fields. Will check needs for crafting.');
+            return;
+        }
+
         // Strategy A: Find existing water
         const waterBlock = bot.findBlock({
-            matching: block => block.name === 'water' || block.name === 'flowing_water',
+            matching: block => block && (block.name === 'water' || block.name === 'flowing_water'),
             maxDistance: 32
         });
 
@@ -209,11 +352,8 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                 const block = bot.blockAt(pos);
                 const above = bot.blockAt(pos.offset(0, 1, 0));
                 if (block && (block.name === 'grass_block' || block.name === 'dirt') && above && above.name === 'air') {
-                    this.targetBlock = block;
-                    this.intention = 'TILL'; // It's near water, so regular till applies
-                    this.state = 'MOVING';
                     this.log(`Found water at ${waterBlock.position}. Targeting adjacent land at ${pos} to till.`);
-                    bot.pathfinder.setGoal(new GoalNear(pos.x, pos.y, pos.z, 1));
+                    this.setMovementTarget(bot, block, 'TILL');
                     return;
                 }
             }
@@ -225,7 +365,7 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
             this.log('Have water bucket. Looking for a spot to dig a hole for water...');
             // Find a flat spot (dirt/grass)
             const flatSpot = bot.findBlock({
-                matching: block => (block.name === 'grass_block' || block.name === 'dirt'),
+                matching: block => block && (block.name === 'grass_block' || block.name === 'dirt'),
                 maxDistance: 16,
                 useExtraInfo: (block) => {
                     const above = bot.blockAt(block.position.offset(0, 1, 0));
@@ -234,18 +374,15 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
             });
 
             if (flatSpot) {
-                this.targetBlock = flatSpot;
-                this.intention = 'MAKE_WATER';
-                this.state = 'MOVING';
                 this.log(`Found spot for water source at ${flatSpot.position}. Moving to dig...`);
-                bot.pathfinder.setGoal(new GoalNear(flatSpot.position.x, flatSpot.position.y, flatSpot.position.z, 2)); // Stand nearby, not on top
+                this.setMovementTarget(bot, flatSpot, 'MAKE_WATER', 2); // Stand nearby, not on top
                 return;
             }
         } else {
             // Don't spam request
             if (Date.now() - this.lastRequestTime > 30000) {
                 // Check if we are totally dry (no crops, no water)
-                const crops = bot.findBlock({ matching: b => ['wheat', 'carrots', 'potatoes', 'beetroots'].includes(b.name), maxDistance: 32 });
+                const crops = bot.findBlock({ matching: b => b && ['wheat', 'carrots', 'potatoes', 'beetroots'].includes(b.name), maxDistance: 32 });
                 if (!crops && !waterBlock) {
                     bot.chat("I can't find any water or farms! If you give me a water bucket, I can make a farm.");
                     this.lastRequestTime = Date.now();
@@ -262,7 +399,16 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
 
         const block = bot.blockAt(this.targetBlock.position);
         if (!block) {
+            this.log('Target block no longer exists. Back to FINDING.');
             this.state = 'FINDING';
+            return;
+        }
+
+        // Fix 4: Validate block type matches our intention before acting
+        if (!this.validateBlockForIntention(block)) {
+            this.log(`Block type mismatch: expected block for ${this.intention}, got ${block.name}. Back to FINDING.`);
+            this.state = 'FINDING';
+            this.intention = 'NONE';
             return;
         }
 
@@ -350,6 +496,11 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                     this.log('Failed to place water (missing bucket or block below).');
                 }
                 this.state = 'FINDING';
+            } else if (this.intention === 'GATHER_WOOD') {
+                this.log('Gathering wood...');
+                await bot.dig(block);
+                this.log('Wood gathered.');
+                this.state = 'FINDING';
             } else {
                 this.log(`Unknown intention ${this.intention}, resetting.`);
                 this.state = 'FINDING';
@@ -366,22 +517,36 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
 
     private async collectItems(bot: Bot) {
         if (!bot.entity) return;
+        
+        // Fix 3: Initialize collection start time if not set
+        if (this.collectionStartTime === 0) {
+            this.collectionStartTime = Date.now();
+        }
+        
         const botPos = bot.entity.position;
         const itemEntity = bot.nearestEntity(entity =>
             entity.name === 'item' &&
-            botPos.distanceTo(entity.position) < 4
+            botPos.distanceTo(entity.position) < 6 // Increased range slightly
         );
 
         if (itemEntity) {
-            bot.pathfinder.setGoal(new GoalNear(itemEntity.position.x, itemEntity.position.y, itemEntity.position.z, 0.5));
+            // Only set a new goal if we're not already moving toward an item
+            const currentGoal = bot.pathfinder.goal;
+            if (!currentGoal) {
+                bot.pathfinder.setGoal(new GoalNear(itemEntity.position.x, itemEntity.position.y, itemEntity.position.z, 0.5));
+            }
         } else {
             this.log('No items to collect nearby. Back to FINDING.');
+            this.collectionStartTime = 0; // Reset for next collection
             this.state = 'FINDING';
+            return;
         }
 
-        // Timeout if stuck
-        if (Date.now() - this.lastActionTime > 5000) {
+        // Fix 3: Use dedicated collection timeout
+        if (Date.now() - this.collectionStartTime > this.COLLECTION_TIMEOUT) {
             this.log('Collecting timed out. Back to FINDING.');
+            this.collectionStartTime = 0; // Reset for next collection
+            bot.pathfinder.setGoal(null); // Stop trying to collect
             this.state = 'FINDING';
         }
     }
@@ -509,6 +674,7 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         if (seeds.length === 0) {
             const harvestable = bot.findBlock({
                 matching: (block) => {
+                    if (!block) return false;
                     const names = ['wheat', 'carrots', 'potatoes', 'beetroots'];
                     if (!names.includes(block.name)) return false;
                     const metadata = block.metadata as any;
