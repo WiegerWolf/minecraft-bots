@@ -295,22 +295,43 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         );
 
         if (!hasHoe) {
-            // Check for materials
-            const planks = inventory.find(item => item.name.endsWith('_planks'));
-            const sticks = inventory.find(item => item.name === 'stick');
-            const logs = inventory.find(item => item.name.includes('_log') || item.name.includes('_stem'));
+            // Check for materials with quantity awareness
+            // Standard Wooden Hoe recipe: 2 Sticks, 3 Planks (any wood)
 
-            if (!planks && logs) {
-                await this.tryCraft(bot, logs.name.replace('_log', '_planks').replace('_stem', '_planks'));
-                return;
+            // Helper to count items matching a predicate
+            const count = (predicate: (item: any) => boolean) =>
+                inventory.filter(predicate).reduce((acc, item) => acc + item.count, 0);
+
+            const numSticks = count(i => i.name === 'stick');
+            const numPlanks = count(i => i.name.endsWith('_planks'));
+            const numLogs = count(i => i.name.includes('_log') || i.name.includes('_stem'));
+
+            // Strategy: Ensure we have enough planks for our immediate needs (sticks + hoe)
+            // If we lack sticks (need 2), we need 2 planks to make them.
+            // If we lack planks for the hoe (need 3) OR for the sticks (need 2), we should craft planks from logs.
+
+            // 1. Try to craft planks if we're low on planks or need them for sticks
+            // We need 3 planks for hoe. If we need sticks, we need +2 planks.
+            const planksNeeded = 3 + (numSticks < 2 ? 2 : 0);
+
+            if (numPlanks < planksNeeded && numLogs > 0) {
+                const logItem = inventory.find(i => i.name.includes('_log') || i.name.includes('_stem'));
+                if (logItem) {
+                    const plankName = logItem.name.replace('_log', '_planks').replace('_stem', '_planks');
+                    // Craft planks from logs
+                    await this.tryCraft(bot, plankName);
+                    return;
+                }
             }
 
-            if (!sticks && planks) {
+            // 2. Try to craft sticks if we don't have enough (need 2)
+            if (numSticks < 2 && numPlanks >= 2) {
                 await this.tryCraft(bot, 'stick');
                 return;
             }
 
-            // If we have materials, try to craft a hoe
+            // 3. If we have materials, try to craft a hoe
+            // Note: canCraft check should pass now if we have items, OR if we have table logic fixed
             const canCraftHoe = this.canCraft(bot, 'wooden_hoe');
             if (canCraftHoe) {
                 const success = await this.tryCraft(bot, 'wooden_hoe', (target) => {
@@ -321,7 +342,7 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
             }
 
             if (Date.now() - this.lastRequestTime > 30000) {
-                bot.chat("I need a wooden hoe! I have some materials but maybe not enough or I'm missing a crafting table.");
+                bot.chat(`I need a wooden hoe! I have ${numLogs} logs, ${numPlanks} planks, ${numSticks} sticks. Missing something or a table?`);
                 this.lastRequestTime = Date.now();
             }
             return;
