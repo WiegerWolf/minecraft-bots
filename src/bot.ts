@@ -1,6 +1,8 @@
 import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
 import { pathfinder, goals } from 'mineflayer-pathfinder';
 import { faker } from '@faker-js/faker';
+import { FarmingRole } from './roles/FarmingRole';
+import type { Role } from './roles/Role';
 
 const { GoalNear } = goals;
 
@@ -22,10 +24,36 @@ const bot: Bot = mineflayer.createBot(config);
 
 bot.loadPlugin(pathfinder);
 
+// Role management
+const roles: Record<string, Role> = {
+    farming: new FarmingRole()
+};
+let currentRole: Role | null = null;
+
+function setRole(roleName: string | null) {
+    if (currentRole) {
+        currentRole.stop(bot);
+    }
+
+    if (roleName && roles[roleName]) {
+        currentRole = roles[roleName];
+        currentRole.start(bot);
+    } else {
+        currentRole = null;
+    }
+}
+
 // Event: Bot spawned into the world
 bot.on('spawn', () => {
     console.log('✅ Bot has spawned!');
-    console.log(`📍 Position: ${bot.entity.position}`);
+    console.log(`📍 Position: ${bot.entity?.position || 'unknown'}`);
+
+    // Periodically update the current role
+    setInterval(() => {
+        if (currentRole) {
+            currentRole.update(bot);
+        }
+    }, 500);
 });
 
 // Event: Chat messages
@@ -34,17 +62,34 @@ bot.on('chat', (username: string, message: string) => {
 
     console.log(`💬 ${username}: ${message}`);
 
+    const args = message.trim().split(/\s+/);
+    const command = args[0]?.toLowerCase();
+    if (!command) return;
+
     // Simple command handling
-    if (message === 'hello') {
+    if (command === 'hello') {
         bot.chat(`Hello, ${username}!`);
     }
 
-    if (message === 'come') {
+    if (command === 'come') {
         const player = bot.players[username];
-        if (player?.entity) {
+        if (player?.entity && bot.entity?.position) { // Added null check for bot.entity.position
             const pos = player.entity.position;
             bot.chat(`Coming to you, ${username}!`);
             bot.pathfinder.setGoal(new GoalNear(pos.x, pos.y, pos.z, 1));
+        } else if (!bot.entity?.position) {
+            bot.chat("I don't know where I am right now!");
+        }
+    }
+
+    if (command === 'farm') {
+        const subCommand = args[1]?.toLowerCase();
+        if (subCommand === 'start') {
+            setRole('farming');
+        } else if (subCommand === 'stop') {
+            setRole(null);
+        } else {
+            bot.chat('Usage: farm start | farm stop');
         }
     }
 });
