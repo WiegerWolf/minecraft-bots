@@ -1,4 +1,7 @@
 import mineflayer from 'mineflayer';
+import { pathfinder, goals } from 'mineflayer-pathfinder';
+
+const { GoalNear } = goals;
 
 // Bot configuration
 const config = {
@@ -11,6 +14,8 @@ const config = {
 
 // Create the bot
 const bot = mineflayer.createBot(config);
+
+bot.loadPlugin(pathfinder);
 
 // Event: Bot spawned into the world
 bot.on('spawn', () => {
@@ -32,8 +37,9 @@ bot.on('chat', (username, message) => {
   if (message === 'come') {
     const player = bot.players[username];
     if (player && player.entity) {
+      const pos = player.entity.position;
       bot.chat(`Coming to you, ${username}!`);
-      bot.pathfinder?.goto(player.entity.position);
+      bot.pathfinder.setGoal(new GoalNear(pos.x, pos.y, pos.z, 1));
     }
   }
 });
