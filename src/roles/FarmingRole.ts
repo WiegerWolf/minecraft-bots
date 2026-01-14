@@ -313,12 +313,15 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
             // If we have materials, try to craft a hoe
             const canCraftHoe = this.canCraft(bot, 'wooden_hoe');
             if (canCraftHoe) {
-                await this.tryCraft(bot, 'wooden_hoe', (target) => {
+                const success = await this.tryCraft(bot, 'wooden_hoe', (target) => {
                     this.targetBlock = target;
                     this.state = 'MOVING';
                 });
-            } else if (Date.now() - this.lastRequestTime > 30000) {
-                bot.chat("I need a hoe! I have some materials but maybe not enough or I'm missing something.");
+                if (success) return;
+            }
+
+            if (Date.now() - this.lastRequestTime > 30000) {
+                bot.chat("I need a wooden hoe! I have some materials but maybe not enough or I'm missing a crafting table.");
                 this.lastRequestTime = Date.now();
             }
             return;
