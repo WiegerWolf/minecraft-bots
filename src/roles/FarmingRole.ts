@@ -180,10 +180,7 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         switch (this.intention) {
             case 'HARVEST':
                 // Must be a mature crop
-                const cropNames = ['wheat', 'carrots', 'potatoes', 'beetroots'];
-                if (!cropNames.includes(block.name)) return false;
-                const metadata = block.metadata as any;
-                return (block.name === 'beetroots') ? metadata === 3 : metadata === 7;
+                return this.isMature(block);
 
             case 'PLANT':
                 // Must be farmland with air above
@@ -207,10 +204,33 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                     return block.name === 'crafting_table';
                 }
                 return false;
-
             default:
                 return false;
         }
+    }
+
+    private isMature(block: any): boolean {
+        if (!block) return false;
+        const cropNames = ['wheat', 'carrots', 'potatoes', 'beetroots', 'crops'];
+        if (!cropNames.includes(block.name)) return false;
+
+        // Try getting age from properties (modern versions)
+        const props = block.getProperties();
+        let age = -1;
+        let maxAge = block.name === 'beetroots' ? 3 : 7;
+
+        if (props && props.age !== undefined) {
+            age = parseInt(props.age);
+        } else {
+            // Fallback to metadata
+            age = block.metadata as any;
+        }
+
+        const mature = age >= maxAge;
+        if (mature) {
+            this.log(`Detected mature ${block.name} at ${block.position} (age/meta: ${age}/${maxAge})`);
+        }
+        return mature;
     }
 
     private async findTask(bot: Bot) {
@@ -233,12 +253,10 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
                 const failedAt = this.failedBlocks.get(posStr);
                 if (failedAt && Date.now() - failedAt < this.RETRY_COOLDOWN) return false;
 
-                const names = ['wheat', 'carrots', 'potatoes', 'beetroots'];
-                if (!names.includes(block.name)) return false;
-                const metadata = block.metadata as any;
-                return (block.name === 'beetroots') ? metadata === 3 : metadata === 7;
+                return this.isMature(block);
             },
-            maxDistance: 32
+            maxDistance: 32,
+            useExtraInfo: true
         });
 
         if (harvestable) {
@@ -435,12 +453,13 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         const waterBucket = bot.inventory.items().find(i => i.name === 'water_bucket');
         if (waterBucket) {
             const flatSpot = bot.findBlock({
-                matching: block => block && (block.name === 'grass_block' || block.name === 'dirt'),
-                maxDistance: 16,
-                useExtraInfo: (block) => {
+                matching: block => {
+                    if (!block || !(block.name === 'grass_block' || block.name === 'dirt')) return false;
                     const above = bot.blockAt(block.position.offset(0, 1, 0));
-                    return !!(above && above.name === 'air');
-                }
+                    return !!(above && (above.name === 'air' || above.name === 'cave_air' || above.name === 'void_air'));
+                },
+                maxDistance: 16,
+                useExtraInfo: true
             });
 
             if (flatSpot) {
@@ -693,14 +712,9 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
         }
         if (seeds.length === 0) {
             const harvestable = bot.findBlock({
-                matching: (block) => {
-                    if (!block) return false;
-                    const names = ['wheat', 'carrots', 'potatoes', 'beetroots'];
-                    if (!names.includes(block.name)) return false;
-                    const metadata = block.metadata as any;
-                    return (block.name === 'beetroots') ? metadata === 3 : metadata === 7;
-                },
-                maxDistance: 32
+                matching: (block) => this.isMature(block),
+                maxDistance: 32,
+                useExtraInfo: true
             });
             if (!harvestable && Date.now() - this.lastRequestTime > 30000) {
                 bot.chat("I'm out of seeds and there's nothing to harvest!");
