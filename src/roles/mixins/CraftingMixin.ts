@@ -74,6 +74,22 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
             // If no crafting table nearby, check if we need one (3x3 recipe)
             const recipes = bot.recipesFor(item.id, null, 1, craftingTable);
 
+            // Fix: If we have a recipe and don't need a table (or found one), but craftingTable is null (meaning it's a 2x2 recipe), do it.
+            if (!craftingTable && recipes.length > 0) {
+                this.log(`Crafting ${itemName} using 2x2 inventory recipe...`);
+                try {
+                    const recipe = recipes[0];
+                    if (recipe) {
+                        await bot.craft(recipe, 1, undefined);
+                        return true;
+                    }
+                } catch (err) {
+                    console.error('Crafting 2x2 failed:', err);
+                    this.log(`Failed to craft 2x2: ${err}`);
+                    return false;
+                }
+            }
+
             if (recipes.length === 0) {
                 this.log(`No recipe found for ${itemName} with current table/inventory. Checking 2x2...`);
                 // Check if we can craft it in 2x2
