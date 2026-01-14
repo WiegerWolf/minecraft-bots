@@ -2,19 +2,18 @@ import type { Bot } from 'mineflayer';
 import type { Role } from './Role';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { CraftingMixin } from './mixins/CraftingMixin';
 const minecraftData = require('minecraft-data');
 
 const { GoalNear } = goals;
 
-export class FarmingRole implements Role {
+export class FarmingRole extends CraftingMixin(class { }) implements Role {
     name = 'farming';
     private active = false;
     private targetBlock: any = null;
     private state: 'IDLE' | 'FINDING' | 'MOVING' | 'ACTING' | 'COLLECTING' | 'CRAFTING' = 'IDLE';
     private lastActionTime = 0;
-    private lastRequestTime = 0;
     private isUpdating = false;
-    private craftingItem: string | null = null;
 
     start(bot: Bot) {
         this.active = true;
@@ -172,21 +171,12 @@ export class FarmingRole implements Role {
 
         try {
             if (this.craftingItem) {
-                const mcData = minecraftData(bot.version);
-                const item = mcData.itemsByName[this.craftingItem];
-                if (item) {
-                    const recipes = bot.recipesFor(item.id, null, 1, block.name === 'crafting_table' ? block : null);
-                    const recipe = recipes[0];
-                    if (recipe) {
-                        bot.chat(`Crafting ${this.craftingItem}...`);
-                        await bot.craft(recipe, 1, block.name === 'crafting_table' ? block : undefined);
-                        this.craftingItem = null;
-                        this.state = 'FINDING';
-                        return;
-                    }
+                const success = await this.performCraftingAction(bot, block);
+                if (success) {
+                    this.state = 'FINDING';
+                } else {
+                    this.state = 'FINDING'; // Reset even if failed to avoid loop
                 }
-                this.craftingItem = null; // Clear if we couldn't craft
-                this.state = 'FINDING';
                 return;
             }
 
@@ -323,7 +313,10 @@ export class FarmingRole implements Role {
             // If we have materials, try to craft a hoe
             const canCraftHoe = this.canCraft(bot, 'wooden_hoe');
             if (canCraftHoe) {
-                await this.tryCraft(bot, 'wooden_hoe');
+                await this.tryCraft(bot, 'wooden_hoe', (target) => {
+                    this.targetBlock = target;
+                    this.state = 'MOVING';
+                });
             } else if (Date.now() - this.lastRequestTime > 30000) {
                 bot.chat("I need a hoe! I have some materials but maybe not enough or I'm missing something.");
                 this.lastRequestTime = Date.now();
@@ -344,73 +337,6 @@ export class FarmingRole implements Role {
 
             if (!harvestable && Date.now() - this.lastRequestTime > 30000) {
                 bot.chat("I'm out of seeds and there's nothing to harvest! I need some seeds, carrots, or potatoes please.");
-                this.lastRequestTime = Date.now();
-            }
-        }
-    }
-
-    private canCraft(bot: Bot, itemName: string): boolean {
-        const mcData = minecraftData(bot.version);
-        const item = mcData.itemsByName[itemName];
-        if (!item) return false;
-
-        // Check 2x2 first
-        let recipes = bot.recipesFor(item.id, null, 1, null);
-        if (recipes.length > 0) return true;
-
-        // Check 3x3 if a table is nearby
-        const craftingTable = bot.findBlock({
-            matching: (block) => block.name === 'crafting_table',
-            maxDistance: 20
-        });
-
-        if (craftingTable) {
-            recipes = bot.recipesFor(item.id, null, 1, craftingTable);
-            return recipes.length > 0;
-        }
-
-        return false;
-    }
-
-    private async tryCraft(bot: Bot, itemName: string) {
-        const mcData = minecraftData(bot.version);
-        const item = mcData.itemsByName[itemName];
-        if (!item) return;
-
-        // Find a crafting table nearby
-        const craftingTable = bot.findBlock({
-            matching: (block) => block.name === 'crafting_table',
-            maxDistance: 20
-        });
-
-        const recipes = bot.recipesFor(item.id, null, 1, craftingTable);
-        if (recipes.length === 0) {
-            // Check if we can craft it in 2x2
-            const recipes2x2 = bot.recipesFor(item.id, null, 1, null);
-            if (recipes2x2.length > 0) {
-                try {
-                    bot.chat(`Crafting ${itemName}...`);
-                    const recipe2x2 = recipes2x2[0];
-                    if (recipe2x2) {
-                        await bot.craft(recipe2x2, 1, undefined);
-                    }
-                    this.state = 'FINDING';
-                    return;
-                } catch (err) {
-                    console.error('Crafting 2x2 failed:', err);
-                }
-            }
-            return;
-        }
-
-        if (craftingTable) {
-            this.state = 'MOVING'; // Use MOVING to get there
-            this.craftingItem = itemName;
-            this.targetBlock = craftingTable;
-            bot.pathfinder.setGoal(new GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 1));
-        } else {
-            if (Date.now() - this.lastRequestTime > 30000) {
-                bot.chat(`I have materials for ${itemName}, but I can't find a crafting table!`);
                 this.lastRequestTime = Date.now();
             }
         }
