@@ -2,11 +2,11 @@
   "name": "minecraft-bots",
   "version": "1.0.0",
   "description": "Minecraft bot using Mineflayer",
-  "main": "src/bot.js",
+  "main": "src/bot.ts",
   "type": "module",
   "scripts": {
-    "start": "bun run src/bot.js",
-    "dev": "bun --watch src/bot.js"
+    "start": "bun run src/bot.ts",
+    "dev": "bun --watch src/bot.ts"
   },
   "keywords": [
     "minecraft",
