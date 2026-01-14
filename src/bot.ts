@@ -84,12 +84,11 @@ bot.on('chat', (username: string, message: string) => {
 
     if (command === 'farm') {
         const subCommand = args[1]?.toLowerCase();
-        if (subCommand === 'start') {
-            setRole('farming');
-        } else if (subCommand === 'stop') {
+        if (subCommand === 'stop') {
             setRole(null);
         } else {
-            bot.chat('Usage: farm start | farm stop');
+            // Default to start if no subcommand or 'start'
+            setRole('farming');
         }
     }
 });
