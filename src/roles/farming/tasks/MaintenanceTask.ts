@@ -21,7 +21,8 @@ export class MaintenanceTask implements Task {
             if (planks < 2 && logs === 0) {
                 const tree = bot.findBlock({
                     matching: (b) => {
-                        if (!b) return false;
+                        // STRICT CHECK: Ensure block and position exist before accessing them
+                        if (!b || !b.position) return false;
                         
                         // Check name first
                         const name = b.name;
@@ -45,11 +46,6 @@ export class MaintenanceTask implements Task {
                         range: 3.0, // Standard reach
                         task: this
                     };
-                } else {
-                     // Only warn if we are truly stuck (empty inventory) to avoid spam
-                     if (bot.inventory.emptySlotCount() === bot.inventory.slots.length && Math.random() < 0.1) {
-                         role.log("[Maintenance] Needs wood but found none nearby.");
-                     }
                 }
             }
             
@@ -78,8 +74,9 @@ export class MaintenanceTask implements Task {
                         point: center,
                         maxDistance: 5,
                         matching: (b) => {
-                            if (!b || !b.position) return false;
+                            if (!b || !b.position) return false; // STRICT CHECK
                             if (b.name === 'farmland' || b.name === 'water') return false;
+                            
                             const key = b.position.floored().toString();
                             if (role.failedBlocks.has(key)) return false;
 
