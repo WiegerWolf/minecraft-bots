@@ -20,7 +20,7 @@ export class PlantTask implements Task {
         // 2. Find empty farmland near center
         const farmAnchor = role.getNearestPOI(bot, 'farm_center')?.position || bot.entity.position;
 
-        // FIX: Use findBlocks (plural) to get a list, then filter/sort
+        // Use findBlocks (plural) to get a list
         const farmlandBlocks = bot.findBlocks({
             point: farmAnchor,
             maxDistance: 32,
@@ -46,15 +46,19 @@ export class PlantTask implements Task {
             // Sort by distance to bot
             validSpots.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
             const targetPos = validSpots[0]; // Closest valid spot
-            const targetBlock = bot.blockAt(targetPos);
+            
+            // FIX: Explicit undefined check
+            if (targetPos) {
+                const targetBlock = bot.blockAt(targetPos);
 
-            if (targetBlock) {
-                 return {
-                    priority: 25, // CRITICAL: Higher than TillTask (15)
-                    description: `Planting on farmland at ${targetPos}`,
-                    target: targetBlock,
-                    task: this
-                };
+                if (targetBlock) {
+                     return {
+                        priority: 25, // CRITICAL: Higher than TillTask (15)
+                        description: `Planting on farmland at ${targetPos}`,
+                        target: targetBlock,
+                        task: this
+                    };
+                }
             }
         }
 
