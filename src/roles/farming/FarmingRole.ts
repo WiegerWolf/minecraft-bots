@@ -29,15 +29,19 @@ export class FarmingRole implements Role {
 
         // Initialize blackboard
         this.blackboard = createBlackboard();
-        
+
         if (options?.center) {
-            // Validate the provided center
+            // FIX: Validate the provided center has sane Y-level
             const centerPos = options.center;
-            if (centerPos.y > -60 && centerPos.y < 320) { // Sane Y range
+            // In Minecraft 1.18+, valid Y range is -64 to 320
+            // In older versions, it's 0 to 256
+            // Let's use conservative range: -60 to 300
+            if (centerPos.y >= -60 && centerPos.y <= 300) {
                 this.blackboard.farmCenter = centerPos.clone ? centerPos.clone() : centerPos;
                 console.log(`[Farming] Initial farm center set to ${this.blackboard.farmCenter}`);
             } else {
-                console.log(`[Farming] Ignoring invalid farm center at Y=${centerPos.y}`);
+                console.log(`[Farming] ⚠️ Ignoring invalid farm center at Y=${centerPos.y} (out of range)`);
+                // Don't set farm center - let bot discover it naturally
             }
         }
 
@@ -59,26 +63,26 @@ export class FarmingRole implements Role {
                 // PHASE 1: PERCEIVE
                 // ═══════════════════════════════════════════════
                 updateBlackboard(this.bot, this.blackboard);
-                
+
                 // Debug output every 10 seconds
                 if (Date.now() % 10000 < 150) {
                     this.logStatus();
                 }
-                
+
                 // ═══════════════════════════════════════════════
                 // PHASE 2: DECIDE & ACT
                 // ═══════════════════════════════════════════════
                 const status = await this.behaviorTree.tick(this.bot, this.blackboard);
-                
+
                 if (status === 'success') {
                     this.blackboard.consecutiveIdleTicks = 0;
                 }
-                
+
                 // ═══════════════════════════════════════════════
                 // PHASE 3: WAIT
                 // ═══════════════════════════════════════════════
                 await new Promise(resolve => setTimeout(resolve, 100));
-                
+
             } catch (error) {
                 console.error('[Farming] Loop error:', error);
                 await new Promise(resolve => setTimeout(resolve, 1000));
