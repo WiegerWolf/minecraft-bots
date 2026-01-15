@@ -233,7 +233,24 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     }
 
     private scanSurroundings(bot: Bot) {
-        // ... (Keep existing implementation)
+        this.log("🔍 DEBUG: Scanning nearby blocks (Radius 16):");
+        const counts: Record<string, number> = {};
+        const pos = bot.entity.position;
+        const radius = 16;
+        for (let x = -radius; x <= radius; x += 2) { 
+            for (let y = -2; y <= 6; y++) {
+                for (let z = -radius; z <= radius; z += 2) {
+                    const block = bot.blockAt(pos.offset(x, y, z));
+                    if (block && !['air', 'cave_air', 'water', 'grass_block', 'sand', 'dirt', 'stone'].includes(block.name)) {
+                         counts[block.name] = (counts[block.name] || 0) + 1;
+                    }
+                }
+            }
+        }
+        const summary = Object.entries(counts)
+            .sort((a, b) => b[1] - a[1]).slice(0, 15)
+            .map(([name, count]) => `${name}: ${count}`).join(', ');
+        this.log(`Interesting blocks: [${summary || 'None'}]`);
     }
 
     public blacklistBlock(pos: any) {
