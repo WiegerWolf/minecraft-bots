@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import type { Role } from '../Role';
+import type { Role } from '../../Role';
 import { goals, Movements } from 'mineflayer-pathfinder';
 import { CraftingMixin } from '../mixins/CraftingMixin';
 import { KnowledgeMixin } from '../mixins/KnowledgeMixin';
@@ -9,6 +9,7 @@ import { PlantTask } from './tasks/PlantTask';
 import { LogisticsTask } from './tasks/LogisticsTask';
 import { TillTask } from './tasks/TillTask';
 import { MaintenanceTask } from './tasks/MaintenanceTask';
+import { PickupTask } from './tasks/PickupTask';
 
 const { GoalNear, GoalXZ } = goals;
 
@@ -31,6 +32,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     constructor() {
         super();
         this.tasks = [
+            new PickupTask(),      // New: Prioritize picking up items
             new MaintenanceTask(),
             new LogisticsTask(),   
             new HarvestTask(),     
@@ -57,7 +59,6 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         
         this.log('🚜 Modular Farming Role started.');
         
-        // Set farm center
         if (options?.center) {
             this.rememberPOI('farm_center', options.center);
             this.log(`📍 Farm center set to ${options.center}`);
@@ -83,7 +84,6 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         if (!this.active) return;
 
         // 0. Enforce Proximity to Farm Center
-        // If we are wandering too far and have no critical work, move back.
         const centerPOI = this.getNearestPOI(bot, 'farm_center');
         if (centerPOI && !this.currentProposal) {
             const dist = bot.entity.position.distanceTo(centerPOI.position);
@@ -94,7 +94,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             }
         }
 
-        // 1. Moving/Executing Current Proposal
+        // 1. Moving/Executing
         if (this.currentProposal && this.currentProposal.target) {
             const dist = bot.entity.position.distanceTo(this.currentProposal.target.position);
             const reach = this.currentProposal.range || 3.5;
@@ -128,9 +128,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         // 2. Find new work
         let bestProposal: WorkProposal | null = null;
 
-        for (const task of this.tasks) {
+        for (const tasks of this.tasks) {
             try {
-                const proposal = await task.findWork(bot, this);
+                const proposal = await tasks.findWork(bot, this);
                 if (!proposal) continue;
 
                 if (proposal.priority >= 100) {
@@ -142,7 +142,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                     bestProposal = proposal;
                 }
             } catch (err) {
-                console.error(`Error in task ${task.name}:`, err);
+                console.error(`Error in task ${tasks.name}:`, err);
             }
         }
 
@@ -165,22 +165,29 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             // Idle handling
             this.idleTicks++;
             const isInventoryEmpty = bot.inventory.items().length === 0;
-            const wanderThreshold = isInventoryEmpty ? 10 : 120; // Wander fast if empty (5s vs 60s)
-
-            if (this.idleTicks % 40 === 0) {
-                this.printDebugInventory(bot);
-            }
             
+            if (this.idleTicks % 100 === 0) { // Every ~5 seconds
+                this.log("💤 Idle... Scanning surroundings:");
+                const nearby = bot.findBlock({ matching: (b) => b.name !== 'air', maxDistance: 5, count: 3 });
+                // @ts-ignore
+                if (nearby) this.log(`Found nearby: ${nearby.name} at ${nearby.position}`);
+                else this.log("No blocks found nearby? Am I in the void?");
+
+                if (isInventoryEmpty) {
+                    bot.chat("I need seeds or wood to start farming! I can't find any nearby.");
+                }
+            }
+
+            const wanderThreshold = isInventoryEmpty ? 10 : 120;
+
             if (this.idleTicks > wanderThreshold) {
                 this.log(isInventoryEmpty ? "🏃 Searching for resources..." : "🚶 Wandering...");
                 this.idleTicks = 0;
                 
-                // Wander randomly
                 const x = bot.entity.position.x + (Math.random() * 40 - 20);
                 const z = bot.entity.position.z + (Math.random() * 40 - 20);
                 bot.pathfinder.setGoal(new GoalNear(x, bot.entity.position.y, z, 1));
                 
-                // Set a dummy proposal so we don't spam new goals while moving
                 this.currentProposal = {
                     priority: 1,
                     description: "Wandering",
@@ -205,7 +212,6 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     public blacklistBlock(pos: any) {
         if (pos && pos.toString) {
             const key = pos.toString();
-            // this.log(`⛔ Blacklisting position: ${key}`);
             this.failedBlocks.set(key, Date.now());
         }
     }

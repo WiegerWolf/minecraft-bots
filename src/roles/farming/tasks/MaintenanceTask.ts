@@ -2,6 +2,8 @@ import type { Bot } from 'mineflayer';
 import type { FarmingRole } from '../FarmingRole';
 import type { Task, WorkProposal } from './Task';
 import { Vec3 } from 'vec3';
+import { goals } from 'mineflayer-pathfinder';
+const { GoalNear } = goals;
 
 export class MaintenanceTask implements Task {
     name = 'maintenance';
@@ -21,7 +23,7 @@ export class MaintenanceTask implements Task {
                         if (!b || !b.position) return false;
                         return b.name.includes('_log') && !role.failedBlocks.has(b.position.toString());
                     },
-                    maxDistance: 64 // Increased range
+                    maxDistance: 64
                 });
                 
                 if (tree) {
@@ -29,11 +31,9 @@ export class MaintenanceTask implements Task {
                         priority: 50,
                         description: 'Gathering wood for tools',
                         target: tree,
-                        range: 2.5, // Closer range
+                        range: 2.5,
                         task: this
                     };
-                } else {
-                    // role.log("Need wood for tools, but no logs found nearby.");
                 }
             }
             
@@ -92,6 +92,11 @@ export class MaintenanceTask implements Task {
                 await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
             }
             await bot.dig(target);
+            
+            // Pickup logic
+            const dropPos = target.position;
+            await new Promise(r => setTimeout(r, 200));
+            await bot.pathfinder.setGoal(new GoalNear(dropPos.x, dropPos.y, dropPos.z, 0.5));
             return;
         }
 
