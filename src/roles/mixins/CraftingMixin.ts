@@ -52,6 +52,7 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
             if (recipes2x2.length > 0) {
                 try {
                     this.log(`Crafting ${itemName} using 2x2 inventory recipe...`);
+                    // FIX: Ensure recipe exists
                     const recipe2x2 = recipes2x2[0];
                     if (recipe2x2) {
                         await bot.craft(recipe2x2, 1, undefined);
@@ -93,10 +94,14 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
                                 const tableRecipes = bot.recipesFor(tableItemData.id, null, 1, null);
                                 if (tableRecipes.length > 0) {
                                     this.log('Crafting a crafting table...');
-                                    await bot.craft(tableRecipes[0], 1, undefined);
-                                    if (await this.placeCraftingTable(bot)) {
-                                        await new Promise(resolve => setTimeout(resolve, 500));
-                                        craftingTable = this.findCraftingTable(bot);
+                                    // FIX: Ensure recipe exists
+                                    const tableRecipe = tableRecipes[0];
+                                    if (tableRecipe) {
+                                        await bot.craft(tableRecipe, 1, undefined);
+                                        if (await this.placeCraftingTable(bot)) {
+                                            await new Promise(resolve => setTimeout(resolve, 500));
+                                            craftingTable = this.findCraftingTable(bot);
+                                        }
                                     }
                                 } else {
                                      this.log('Have materials for 3x3 item, but cannot make table (no wood?).');
@@ -126,7 +131,6 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
                 this.log(`Moving to crafting table at ${craftingTable.position} to craft ${itemName}...`);
                 if (onTargetSet) onTargetSet(craftingTable);
                 
-                // CRITICAL FIX: Await the movement so we don't spam the loop
                 try {
                     await bot.pathfinder.goto(new GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 2));
                 } catch (e) {
@@ -135,7 +139,6 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
                 }
             }
 
-            // We are now close enough (or failed moving, in which case we try anyway or fail gracefully)
             if (bot.entity.position.distanceTo(craftingTable.position) <= 4) {
                  const recipe = recipes[0];
                  if (recipe) {

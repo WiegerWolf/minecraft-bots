@@ -39,7 +39,6 @@ export class MaintenanceTask implements Task {
                 
                 // Fallback: Manual scan
                 if (!tree) {
-                    // Only log strictly if we are totally empty to reduce spam
                     if (planks === 0) role.log("[Maintenance] findBlock failed, trying manual scan...");
                     tree = this.manualWoodScan(bot, role);
                 }
@@ -49,17 +48,16 @@ export class MaintenanceTask implements Task {
                         priority: 50,
                         description: `Gathering wood from ${tree.name} at ${tree.position.floored()}`,
                         target: tree,
-                        range: 3.0,
+                        range: 3.5,
                         task: this
                     };
                 }
             }
             
             // Case B: Craft Hoe
-            // If we have logs OR enough planks, we can proceed to crafting
             if (logs > 0 || planks >= 2) {
                 return {
-                    priority: 55, // Higher than gathering
+                    priority: 55, 
                     description: 'Crafting Hoe',
                     task: this
                 };
@@ -108,21 +106,33 @@ export class MaintenanceTask implements Task {
         const pos = bot.entity.position;
         const radius = 20; 
         
+        const foundLogs: { block: any, dist: number }[] = [];
+
         for (let x = -radius; x <= radius; x++) {
             for (let z = -radius; z <= radius; z++) {
-                for (let y = -1; y <= 5; y++) {
+                for (let y = -1; y <= 6; y++) {
                     const checkPos = pos.offset(x, y, z);
                     const block = bot.blockAt(checkPos);
                     
                     if (block && (block.name.includes('_log') || block.name === 'log' || block.name === 'log2')) {
                         const key = block.position.floored().toString();
                         if (!role.failedBlocks.has(key)) {
-                            return block;
+                            foundLogs.push({
+                                block,
+                                dist: pos.distanceTo(checkPos)
+                            });
                         }
                     }
                 }
             }
         }
+
+        if (foundLogs.length > 0) {
+            foundLogs.sort((a, b) => a.dist - b.dist);
+            // FIX: Use non-null assertion (!) because we checked length > 0
+            return foundLogs[0]!.block;
+        }
+
         return null;
     }
 
@@ -134,8 +144,9 @@ export class MaintenanceTask implements Task {
             await bot.dig(target);
             
             const dropPos = target.position;
-            await bot.pathfinder.setGoal(new GoalNear(dropPos.x, dropPos.y, dropPos.z, 0.5));
-            await new Promise(r => setTimeout(r, 250)); 
+            try {
+                await bot.pathfinder.goto(new GoalNear(dropPos.x, dropPos.y, dropPos.z, 1.0));
+            } catch(e) {}
             return;
         }
 
@@ -151,25 +162,17 @@ export class MaintenanceTask implements Task {
         }
 
         // Case: Crafting logic sequence
-        
-        // 1. Ensure we have enough planks (Aim for 8+)
-        // This covers Crafting Table (4) + Sticks (2) + Tool (2)
         if (this.count(bot.inventory.items(), i => i.name.endsWith('_planks')) < 8) {
             await this.craftPlanksFromLogs(bot, role);
         }
         
-        // 2. Craft sticks if needed
         if (this.count(bot.inventory.items(), i => i.name === 'stick') < 2) {
             await role.tryCraft(bot, 'stick');
         }
 
-        // 3. Craft the hoe
         await role.tryCraft(bot, 'wooden_hoe');
     }
 
-    /**
-     * Dynamically finds any log in inventory and crafts its corresponding plank.
-     */
     private async craftPlanksFromLogs(bot: Bot, role: FarmingRole) {
         const logs = bot.inventory.items().filter(i => i.name.includes('_log') || i.name === 'log' || i.name === 'log2');
         if (logs.length === 0) return;
@@ -177,23 +180,19 @@ export class MaintenanceTask implements Task {
         const mcData = minecraftData(bot.version);
 
         for (const logItem of logs) {
-            // Safer approach: iterate all plank items and see if we have ingredients
             const plankItems = Object.keys(mcData.itemsByName)
                 .filter(name => name.endsWith('_planks'))
                 .map(name => mcData.itemsByName[name]);
 
             for (const plank of plankItems) {
-                if (!plank) continue; // FIX: Ensure plank is not undefined
+                if (!plank) continue;
 
-                // Check if we can craft this specific plank type
-                // 2x2 crafting (null table)
                 const validRecipes = bot.recipesFor(plank.id, null, 1, null);
                 
                 if (validRecipes.length > 0) {
-                     // We found a recipe for this plank using our current inventory
                      role.log(`Converting ${logItem.name} to ${plank.name}...`);
                      await role.tryCraft(bot, plank.name);
-                     return; // One craft per cycle is usually safer to prevent desync
+                     return; 
                 }
             }
         }
