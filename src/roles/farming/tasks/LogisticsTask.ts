@@ -42,25 +42,31 @@ export class LogisticsTask implements Task {
             }
             
             // Scavenge grass
-            const grassTypes = ['grass', 'tall_grass', 'short_grass', 'fern', 'dead_bush'];
+            // FIX: Broaden the search. Match anything with 'grass' in the name that isn't the block itself or underwater.
             const grass = bot.findBlock({
                 matching: b => {
                     if (!b || !b.position) return false;
                     if (role.failedBlocks.has(b.position.toString())) return false;
-                    return grassTypes.includes(b.name);
+                    
+                    const name = b.name;
+                    // Match "grass", "tall_grass", "short_grass", "fern", "large_fern"
+                    const isPlant = (name.includes('grass') || name.includes('fern')) && 
+                                    !name.includes('grass_block') && 
+                                    !name.includes('seagrass');
+                                    
+                    return isPlant || name === 'dead_bush' || name === 'wheat'; // Sometimes wheat spawns in villages
                 },
                 maxDistance: 64
             });
+            
             if (grass) {
                 return {
                     priority: 20,
-                    description: `Gathering seeds from ${grass.name}`,
+                    description: `Gathering seeds from ${grass.name} at ${grass.position.floored()}`,
                     target: grass,
                     range: 3.0,
                     task: this
                 };
-            } else {
-                 // role.log("🔍 No grass/ferns found nearby to harvest seeds.");
             }
         }
 
@@ -70,7 +76,8 @@ export class LogisticsTask implements Task {
     async perform(bot: Bot, role: FarmingRole, target: any): Promise<void> {
         const blockName = target.name;
 
-        if (['grass', 'tall_grass', 'short_grass', 'fern', 'dead_bush'].includes(blockName)) {
+        // Verify it's a plant we want to break
+        if (blockName.includes('grass') || blockName.includes('fern') || blockName === 'dead_bush') {
             await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
             await bot.dig(target);
             

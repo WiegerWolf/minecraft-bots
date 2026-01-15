@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import type { Role } from '../Role';
+import type { Role } from '../../Role';
 import { goals, Movements } from 'mineflayer-pathfinder';
 import { CraftingMixin } from '../mixins/CraftingMixin';
 import { KnowledgeMixin } from '../mixins/KnowledgeMixin';
@@ -70,6 +70,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 this.rememberPOI('farm_center', bot.entity.position);
             }
         }
+
+        // Immediate debug scan
+        this.scanSurroundings(bot);
     }
 
     stop(bot: Bot) {
@@ -165,15 +168,15 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             // Idle handling
             this.idleTicks++;
             const isInventoryEmpty = bot.inventory.items().length === 0;
-            const wanderThreshold = isInventoryEmpty ? 10 : 120; // 5s or 60s
+            const wanderThreshold = isInventoryEmpty ? 20 : 120; // Wander sooner if empty
 
             if (this.idleTicks >= wanderThreshold) {
-                // DEBUG: Scan surroundings before wandering
                 if (isInventoryEmpty) {
                     this.scanSurroundings(bot);
+                    this.log("⚠️ I am empty handed and can't find resources!");
                 }
-
-                this.log(isInventoryEmpty ? "🏃 Searching for resources..." : "🚶 Wandering...");
+                
+                this.log(isInventoryEmpty ? "🏃 Searching/Wandering..." : "🚶 Wandering...");
                 this.idleTicks = 0;
                 
                 const x = bot.entity.position.x + (Math.random() * 40 - 20);
@@ -197,13 +200,14 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     }
 
     private scanSurroundings(bot: Bot) {
-        this.log("🔍 DEBUG: Scanning nearby blocks (Radius 3):");
+        this.log("🔍 DEBUG: Scanning nearby blocks (Radius 4):");
         const counts: Record<string, number> = {};
         const pos = bot.entity.position;
         
-        for (let x = -3; x <= 3; x++) {
-            for (let y = -1; y <= 2; y++) {
-                for (let z = -3; z <= 3; z++) {
+        // Scan a small volume around the bot
+        for (let x = -4; x <= 4; x++) {
+            for (let y = -1; y <= 3; y++) {
+                for (let z = -4; z <= 4; z++) {
                     const block = bot.blockAt(pos.offset(x, y, z));
                     if (block && block.name !== 'air' && block.name !== 'cave_air') {
                         counts[block.name] = (counts[block.name] || 0) + 1;
@@ -212,8 +216,13 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             }
         }
         
-        const summary = Object.entries(counts).map(([name, count]) => `${name} x${count}`).join(', ');
-        this.log(`found: [${summary || 'Nothing!'}]`);
+        const summary = Object.entries(counts)
+            .sort((a, b) => b[1] - a[1]) // Sort by count desc
+            .slice(0, 10) // Top 10
+            .map(([name, count]) => `${name}: ${count}`)
+            .join(', ');
+            
+        this.log(`Visible blocks: [${summary || 'Nothing!'}]`);
     }
 
     private printDebugInventory(bot: Bot) {

@@ -21,7 +21,10 @@ export class MaintenanceTask implements Task {
                 const tree = bot.findBlock({
                     matching: (b) => {
                         if (!b || !b.position) return false;
-                        return b.name.includes('_log') && !role.failedBlocks.has(b.position.toString());
+                        if (role.failedBlocks.has(b.position.toString())) return false;
+                        
+                        // FIX: Broaden log matching
+                        return b.name.endsWith('_log') || b.name === 'log' || b.name === 'log2'; 
                     },
                     maxDistance: 64
                 });
@@ -29,17 +32,11 @@ export class MaintenanceTask implements Task {
                 if (tree) {
                     return {
                         priority: 50,
-                        description: 'Gathering wood for tools',
+                        description: `Gathering wood from ${tree.name} at ${tree.position.floored()}`,
                         target: tree,
                         range: 2.5,
                         task: this
                     };
-                } else {
-                     // Debug log to help identify why it sees nothing
-                     // This only logs if we REALLY need wood (inventory empty-ish)
-                     if (bot.inventory.emptySlotCount() > 30) {
-                        // role.log("🔍 Need wood, but no logs found in 64 blocks.");
-                     }
                 }
             }
             
@@ -93,7 +90,7 @@ export class MaintenanceTask implements Task {
 
     async perform(bot: Bot, role: FarmingRole, target?: any): Promise<void> {
         // Case: Gathering Wood
-        if (target && target.name && target.name.includes('_log')) {
+        if (target && (target.name.includes('log') || target.name === 'log' || target.name === 'log2')) {
             if (target.position) {
                 await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
             }
@@ -119,9 +116,14 @@ export class MaintenanceTask implements Task {
 
         // Case: Crafting (No target passed)
         if (this.count(bot.inventory.items(), i => i.name.endsWith('_planks')) < 2) {
-             const logItem = bot.inventory.items().find(i => i.name.includes('_log'));
+             const logItem = bot.inventory.items().find(i => i.name.includes('_log') || i.name === 'log' || i.name === 'log2');
              if (logItem) {
-                 const plankName = logItem.name.replace('_log', '_planks');
+                 // Try to guess plank name, usually 'oak_log' -> 'oak_planks'
+                 // But for 'log' (1.12), we rely on recipes
+                 let plankName = 'oak_planks';
+                 if (logItem.name.includes('_log')) {
+                    plankName = logItem.name.replace('_log', '_planks');
+                 }
                  await role.tryCraft(bot, plankName);
              }
         }
