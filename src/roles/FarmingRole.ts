@@ -201,8 +201,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 return block.name.includes('_log') || block.name.includes('_stem');
 
             case 'GATHER_SEEDS':
-                // Must be grass or tall grass
-                return block.name === 'grass' || block.name === 'tall_grass';
+                // Must be grass or tall grass or fern (check multiple names)
+                const validNames = ['grass', 'tall_grass', 'short_grass', 'fern', 'large_fern'];
+                return validNames.includes(block.name);
 
             case 'CHECK_STORAGE':
                 // Must be a container
@@ -284,7 +285,19 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         if (!hasSeeds) {
             if (shouldLog) this.log('No seeds in inventory. Prioritizing seed gathering...');
             // Try to find seeds nearby (breaking grass or checking chests)
-            if (await this.findSeedsNearby(bot)) return;
+            const foundSeedsTarget = await this.findSeedsNearby(bot);
+            
+            if (foundSeedsTarget) {
+                return; // We have a target, exit findTask
+            } else {
+                // IMPORTANT: If we have no seeds and cannot find any way to get them,
+                // we should NOT proceed to Tilling or Planting, as that will just loop forever.
+                if (shouldLog) this.log('No seeds and no grass/storage nearby. Cannot farm. Waiting...');
+                
+                // Optional: Wander a bit to find new chunks? 
+                // For now, just return to avoid the infinite loop of tilling.
+                return; 
+            }
         }
 
         // 2. Find empty farmland to plant
@@ -319,7 +332,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 blockAbove.name === 'cave_air' ||
                 blockAbove.name === 'void_air' ||
                 blockAbove.name === 'grass' ||
-                blockAbove.name === 'tall_grass'
+                blockAbove.name === 'tall_grass' ||
+                blockAbove.name === 'short_grass' || // Support modern names
+                blockAbove.name === 'fern'
             );
 
             return isAir;
@@ -851,7 +866,12 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     private async findSeedsNearby(bot: Bot): Promise<boolean> {
         // 1. Search for grass
         const grass = bot.findBlock({
-            matching: block => block && (block.name === 'grass' || block.name === 'tall_grass'),
+            matching: block => {
+                if (!block) return false;
+                const name = block.name;
+                // Support both old and new names (e.g., 'short_grass' in 1.20.3+)
+                return name === 'grass' || name === 'tall_grass' || name === 'short_grass' || name === 'fern' || name === 'large_fern';
+            },
             maxDistance: 32
         });
         if (grass && !this.failedBlocks.has(grass.position.toString())) {
