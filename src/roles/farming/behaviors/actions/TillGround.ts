@@ -15,19 +15,23 @@ export class TillGround implements BehaviorNode {
         if (!bb.farmCenter) return 'failure';
 
         // Find tillable block near water
+        // Search at multiple Y levels since water can be below ground level
         let target: { position: Vec3 } | null = null;
 
-        for (let x = -4; x <= 4; x++) {
-            for (let z = -4; z <= 4; z++) {
-                const pos = bb.farmCenter.offset(x, 0, z);
-                const block = bot.blockAt(pos);
-                if (block && ['grass_block', 'dirt'].includes(block.name)) {
-                    const above = bot.blockAt(pos.offset(0, 1, 0));
-                    if (above && above.name === 'air') {
-                        target = { position: pos };
-                        break;
+        for (let y = -1; y <= 2; y++) {  // Check Y-1 to Y+2 relative to water
+            for (let x = -4; x <= 4; x++) {
+                for (let z = -4; z <= 4; z++) {
+                    const pos = bb.farmCenter.offset(x, y, z);
+                    const block = bot.blockAt(pos);
+                    if (block && ['grass_block', 'dirt'].includes(block.name)) {
+                        const above = bot.blockAt(pos.offset(0, 1, 0));
+                        if (above && above.name === 'air') {
+                            target = { position: pos };
+                            break;
+                        }
                     }
                 }
+                if (target) break;
             }
             if (target) break;
         }
