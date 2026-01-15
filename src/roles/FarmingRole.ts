@@ -3,12 +3,13 @@ import type { Role } from './Role';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { CraftingMixin } from './mixins/CraftingMixin';
+import { KnowledgeMixin } from './mixins/KnowledgeMixin';
 const minecraftData = require('minecraft-data');
 let mcData: any = null;
 
 const { GoalNear } = goals;
 
-export class FarmingRole extends CraftingMixin(class { }) implements Role {
+export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implements Role {
     name = 'farming';
     private active = false;
     private targetBlock: any = null;
@@ -26,6 +27,7 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
     private collectionStartTime: number = 0;
     private readonly COLLECTION_TIMEOUT = 10000; // 10 seconds
     private readonly ACTION_REACH = 3.5; // Distance to act on blocks without moving closer
+    private readonly MAX_FARMLAND_PER_WATER = 81; // 9x9 area
 
     // Bot reference for event handlers
     private bot: Bot | null = null;
@@ -401,11 +403,35 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
             }
 
             if (candidates.length > 0) {
-                candidates.sort((a, b) => b.score - a.score);
-                const best = candidates[0]!;
-                this.log(`Selected best tilling spot at ${best.pos} with score ${best.score.toFixed(1)} (Total candidates: ${candidates.length})`);
-                this.setMovementTarget(bot, best.block, 'TILL');
-                return;
+                // Filter candidates by water source limit
+                const validCandidates = candidates.filter(c => {
+                    const nearestWater = bot.findBlock({
+                        matching: (block) => waterIds.length > 0 ? waterIds.includes(block.type) : (block.name === 'water' || block.name === 'flowing_water'),
+                        point: c.pos,
+                        maxDistance: 5
+                    });
+                    if (!nearestWater) return true;
+
+                    // Count farmland within 4 blocks of this water
+                    const existingFarmland = bot.findBlocks({
+                        matching: (block: any) => block.name === 'farmland',
+                        point: nearestWater.position,
+                        maxDistance: 4,
+                        count: 200
+                    });
+
+                    return existingFarmland.length < this.MAX_FARMLAND_PER_WATER;
+                });
+
+                if (validCandidates.length > 0) {
+                    validCandidates.sort((a, b) => b.score - a.score);
+                    const best = validCandidates[0]!;
+                    this.log(`Selected best tilling spot at ${best.pos} with score ${best.score.toFixed(1)} (Valid candidates: ${validCandidates.length}/${candidates.length})`);
+                    this.setMovementTarget(bot, best.block, 'TILL');
+                    return;
+                } else {
+                    this.log('Found tillable blocks, but water sources have reached their farmland limit.');
+                }
             }
         }
 
@@ -422,14 +448,15 @@ export class FarmingRole extends CraftingMixin(class { }) implements Role {
             const hasHoe = inventory.some(item => item.name.includes('hoe'));
             const logs = inventory.filter(i => i.name.includes('_log') || i.name.includes('_stem'));
             const planks = inventory.filter(i => i.name.endsWith('_planks'));
+            const numSticks = inventory.filter(i => i.name === 'stick').reduce((acc, item) => acc + item.count, 0);
 
-            if (!hasHoe && logs.length === 0 && planks.length < 3) {
+            if (!hasHoe && logs.length === 0 && (planks.length < 3 || numSticks < 2)) {
                 const logBlock = bot.findBlock({
                     matching: block => block && (block.name.includes('_log') || block.name.includes('_stem')),
-                    maxDistance: 16
+                    maxDistance: 32
                 });
                 if (logBlock && !this.failedBlocks.has(logBlock.position.toString())) {
-                    this.log(`Found log at ${logBlock.position}. Targeting for wood.`);
+                    this.log(`Found log at ${logBlock.position}. Targeting for wood because tools are low.`);
                     this.setMovementTarget(bot, logBlock, 'GATHER_WOOD');
                     return;
                 }
