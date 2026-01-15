@@ -132,7 +132,10 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     }).map(p => bot.blockAt(p)).filter((b): b is Block => {
         if (!b) return false;
         // Only include farmland within 4 blocks of water (hydration range)
-        if (!isWithinHydrationRange(b.position, bb.nearbyWater)) return false;
+        // Also check against farm center directly in case nearbyWater is empty
+        const hydratedByWater = isWithinHydrationRange(b.position, bb.nearbyWater);
+        const hydratedByFarmCenter = bb.farmCenter && isWithinHydrationRangeOfPoint(b.position, bb.farmCenter);
+        if (!hydratedByWater && !hydratedByFarmCenter) return false;
         // Only include farmland with adequate light for crop growth
         if (!hasAdequateLight(bot, b.position)) return false;
         return true;
@@ -259,10 +262,30 @@ function isWithinHydrationRange(pos: Vec3, waterBlocks: Block[]): boolean {
     return false;
 }
 
+// Check if position is within 4 blocks of a point (for farm center check)
+function isWithinHydrationRangeOfPoint(pos: Vec3, waterPos: Vec3): boolean {
+    const dx = Math.abs(pos.x - waterPos.x);
+    const dz = Math.abs(pos.z - waterPos.z);
+    const dy = Math.abs(pos.y - waterPos.y);
+    return dx <= 4 && dz <= 4 && dy <= 1;
+}
+
 // Check if block above has sufficient light (crops need ≥9)
+// Note: Light values may not be reliable in mineflayer, so we're lenient
 function hasAdequateLight(bot: Bot, farmlandPos: Vec3): boolean {
     const above = bot.blockAt(farmlandPos.offset(0, 1, 0));
     if (!above) return false;
-    const light = Math.max(above.skyLight ?? 0, above.light ?? 0);
+
+    // If sky is visible (air above), assume adequate light during daytime
+    if (above.name === 'air') {
+        // Check if there's a solid block directly above that would block sunlight
+        const twoAbove = bot.blockAt(farmlandPos.offset(0, 2, 0));
+        if (!twoAbove || twoAbove.name === 'air') {
+            return true; // Open sky, assume good light
+        }
+    }
+
+    // Fall back to light level check if available
+    const light = Math.max(above.skyLight ?? 15, above.light ?? 0);
     return light >= 9;
 }
