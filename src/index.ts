@@ -11,10 +11,11 @@ const BOT_PATH = resolve(__dirname, "bot.ts");
 let botProcess: Subprocess | null = null;
 let reconnectAttempts = 0;
 let retryTimeout: ReturnType<typeof setTimeout> | null = null;
-const MAX_BACKOFF = 30000; // 30 seconds
-const INITIAL_BACKOFF = 1000; // 1 second
+const MAX_BACKOFF = 30000;
+const INITIAL_BACKOFF = 1000;
 
-function startBot(isRestart = false) {
+// Change to async to support waiting for process exit
+async function startBot(isRestart = false) {
     if (retryTimeout) {
         clearTimeout(retryTimeout);
         retryTimeout = null;
@@ -22,21 +23,28 @@ function startBot(isRestart = false) {
 
     if (botProcess) {
         console.log("♻️ Restarting bot due to file change...");
+        
+        // Signal the bot to stop (triggers the SIGTERM listener in bot.ts)
         botProcess.kill();
-        reconnectAttempts = 0; // Reset backoff on manual/file-triggered restart
+        
+        // CRITICAL: Wait for the bot to finish dropping items and exit 
+        // before spawning the new one.
+        if (botProcess.exited) {
+            await botProcess.exited;
+        }
+        
+        reconnectAttempts = 0;
     } else if (!isRestart) {
         console.log("🚀 Starting bot...");
     }
 
     botProcess = spawn(["bun", "run", BOT_PATH], {
         stdout: "pipe",
-        stderr: "inherit",
+        stderr: "inherit", // We want to see the "Dropping inventory" logs
         stdin: "inherit",
     });
 
-    // Handle stdout to detect successful spawn
     const handleStdout = async () => {
-        // Fix: Ensure stdout is defined AND is not a number (file descriptor)
         if (!botProcess?.stdout || typeof botProcess.stdout === 'number') return;
         
         const reader = botProcess.stdout.getReader();
@@ -45,7 +53,7 @@ function startBot(isRestart = false) {
             const { done, value } = await reader.read();
             if (done) break;
             const text = decoder.decode(value);
-            process.stdout.write(text); // Still print to terminal
+            process.stdout.write(text);
 
             if (text.includes("✅ Bot has spawned!")) {
                 if (reconnectAttempts > 0) {
@@ -59,18 +67,18 @@ function startBot(isRestart = false) {
 
     const currentProcess = botProcess;
     currentProcess.exited.then((exitCode: number) => {
-        if (botProcess !== currentProcess) return; // This process was replaced/killed intentionally
+        if (botProcess !== currentProcess) return;
 
-        if (exitCode !== 0) {
+        if (exitCode !== 0 && exitCode !== null) { // exitCode is null on SIGTERM usually
             const delay = Math.min(INITIAL_BACKOFF * Math.pow(2, reconnectAttempts), MAX_BACKOFF);
-            console.log(`⚠️ Bot exited with code ${exitCode}. Reconnecting in ${delay / 1000}s... (Attempt ${reconnectAttempts + 1})`);
+            console.log(`⚠️ Bot exited with code ${exitCode}. Reconnecting in ${delay / 1000}s...`);
             reconnectAttempts++;
             retryTimeout = setTimeout(() => {
                 retryTimeout = null;
                 startBot(true);
             }, delay);
         } else {
-            console.log("✅ Bot exited cleanly.");
+            console.log("✅ Bot exited cleanly (or was killed for restart).");
         }
     });
 }
@@ -78,7 +86,6 @@ function startBot(isRestart = false) {
 // Initial start
 startBot();
 
-// Watch for changes in the src directory
 console.log(`👀 Watching ${__dirname} for changes...`);
 let watchTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -88,15 +95,13 @@ watch(__dirname, { recursive: true }, (event, filename) => {
 
         watchTimeout = setTimeout(() => {
             console.log(`📝 Change detected in ${filename}`);
-            const oldProcess = botProcess;
-            botProcess = null; // Set to null so exited handler knows it was intentional
-            if (oldProcess) oldProcess.kill();
+            // We don't set botProcess to null here anymore, 
+            // we let startBot handle the kill-and-wait logic
             startBot();
-        }, 100); // 100ms debounce
+        }, 100);
     }
 });
 
-// Handle process termination
 process.on("SIGINT", () => {
     console.log("\n🛑 Stopping hot-reload manager...");
     if (botProcess) botProcess.kill();

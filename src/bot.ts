@@ -25,15 +25,12 @@ const roles: Record<string, Role> = {
 let currentRole: Role | null = null;
 
 function setRole(roleName: string | null, options?: any) {
-    // 1. Stop existing role
     if (currentRole) {
         currentRole.stop(bot);
     }
 
-    // 2. Start new role
     if (roleName && roles[roleName]) {
         currentRole = roles[roleName];
-        // The role now manages its own loop internally
         currentRole.start(bot, options);
     } else {
         currentRole = null;
@@ -43,8 +40,6 @@ function setRole(roleName: string | null, options?: any) {
 bot.once('spawn', () => {
     console.log('✅ Bot has spawned!');
     
-    // Auto-start farming for demo purposes
-    // Use a small delay to ensure physics are ready
     bot.waitForTicks(20).then(() => {
          bot.chat('Ready to work!');
     });
@@ -70,7 +65,50 @@ bot.on('chat', (username: string, message: string) => {
     }
 });
 
-// Standard error handling
 bot.on('kicked', (reason) => { console.log('❌ Kicked:', reason); process.exit(1); });
 bot.on('error', (err) => { console.error('❌ Error:', err); });
 bot.on('end', () => { console.log('🔌 Disconnected'); process.exit(1); });
+
+
+// --- GRACEFUL SHUTDOWN LOGIC ---
+
+let isDropping = false;
+
+async function emergencyDropAndExit() {
+    if (isDropping) return;
+    isDropping = true;
+
+    console.log("🚨 Termination signal received. Initiating emergency inventory dump...");
+    bot.chat("Shutting down! Dropping inventory...");
+
+    // 1. Stop all bot actions
+    setRole(null); 
+    bot.pathfinder.stop();
+    bot.clearControlStates();
+
+    // 2. Drop everything
+    const items = bot.inventory.items();
+    if (items.length > 0) {
+        try {
+            // Look down to drop at feet
+            await bot.look(bot.entity.yaw, -Math.PI / 2, true);
+            
+            for (const item of items) {
+                try {
+                    await bot.tossStack(item);
+                } catch (e) { 
+                    console.error(`Failed to drop ${item.name}`); 
+                }
+            }
+        } catch (e) {
+            console.error("Error during drop sequence:", e);
+        }
+    }
+
+    console.log("👋 Inventory cleared. Exiting now.");
+    process.exit(0);
+}
+
+// Listen for kill signals from the manager
+process.on('SIGINT', emergencyDropAndExit);
+process.on('SIGTERM', emergencyDropAndExit);
