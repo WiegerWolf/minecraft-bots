@@ -18,8 +18,12 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     private lastLogTime = 0;
     private lastPlanTime = 0;
     private isUpdating = false;
-    private failedBlocks: Map<string, number> = new Map(); // position string -> timestamp
-    private readonly RETRY_COOLDOWN = 5 * 60 * 1000; // 5 minutes
+    
+    private failedBlocks: Map<string, number> = new Map(); // position string -> timestamp (Hard failures: pathing, broken)
+    private containerCooldowns: Map<string, number> = new Map(); // position string -> timestamp (Soft failures: empty chest)
+    
+    private readonly RETRY_COOLDOWN = 5 * 60 * 1000; // 5 minutes for hard failures
+    private readonly CONTAINER_COOLDOWN = 30 * 1000; // 30 seconds for re-checking chests
 
     // Fix 1: Movement timeout tracking
     private movementStartTime: number = 0;
@@ -61,6 +65,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.state = 'IDLE';
         this.targetBlock = null;
         this.failedBlocks.clear();
+        this.containerCooldowns.clear();
 
         // Fix 2: Clean up pathfinder event handlers
         if (this.boundOnGoalReached) {
@@ -300,7 +305,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             } else {
                 // IMPORTANT: If we have no seeds and cannot find any way to get them,
                 // we should NOT proceed to Tilling or Planting, as that will just loop forever.
-                if (shouldLog) this.log('No seeds and no grass/storage nearby. Cannot farm. Waiting...');
+                if (shouldLog) this.log('No seeds and no grass/storage nearby (checked recently). Cannot farm. Waiting...');
                 return; 
             }
         }
@@ -745,7 +750,8 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                     this.log('Successfully withdrew seeds.');
                 } else {
                     this.log('No seeds found in this storage.');
-                    this.failedBlocks.set(block.position.toString(), Date.now());
+                    // USE CONTAINER COOLDOWN INSTEAD OF FAILED BLOCKS
+                    this.containerCooldowns.set(block.position.toString(), Date.now());
                 }
                 container.close();
                 this.state = 'FINDING';
@@ -923,10 +929,27 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
 
         // 2. Search for containers
         const storage = bot.findBlock({
-            matching: block => block && ['chest', 'barrel', 'trapped_chest'].includes(block.name),
+            matching: block => {
+                if (!block) return false;
+                if (!['chest', 'barrel', 'trapped_chest'].includes(block.name)) return false;
+                
+                const posStr = block.position.toString();
+                // Check hard failures (pathing/broken)
+                if (this.failedBlocks.has(posStr)) {
+                     const failedAt = this.failedBlocks.get(posStr)!;
+                     if (Date.now() - failedAt < this.RETRY_COOLDOWN) return false;
+                }
+                // Check soft failures (empty/checked recently)
+                if (this.containerCooldowns.has(posStr)) {
+                     const checkedAt = this.containerCooldowns.get(posStr)!;
+                     if (Date.now() - checkedAt < this.CONTAINER_COOLDOWN) return false;
+                }
+                return true;
+            },
             maxDistance: 32
         });
-        if (storage && !this.failedBlocks.has(storage.position.toString())) {
+        
+        if (storage) {
             this.log(`Found ${storage.name} at ${storage.position}. Checking for seeds...`);
             this.setMovementTarget(bot, storage, 'CHECK_STORAGE');
             return true;
