@@ -3,6 +3,8 @@ import type { FarmingRole } from '../FarmingRole';
 import type { Task, WorkProposal } from './Task';
 import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
+import minecraftData from 'minecraft-data';
+
 const { GoalNear } = goals;
 
 export class MaintenanceTask implements Task {
@@ -17,8 +19,9 @@ export class MaintenanceTask implements Task {
 
         // Logic: If we have no hoe, we need wood.
         if (!hasHoe) {
-            // Case A: Gather wood (No planks, no logs)
-            if (planks < 2 && logs === 0) {
+            // Case A: Gather wood (Low resources)
+            // We want at least 8 planks buffer for Table(4) + Sticks(2) + Tool(2)
+            if (planks < 8 && logs === 0) {
                 // Try standard findBlock first
                 let tree = bot.findBlock({
                     matching: (b) => {
@@ -34,9 +37,10 @@ export class MaintenanceTask implements Task {
                     maxDistance: 32
                 });
                 
-                // Fallback: Manual scan if findBlock fails but we know wood exists
+                // Fallback: Manual scan
                 if (!tree) {
-                    role.log("[Maintenance] findBlock failed, trying manual scan...");
+                    // Only log strictly if we are totally empty to reduce spam
+                    if (planks === 0) role.log("[Maintenance] findBlock failed, trying manual scan...");
                     tree = this.manualWoodScan(bot, role);
                 }
                 
@@ -48,13 +52,11 @@ export class MaintenanceTask implements Task {
                         range: 3.0,
                         task: this
                     };
-                } else {
-                    // Only warn occasionally
-                    if (Math.random() < 0.05) role.log("[Maintenance] No wood found nearby.");
                 }
             }
             
             // Case B: Craft Hoe
+            // If we have logs OR enough planks, we can proceed to crafting
             if (logs > 0 || planks >= 2) {
                 return {
                     priority: 55, // Higher than gathering
@@ -102,15 +104,12 @@ export class MaintenanceTask implements Task {
         return null;
     }
 
-    // A manual fallback scanner that mimics the debug scan logic
     private manualWoodScan(bot: Bot, role: FarmingRole) {
         const pos = bot.entity.position;
-        const radius = 20; // Check a moderate radius
+        const radius = 20; 
         
-        // Scan in a spiral/grid pattern
         for (let x = -radius; x <= radius; x++) {
             for (let z = -radius; z <= radius; z++) {
-                // Check a vertical column
                 for (let y = -1; y <= 5; y++) {
                     const checkPos = pos.offset(x, y, z);
                     const block = bot.blockAt(checkPos);
@@ -151,31 +150,56 @@ export class MaintenanceTask implements Task {
             }
         }
 
-        // Case: Crafting
-        if (this.count(bot.inventory.items(), i => i.name.endsWith('_planks')) < 2) {
-             const logItem = bot.inventory.items().find(i => i.name.includes('_log') || i.name === 'log' || i.name === 'log2');
-             if (logItem) {
-                 let plankName = 'oak_planks';
-                 const name = logItem.name;
-                 if (name.includes('spruce')) plankName = 'spruce_planks';
-                 else if (name.includes('birch')) plankName = 'birch_planks';
-                 else if (name.includes('jungle')) plankName = 'jungle_planks';
-                 else if (name.includes('acacia')) plankName = 'acacia_planks';
-                 else if (name.includes('dark_oak')) plankName = 'dark_oak_planks';
-                 else if (name.includes('mangrove')) plankName = 'mangrove_planks';
-                 else if (name.includes('cherry')) plankName = 'cherry_planks';
-                 else if (name.includes('crimson')) plankName = 'crimson_planks';
-                 else if (name.includes('warped')) plankName = 'warped_planks';
-
-                 await role.tryCraft(bot, plankName);
-             }
+        // Case: Crafting logic sequence
+        
+        // 1. Ensure we have enough planks (Aim for 8+)
+        // This covers Crafting Table (4) + Sticks (2) + Tool (2)
+        if (this.count(bot.inventory.items(), i => i.name.endsWith('_planks')) < 8) {
+            await this.craftPlanksFromLogs(bot, role);
         }
         
+        // 2. Craft sticks if needed
         if (this.count(bot.inventory.items(), i => i.name === 'stick') < 2) {
             await role.tryCraft(bot, 'stick');
         }
 
+        // 3. Craft the hoe
         await role.tryCraft(bot, 'wooden_hoe');
+    }
+
+    /**
+     * Dynamically finds any log in inventory and crafts its corresponding plank.
+     */
+    private async craftPlanksFromLogs(bot: Bot, role: FarmingRole) {
+        const logs = bot.inventory.items().filter(i => i.name.includes('_log') || i.name === 'log' || i.name === 'log2');
+        if (logs.length === 0) return;
+
+        const mcData = minecraftData(bot.version);
+
+        for (const logItem of logs) {
+            // Find what this log makes
+            // We search recipes that USE this log item
+            const recipes = bot.recipesAll(logItem.type, null, true); // (itemType, null, craftingTable=false) doesn't exist like this in all versions, 
+                                                                    // but bot.recipesAll usually takes (itemType, count, craftingTable)
+
+            // Safer approach: iterate all plank items and see if we have ingredients
+            const plankItems = Object.keys(mcData.itemsByName)
+                .filter(name => name.endsWith('_planks'))
+                .map(name => mcData.itemsByName[name]);
+
+            for (const plank of plankItems) {
+                // Check if we can craft this specific plank type
+                // 2x2 crafting (null table)
+                const validRecipes = bot.recipesFor(plank.id, null, 1, null);
+                
+                if (validRecipes.length > 0) {
+                     // We found a recipe for this plank using our current inventory
+                     role.log(`Converting ${logItem.name} to ${plank.name}...`);
+                     await role.tryCraft(bot, plank.name);
+                     return; // One craft per cycle is usually safer to prevent desync
+                }
+            }
+        }
     }
 
     private count(items: any[], predicate: (i: any) => boolean): number {
