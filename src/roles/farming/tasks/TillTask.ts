@@ -1,3 +1,4 @@
+// ./src/roles/farming/tasks/TillTask.ts
 import type { Bot } from 'mineflayer';
 import type { FarmingRole } from '../FarmingRole';
 import type { Task, WorkProposal } from './Task';
@@ -12,13 +13,19 @@ export class TillTask implements Task {
         const hasHoe = inventory.some(i => i.name.includes('hoe'));
         const hasSeeds = inventory.some(i => i.name.includes('seeds') || ['carrot', 'potato', 'beetroot'].includes(i.name));
 
-        if (!hasHoe || !hasSeeds) return null;
+        if (!hasHoe) return null;
+
+        // Log reasoning if we have a hoe but are idle
+        if (!hasSeeds) {
+             // We don't return a proposal, but we let the user know why we aren't tilling
+             // This lets LogisticsTask take over to find seeds
+             return null;
+        }
 
         // 2. Find water to expand around
         const farmAnchor = role.getNearestPOI(bot, 'farm_center');
         const point = farmAnchor ? farmAnchor.position : bot.entity.position;
 
-        // Search near the farm center, not just the bot
         const water = bot.findBlock({
             point,
             maxDistance: 32,
@@ -26,8 +33,7 @@ export class TillTask implements Task {
         });
 
         if (!water) {
-             // Only warn occasionally to avoid spam
-             if (Math.random() < 0.05) role.log("⚠️ Need water to till soil, but none found near farm center.");
+             if (Math.random() < 0.05) role.log("⚠️ Have hoe and seeds, but no water found near farm center.");
              return null;
         }
 
@@ -89,7 +95,6 @@ export class TillTask implements Task {
             await bot.lookAt(target.position.offset(0.5, 1, 0.5));
             await bot.activateBlock(target);
             
-            // LESSON: Verification Step
             await new Promise(resolve => setTimeout(resolve, 500)); // Wait for server update
             const updatedBlock = bot.blockAt(target.position);
             
