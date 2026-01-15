@@ -10,30 +10,28 @@ import { LogisticsTask } from './tasks/LogisticsTask.ts';
 import { TillTask } from './tasks/TillTask.ts';
 import { MaintenanceTask } from './tasks/MaintenanceTask.ts';
 
-const { GoalNear } = goals;
+const { GoalNear, GoalXZ } = goals;
 
 export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implements Role {
     name = 'farming';
     private active = false;
     private bot: Bot | null = null;
     
-    // The list of modular strategies
     private tasks: Task[] = [];
-
-    // Shared State for Tasks
     public failedBlocks: Map<string, number> = new Map();
     public containerCooldowns: Map<string, number> = new Map();
-    public readonly RETRY_COOLDOWN = 5 * 60 * 1000;    // 5 minutes
+    public readonly RETRY_COOLDOWN = 5 * 60 * 1000;
     
-    // Movement tracking
     private currentProposal: WorkProposal | null = null;
     private movementStartTime = 0;
     private readonly MOVEMENT_TIMEOUT = 20000;
+    
+    private idleTicks = 0; // Track how long we've been idle
 
     constructor() {
         super();
         this.tasks = [
-            new MaintenanceTask(), // High Prio
+            new MaintenanceTask(),
             new LogisticsTask(),   
             new HarvestTask(),     
             new PlantTask(),       
@@ -45,16 +43,15 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.active = true;
         this.bot = bot;
         
-        // Setup Movements
         const defaultMove = new Movements(bot);
         defaultMove.canDig = false; 
         defaultMove.allow1by1towers = false;
         bot.pathfinder.setMovements(defaultMove);
         
-        // Reset state
         this.currentProposal = null;
         this.failedBlocks.clear();
         this.containerCooldowns.clear();
+        this.idleTicks = 0;
         
         this.log('🚜 Modular Farming Role started.');
         bot.chat('🚜 Farming started (Modular).');
@@ -74,12 +71,11 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     async update(bot: Bot) {
         if (!this.active) return;
 
-        // 1. If we are currently executing a proposal (Moving), check status
+        // 1. Moving/Executing
         if (this.currentProposal && this.currentProposal.target) {
             const dist = bot.entity.position.distanceTo(this.currentProposal.target.position);
             const reach = this.currentProposal.range || 3.5;
 
-            // Timeout Check
             if (Date.now() - this.movementStartTime > this.MOVEMENT_TIMEOUT) {
                 this.log(`⚠️ Movement timed out for ${this.currentProposal.description}`);
                 this.blacklistBlock(this.currentProposal.target.position);
@@ -88,18 +84,14 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 return;
             }
 
-            // Arrived?
             if (dist <= reach) {
-                // STOP moving
                 bot.pathfinder.setGoal(null);
-                bot.clearControlStates(); // Stop physics immediately
+                bot.clearControlStates();
                 
-                // Execute the specific task logic
                 try {
                     await this.currentProposal.task.perform(bot, this, this.currentProposal.target);
                 } catch (error) {
                     this.log(`❌ Error executing ${this.currentProposal.description}:`, error);
-                    // IMPORTANT: Blacklist block if action fails
                     if (this.currentProposal.target?.position) {
                         this.blacklistBlock(this.currentProposal.target.position);
                     }
@@ -107,7 +99,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 
                 this.currentProposal = null;
             }
-            return; // Busy moving/acting
+            return;
         }
 
         // 2. Find new work
@@ -131,8 +123,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             }
         }
 
-        // 3. Act on best proposal
+        // 3. Act
         if (bestProposal) {
+            this.idleTicks = 0;
             this.log(`📋 Selected: ${bestProposal.description} (Prio: ${bestProposal.priority})`);
             this.currentProposal = bestProposal;
             
@@ -144,6 +137,35 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             } else {
                 await bestProposal.task.perform(bot, this);
                 this.currentProposal = null;
+            }
+        } else {
+            // Idle handling
+            this.idleTicks++;
+            if (this.idleTicks % 20 === 0) { // Every ~10 seconds
+                this.log("💤 No work found...");
+            }
+            if (this.idleTicks > 60) { // ~30 seconds of pure idle
+                this.log("🚶 Wandering to find resources...");
+                this.idleTicks = 0;
+                
+                // Wander randomly 20 blocks away
+                const x = bot.entity.position.x + (Math.random() * 40 - 20);
+                const z = bot.entity.position.z + (Math.random() * 40 - 20);
+                bot.pathfinder.setGoal(new GoalXZ(x, z));
+                this.movementStartTime = Date.now();
+                
+                // Create a fake proposal to track movement state
+                this.currentProposal = {
+                    priority: 1,
+                    description: "Wandering",
+                    target: { position: { x, y: bot.entity.position.y, z } },
+                    range: 2,
+                    task: { // Dummy task
+                        name: 'wander',
+                        findWork: async () => null,
+                        perform: async () => { this.log("Finished wandering."); }
+                    }
+                };
             }
         }
     }

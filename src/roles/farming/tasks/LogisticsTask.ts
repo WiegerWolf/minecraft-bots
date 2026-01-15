@@ -14,7 +14,6 @@ export class LogisticsTask implements Task {
             item.name.includes('seeds') || ['carrot', 'potato', 'beetroot'].includes(item.name)
         );
 
-        // 1. CRITICAL: Deposit if full
         if (isFull) {
             const chest = await this.findChest(bot, role);
             if (chest) {
@@ -22,7 +21,7 @@ export class LogisticsTask implements Task {
                     priority: 100,
                     description: 'Depositing items (Inventory Full)',
                     target: chest,
-                    range: 2.5, // Closer range for chest interaction
+                    range: 2.5,
                     task: this
                 };
             } else {
@@ -30,9 +29,7 @@ export class LogisticsTask implements Task {
             }
         }
 
-        // 2. HIGH: Find seeds if we have none (Scavenge or Withdraw)
         if (!hasSeeds) {
-            // Check known chests first
             const chest = await this.findChest(bot, role);
             if (chest) {
                 return {
@@ -44,21 +41,20 @@ export class LogisticsTask implements Task {
                 };
             }
             
-            // If no chest, look for grass to break (Scavenging)
             const grass = bot.findBlock({
                 matching: b => {
                     if (!b || !b.position) return false;
-                    if (role.failedBlocks.has(b.position.toString())) return false; // Check blacklist
+                    if (role.failedBlocks.has(b.position.toString())) return false;
                     return ['grass', 'tall_grass', 'short_grass', 'fern'].includes(b.name);
                 },
-                maxDistance: 32
+                maxDistance: 64 // Increased range
             });
             if (grass) {
                 return {
                     priority: 20,
                     description: 'Gathering seeds from grass',
                     target: grass,
-                    range: 2.5, // Closer range for digging
+                    range: 2.5,
                     task: this
                 };
             }
@@ -70,19 +66,16 @@ export class LogisticsTask implements Task {
     async perform(bot: Bot, role: FarmingRole, target: any): Promise<void> {
         const blockName = target.name;
 
-        // Action: Scavenge Grass
         if (blockName.includes('grass') || blockName.includes('fern')) {
             await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
             await bot.dig(target);
             return;
         }
 
-        // Action: Interact with Chest
         if (blockName.includes('chest') || blockName.includes('barrel') || blockName.includes('shulker')) {
             const container = await bot.openContainer(target);
             role.log(`Opened ${blockName}.`);
 
-            // 1. Deposit Crops
             const items = bot.inventory.items();
             const crops = ['wheat', 'carrot', 'potato', 'beetroot', 'melon_slice', 'pumpkin'];
             
@@ -97,7 +90,6 @@ export class LogisticsTask implements Task {
                 }
             }
 
-            // 2. Withdraw Seeds
             const seedNames = ['wheat_seeds', 'beetroot_seeds', 'carrot', 'potato'];
             for (const name of seedNames) {
                 const current = bot.inventory.items().find(i => i.name === name);
@@ -118,7 +110,6 @@ export class LogisticsTask implements Task {
     }
 
     private async findChest(bot: Bot, role: FarmingRole) {
-        // 1. Check memory
         const known = role.getNearestPOI(bot, 'farm_chest');
         if (known) {
             const block = bot.blockAt(known.position);
@@ -129,7 +120,6 @@ export class LogisticsTask implements Task {
             }
         }
 
-        // 2. Scan
         return bot.findBlock({
             matching: b => !!b && ['chest', 'barrel', 'trapped_chest'].includes(b.name), 
             maxDistance: 32
