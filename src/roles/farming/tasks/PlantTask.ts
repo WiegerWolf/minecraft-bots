@@ -77,8 +77,7 @@ export class PlantTask implements Task {
         );
         if (availableSeeds.length === 0) return null;
 
-        // Simple logic: Don't plant what is already next to it (Monoculture avoidance / Striping)
-        // Or simplified: Just pick the first seed found.
-        return availableSeeds[0].name;
+        // Use optional chaining/nullish coalescing to prevent TS error
+        return availableSeeds[0]?.name ?? null;
     }
 }

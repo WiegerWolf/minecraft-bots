@@ -60,6 +60,10 @@ export class TillTask implements Task {
         if (candidates.length > 0) {
             candidates.sort((a, b) => b.score - a.score);
             const best = candidates[0];
+            
+            // Add null check
+            if (!best) return null;
+
             return {
                 priority: 5, // Lower priority than harvesting/planting
                 description: `Tilling ground at ${best.block.position}`,

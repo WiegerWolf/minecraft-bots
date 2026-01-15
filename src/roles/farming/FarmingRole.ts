@@ -1,8 +1,8 @@
 import type { Bot } from 'mineflayer';
-import type { Role } from '../../Role';
+import type { Role } from '../Role';
 import { goals } from 'mineflayer-pathfinder';
-import { CraftingMixin } from '../../mixins/CraftingMixin';
-import { KnowledgeMixin } from '../../mixins/KnowledgeMixin';
+import { CraftingMixin } from '../mixins/CraftingMixin';
+import { KnowledgeMixin } from '../mixins/KnowledgeMixin';
 import type { Task, WorkProposal } from './tasks/Task';
 import { HarvestTask } from './tasks/HarvestTask';
 import { PlantTask } from './tasks/PlantTask';
@@ -154,8 +154,8 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         }
     }
 
-    // Expose mixin logs
-    public log(message: string, ...args: any[]) {
+    // Expose mixin logs and fix 'override' error
+    public override log(message: string, ...args: any[]) {
         console.log(`[Farming] ${message}`, ...args);
     }
 }

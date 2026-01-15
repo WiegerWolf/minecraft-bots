@@ -1,7 +1,9 @@
 import type { Bot } from 'mineflayer';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
-const minecraftData = require('minecraft-data');
+// Use import instead of require for cleaner types (though require works if setup correctly)
+import minecraftData from 'minecraft-data';
+import prismarineBlock from 'prismarine-block';
 
 const { GoalNear } = goals;
 
@@ -38,7 +40,7 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
             const canMakeTable = bot.recipesFor(tableItem.id, null, 1, null).length > 0;
 
             if (tableNearby || hasTableInInv || canMakeTable) {
-                const Block = require('prismarine-block')(bot.version);
+                const Block = prismarineBlock(bot.version);
                 const fakeTable = new Block(mcData.blocksByName.crafting_table.id, 0, 0);
                 recipes = bot.recipesFor(item.id, null, 1, fakeTable);
                 return recipes.length > 0;
@@ -68,7 +70,8 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
             });
         }
 
-        protected async tryCraft(bot: Bot, itemName: string, onTargetSet?: (target: any) => void) {
+        // Changed to public so MaintenanceTask can use it
+        public async tryCraft(bot: Bot, itemName: string, onTargetSet?: (target: any) => void) {
             const mcData = minecraftData(bot.version);
             const item = mcData.itemsByName[itemName];
             if (!item) {
@@ -104,7 +107,7 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
             if (craftingTable) this.log(`Found crafting table at ${craftingTable.position}`);
 
             if (!craftingTable) {
-                const Block = require('prismarine-block')(bot.version);
+                const Block = prismarineBlock(bot.version);
                 const fakeTable = new Block(mcData.blocksByName.crafting_table.id, 0, 0);
                 const recipes3x3 = bot.recipesFor(item.id, null, 1, fakeTable);
 

@@ -13,9 +13,6 @@ export class MaintenanceTask implements Task {
         const hasHoe = inventory.some(i => i.name.includes('hoe'));
         if (!hasHoe) {
             // Can we craft one?
-            // (Using the CraftingMixin logic exposed via the role)
-            // Note: Since `tryCraft` is protected in the Mixin, we might need to expose it or use `bot.recipesFor` here.
-            // For simplicity in this Task, we'll check raw materials.
             
             const planks = this.count(inventory, i => i.name.endsWith('_planks'));
             const sticks = this.count(inventory, i => i.name === 'stick');
@@ -106,27 +103,23 @@ export class MaintenanceTask implements Task {
         }
 
         // Case: Crafting (No target passed)
-        // We use the mixin methods available on the Role
-        // This requires casting role to any because `tryCraft` is protected in the mixin
-        // Ideally, you would expose `craftItem` publicly in FarmingRole.
-        const r = role as any; 
-        
         // 1. Logs -> Planks
         if (this.count(bot.inventory.items(), i => i.name.endsWith('_planks')) < 2) {
              const logItem = bot.inventory.items().find(i => i.name.includes('_log'));
              if (logItem) {
                  const plankName = logItem.name.replace('_log', '_planks');
-                 await r.tryCraft(bot, plankName);
+                 // Calling public method from mixin
+                 await role.tryCraft(bot, plankName);
              }
         }
         
         // 2. Planks -> Sticks (if needed)
         if (this.count(bot.inventory.items(), i => i.name === 'stick') < 2) {
-            await r.tryCraft(bot, 'stick');
+            await role.tryCraft(bot, 'stick');
         }
 
         // 3. Craft Hoe
-        await r.tryCraft(bot, 'wooden_hoe');
+        await role.tryCraft(bot, 'wooden_hoe');
     }
 
     private count(items: any[], predicate: (i: any) => boolean): number {

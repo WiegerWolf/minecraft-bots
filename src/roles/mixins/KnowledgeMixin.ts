@@ -19,11 +19,13 @@ export function KnowledgeMixin<TBase extends Constructor>(Base: TBase) {
     return class extends Base {
         private pois: POI[] = [];
 
-        protected log(message: string, ...args: any[]) {
+        // Changed to public so Tasks can call it
+        public log(message: string, ...args: any[]) {
             console.log(`[Knowledge] ${message}`, ...args);
         }
 
-        protected rememberPOI(category: POICategory, position: Vec3, metadata?: any) {
+        // Changed to public so Tasks can call it
+        public rememberPOI(category: POICategory, position: Vec3, metadata?: any) {
             // Check if already exists nearby
             const existing = this.pois.find(p => p.category === category && p.position.distanceTo(position) < 1);
             if (existing) {
@@ -41,11 +43,13 @@ export function KnowledgeMixin<TBase extends Constructor>(Base: TBase) {
             this.log(`Remembered ${category} at ${position}`);
         }
 
-        protected getPOIs(category: POICategory): POI[] {
+        // Changed to public so Tasks can call it
+        public getPOIs(category: POICategory): POI[] {
             return this.pois.filter(p => p.category === category);
         }
 
-        protected getNearestPOI(bot: Bot, category: POICategory): POI | null {
+        // Changed to public so Tasks can call it
+        public getNearestPOI(bot: Bot, category: POICategory): POI | null {
             const botPos = bot.entity?.position;
             if (!botPos) return null;
 
@@ -55,7 +59,8 @@ export function KnowledgeMixin<TBase extends Constructor>(Base: TBase) {
             return matches.sort((a, b) => a.position.distanceTo(botPos) - b.position.distanceTo(botPos))[0] || null;
         }
 
-        protected forgetPOI(category: POICategory, position: Vec3) {
+        // Changed to public so Tasks can call it
+        public forgetPOI(category: POICategory, position: Vec3) {
             this.pois = this.pois.filter(p => !(p.category === category && p.position.distanceTo(position) < 1));
             this.log(`Forgot ${category} at ${position}`);
         }
