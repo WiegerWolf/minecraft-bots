@@ -20,14 +20,9 @@ export class MaintenanceTask implements Task {
                 const tree = bot.findBlock({
                     matching: b => !!b && b.name.includes('_log'),
                     maxDistance: 32,
-                    // --- FIX START: Respect failed blocks ---
-                    useExtraInfo: (block) => {
-                        if (role.failedBlocks.has(block.position.toString())) return false;
-                        return true;
-                    }
-                    // --- FIX END ---
+                    // Check if block is in the failed blacklist
+                    useExtraInfo: (block) => !role.failedBlocks.has(block.position.toString())
                 });
-                
                 if (tree) {
                     return {
                         priority: 50,
@@ -91,6 +86,7 @@ export class MaintenanceTask implements Task {
     async perform(bot: Bot, role: FarmingRole, target?: any): Promise<void> {
         // Case: Gathering Wood
         if (target && target.name && target.name.includes('_log')) {
+            await bot.lookAt(target.position);
             await bot.dig(target);
             return;
         }
