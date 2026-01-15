@@ -1,4 +1,3 @@
-// ./src/roles/farming/tasks/PlantTask.ts
 import type { Bot } from 'mineflayer';
 import type { FarmingRole } from '../FarmingRole';
 import type { Task, WorkProposal } from './Task';
@@ -21,29 +20,42 @@ export class PlantTask implements Task {
         // 2. Find empty farmland near center
         const farmAnchor = role.getNearestPOI(bot, 'farm_center')?.position || bot.entity.position;
 
-        // Find closest unplanted farmland
-        const farmland = bot.findBlock({
+        // FIX: Use findBlocks (plural) to get a list, then filter/sort
+        const farmlandBlocks = bot.findBlocks({
             point: farmAnchor,
-            maxDistance: 30,
+            maxDistance: 32,
+            count: 16,
             matching: (b) => {
-                // FIX: Strict Null Checks
                 if (!b || !b.position || !b.name) return false;
-                
                 if (b.name !== 'farmland') return false;
                 if (role.failedBlocks.has(b.position.toString())) return false;
-                
-                const above = bot.blockAt(b.position.offset(0, 1, 0));
-                return !!(above && (above.name === 'air' || above.name === 'cave_air'));
+                return true;
             }
         });
 
-        if (farmland) {
-            return {
-                priority: 20, 
-                description: `Planting on farmland at ${farmland.position}`,
-                target: farmland,
-                task: this
-            };
+        // Filter valid planting spots (air or plants above)
+        const validSpots = farmlandBlocks.filter(pos => {
+            const above = bot.blockAt(pos.offset(0, 1, 0));
+            if (!above) return false;
+            // Relaxed check: Allow air, cave_air, or breakable plants/snow
+            const isClear = ['air', 'cave_air', 'void_air', 'short_grass', 'tall_grass', 'fern', 'snow'].includes(above.name) || above.name.includes('flower');
+            return isClear;
+        });
+
+        if (validSpots.length > 0) {
+            // Sort by distance to bot
+            validSpots.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+            const targetPos = validSpots[0]; // Closest valid spot
+            const targetBlock = bot.blockAt(targetPos);
+
+            if (targetBlock) {
+                 return {
+                    priority: 25, // CRITICAL: Higher than TillTask (15)
+                    description: `Planting on farmland at ${targetPos}`,
+                    target: targetBlock,
+                    task: this
+                };
+            }
         }
 
         return null;
@@ -51,7 +63,10 @@ export class PlantTask implements Task {
 
     async perform(bot: Bot, role: FarmingRole, target: any): Promise<void> {
         const cropName = this.getOptimalCrop(bot, target.position);
-        if (!cropName) return;
+        if (!cropName) {
+            role.log("Abort planting: No seeds found in inventory.");
+            return;
+        }
 
         const seedItem = bot.inventory.items().find(i => i.name === cropName);
         if (!seedItem) return;
@@ -60,6 +75,13 @@ export class PlantTask implements Task {
             await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 2));
             bot.pathfinder.stop();
             bot.pathfinder.setGoal(null);
+
+            // Clean block above if needed (grass/snow)
+            const abovePos = target.position.offset(0, 1, 0);
+            const above = bot.blockAt(abovePos);
+            if (above && above.boundingBox !== 'empty' && above.name !== 'air') {
+                await bot.dig(above);
+            }
 
             await bot.equip(seedItem, 'hand');
             await bot.lookAt(target.position.offset(0.5, 1, 0.5), true);
