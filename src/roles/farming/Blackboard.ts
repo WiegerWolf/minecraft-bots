@@ -108,6 +108,14 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 
+    // Ensure farm center water is included (chunks may be unloaded when bot is far away)
+    if (bb.farmCenter && bb.nearbyWater.length === 0) {
+        const farmCenterBlock = bot.blockAt(bb.farmCenter);
+        if (farmCenterBlock && (farmCenterBlock.name === 'water' || farmCenterBlock.name === 'flowing_water')) {
+            bb.nearbyWater.push(farmCenterBlock);
+        }
+    }
+
     // Find farmland - only hydrated blocks with adequate light
     bb.nearbyFarmland = bot.findBlocks({
         point: searchCenter,
