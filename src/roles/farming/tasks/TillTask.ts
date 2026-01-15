@@ -26,12 +26,31 @@ export class TillTask implements Task {
         // A. Validate existing anchor
         if (farmAnchor) {
             // Check if it's still water
-            if (!waterBlock || (waterBlock.name !== 'water' && waterBlock.name !== 'flowing_water')) {
-                role.log(`Abandoning farm center at ${farmAnchor} - No longer water.`);
-                role.forgetPOI('farm_center', farmAnchor);
-                farmAnchor = undefined;
-                waterBlock = null;
-            } 
+            // Check if it's still water
+            if (!waterBlock) {
+                // Block is unloaded. Do not abandon yet.
+            } else if (waterBlock.name !== 'water' && waterBlock.name !== 'flowing_water') {
+                role.log(`Farm center at ${farmAnchor} is ${waterBlock.name}. Finding nearby replacement...`);
+                // Try to find water nearby before abandoning
+                const nearbyWater = bot.findBlocks({
+                    point: farmAnchor,
+                    matching: (b) => b.name === 'water' || b.name === 'flowing_water',
+                    maxDistance: 5,
+                    count: 1
+                });
+
+                if (nearbyWater.length > 0 && nearbyWater[0]) {
+                    role.rememberPOI('farm_center', nearbyWater[0]);
+                    farmAnchor = nearbyWater[0];
+                    waterBlock = bot.blockAt(farmAnchor);
+                    role.log(`Redirected farm center to ${farmAnchor}`);
+                } else {
+                    role.log(`Abandoning farm center at ${farmAnchor} - No longer water and none nearby.`);
+                    role.forgetPOI('farm_center', farmAnchor);
+                    farmAnchor = undefined;
+                    waterBlock = null;
+                }
+            }
             else {
                 // Check if it's productive (has tillable land)
                 const hasActiveFarm = this.hasNeighboringFarmland(bot, farmAnchor, 5);
@@ -59,7 +78,7 @@ export class TillTask implements Task {
 
             for (const pos of waterCandidates) {
                 const tillableCount = this.countTillableNeighbors(bot, pos, role);
-                
+
                 if (tillableCount > bestScore) {
                     bestScore = tillableCount;
                     bestPos = pos;
@@ -75,7 +94,7 @@ export class TillTask implements Task {
         }
 
         if (!farmAnchor || !waterBlock) {
-             return null;
+            return null;
         }
 
         // 3. Limit Check (Don't till if we have enough spots for seeds)
@@ -85,7 +104,7 @@ export class TillTask implements Task {
             matching: (b) => {
                 // FIX: Strict safety checks to prevent crash
                 if (!b || !b.position || !b.name) return false;
-                
+
                 if (b.name !== 'farmland') return false;
                 const above = bot.blockAt(b.position.offset(0, 1, 0));
                 return !!(above && (above.name === 'air' || above.name === 'cave_air'));
@@ -146,9 +165,9 @@ export class TillTask implements Task {
             await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 2));
             bot.pathfinder.stop();
             bot.pathfinder.setGoal(null);
-            
+
             await bot.equip(hoe, 'hand');
-            
+
             const abovePos = target.position.offset(0, 1, 0);
             const above = bot.blockAt(abovePos);
             if (above && above.boundingBox !== 'empty' && above.name !== 'air') {
@@ -161,8 +180,8 @@ export class TillTask implements Task {
 
             const updated = bot.blockAt(target.position);
             if (updated && updated.name !== 'farmland') {
-                 role.log(`❌ Tilling failed. Blacklisting.`);
-                 role.blacklistBlock(target.position);
+                role.log(`❌ Tilling failed. Blacklisting.`);
+                role.blacklistBlock(target.position);
             }
         } catch (err) {
             role.blacklistBlock(target.position);
@@ -183,7 +202,7 @@ export class TillTask implements Task {
                 const pos = center.offset(x, 0, z);
                 if (pos.equals(center)) continue;
                 if (role.failedBlocks.has(pos.toString())) continue;
-                
+
                 const block = bot.blockAt(pos);
                 if (block && (block.name === 'grass_block' || block.name === 'dirt') && this.isClearAbove(bot, pos)) {
                     count++;
@@ -195,9 +214,9 @@ export class TillTask implements Task {
 
     private hasNeighboringFarmland(bot: Bot, pos: Vec3, radius: number): boolean {
         const r = Math.ceil(radius);
-        for(let x = -r; x <= r; x++) {
-            for(let z = -r; z <= r; z++) {
-                if (x===0 && z===0) continue;
+        for (let x = -r; x <= r; x++) {
+            for (let z = -r; z <= r; z++) {
+                if (x === 0 && z === 0) continue;
                 const b = bot.blockAt(pos.offset(x, 0, z));
                 if (b && b.name === 'farmland') return true;
             }

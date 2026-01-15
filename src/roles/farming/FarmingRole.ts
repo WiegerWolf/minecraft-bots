@@ -21,7 +21,7 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
     private active = false;
     private bot: Bot | null = null;
     private tasks: Task[] = [];
-    
+
     public failedBlocks: Map<string, number> = new Map();
     public containerCooldowns: Map<string, number> = new Map();
 
@@ -46,7 +46,7 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
         defaultMove.canDig = true;
         defaultMove.digCost = 10;
         defaultMove.allow1by1towers = true;
-        (defaultMove as any).liquidCost = 5; 
+        (defaultMove as any).liquidCost = 5;
         bot.pathfinder.setMovements(defaultMove);
 
         this.failedBlocks.clear();
@@ -54,12 +54,10 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
 
         if (options?.center) {
             this.rememberPOI('farm_center', options.center);
-        } else {
-            this.rememberPOI('farm_center', bot.entity.position.clone());
         }
 
         this.log('🚜 Modular Farming Role started.');
-        
+
         // Removed warmup. Starting loop immediately.
         this.loop();
     }
@@ -95,7 +93,7 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
 
     private async findBestProposal(): Promise<WorkProposal | null> {
         if (!this.bot) return null;
-        
+
         let bestProposal: WorkProposal | null = null;
 
         for (const task of this.tasks) {
@@ -126,7 +124,7 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
 
     public async clearObstructions(bot: Bot) {
         this.log("⚠️ Detected stuck/obstruction. Clearing surroundings...");
-        
+
         const offsets = [
             new Vec3(0, 1, 0),
             new Vec3(0, 2, 0),
@@ -140,16 +138,16 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
         for (const offset of offsets) {
             const target = bot.entity.position.plus(offset).floored();
             const block = bot.blockAt(target);
-            
+
             if (block && block.boundingBox !== 'empty' && block.diggable) {
-                 if (['chest', 'crafting_table', 'furnace', 'bed', 'hopper'].includes(block.name)) continue;
-                 
-                 this.log(`🔨 Breaking obstructing ${block.name} at ${target}`);
-                 try {
-                     await bot.lookAt(target.offset(0.5, 0.5, 0.5), true);
-                     await bot.dig(block);
-                     await new Promise(r => setTimeout(r, 250)); 
-                 } catch (e) {}
+                if (['chest', 'crafting_table', 'furnace', 'bed', 'hopper'].includes(block.name)) continue;
+
+                this.log(`🔨 Breaking obstructing ${block.name} at ${target}`);
+                try {
+                    await bot.lookAt(target.offset(0.5, 0.5, 0.5), true);
+                    await bot.dig(block);
+                    await new Promise(r => setTimeout(r, 250));
+                } catch (e) { }
             }
         }
     }
