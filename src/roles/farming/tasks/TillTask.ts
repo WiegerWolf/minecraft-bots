@@ -78,11 +78,14 @@ export class TillTask implements Task {
              return null;
         }
 
-        // 3. Limit Check
+        // 3. Limit Check (Don't till if we have enough spots for seeds)
         const unplantedFarmland = bot.findBlocks({
             point: farmAnchor,
             maxDistance: 10,
             matching: (b) => {
+                // FIX: Strict safety checks to prevent crash
+                if (!b || !b.position || !b.name) return false;
+                
                 if (b.name !== 'farmland') return false;
                 const above = bot.blockAt(b.position.offset(0, 1, 0));
                 return !!(above && (above.name === 'air' || above.name === 'cave_air'));
@@ -122,7 +125,6 @@ export class TillTask implements Task {
             candidates.sort((a, b) => b.score - a.score);
             const best = candidates[0];
 
-            // FIX: Explicit undefined check
             if (!best) return null;
 
             return {
