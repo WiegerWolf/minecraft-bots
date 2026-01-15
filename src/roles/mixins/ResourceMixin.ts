@@ -25,10 +25,13 @@ export function ResourceMixin<TBase extends Constructor>(Base: TBase) {
 
             const found = bot.findBlocks({
                 matching: (block) => {
+                    // FIX: Strict safety checks
+                    if (!block || !block.name) return false;
+
                     if (!blockNames.includes(block.name)) return false;
                     
-                    // Filter out blacklisted blocks
-                    if (failedBlocks && failedBlocks.has(block.position.toString())) return false;
+                    // FIX: Ensure position exists before calling toString()
+                    if (block.position && failedBlocks && failedBlocks.has(block.position.toString())) return false;
                     
                     return true;
                 },
@@ -38,7 +41,7 @@ export function ResourceMixin<TBase extends Constructor>(Base: TBase) {
 
             if (found.length === 0) return null;
 
-            // FIX: Handle noUncheckedIndexedAccess by checking existence or asserting
+            // FIX: Handle potential undefined index (noUncheckedIndexedAccess)
             const pos = found[0];
             if (!pos) return null;
 
