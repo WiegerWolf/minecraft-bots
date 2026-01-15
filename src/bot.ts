@@ -1,9 +1,9 @@
 import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
-import { pathfinder } from 'mineflayer-pathfinder';
+import { pathfinder, goals } from 'mineflayer-pathfinder';
 import { faker } from '@faker-js/faker';
 import { FarmingRole } from './roles/farming/FarmingRole';
 import type { Role } from './roles/Role';
-
+const { GoalNear } = goals;
 // Generate a random bot name
 const botName = faker.internet.username().slice(0, 16);
 console.log(`🎲 Generated random name: ${botName}`);
@@ -61,6 +61,14 @@ bot.on('chat', (username: string, message: string) => {
             const position = player?.entity?.position;
             setRole('farming', position ? { center: position } : undefined);
             bot.chat("Starting farming logic.");
+        }
+    }
+    if (command === 'come') {
+        const player = bot.players[username];
+        const position = player?.entity?.position;
+        if (position) {
+            bot.pathfinder.goto(new GoalNear(position.x, position.y, position.z, 1));
+            bot.chat("Coming to you!");
         }
     }
 });
