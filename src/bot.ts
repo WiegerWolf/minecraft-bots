@@ -1,7 +1,7 @@
 import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
 import { pathfinder, goals } from 'mineflayer-pathfinder';
 import { faker } from '@faker-js/faker';
-import { FarmingRole } from './roles/FarmingRole';
+import { FarmingRole } from './roles/farming/FarmingRole';
 import type { Role } from './roles/Role';
 
 const { GoalNear } = goals;
@@ -92,7 +92,7 @@ bot.on('chat', (username: string, message: string) => {
 
     if (command === 'come') {
         const player = bot.players[username];
-        if (player?.entity && bot.entity?.position) { // Added null check for bot.entity.position
+        if (player?.entity && bot.entity?.position) {
             const pos = player.entity.position;
             bot.chat(`Coming to you, ${username}!`);
             bot.pathfinder.setGoal(new GoalNear(pos.x, pos.y, pos.z, 1));
@@ -134,4 +134,3 @@ bot.on('end', () => {
 bot.once('login', () => {
     console.log('🎮 Bot logged in successfully!');
 });
-
