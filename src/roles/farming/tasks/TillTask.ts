@@ -29,9 +29,7 @@ export class TillTask implements Task {
             point: farmAnchor,
             maxDistance: 20,
             matching: (b) => {
-                // FIX: Strict Null Checks
                 if (!b || !b.position || !b.name) return false;
-
                 if (b.name !== 'farmland') return false;
                 const above = bot.blockAt(b.position.offset(0, 1, 0));
                 return !!(above && (above.name === 'air' || above.name === 'cave_air'));
@@ -39,6 +37,7 @@ export class TillTask implements Task {
             count: 100
         });
 
+        // Limit tilling to roughly the number of seeds we have
         if (unplantedFarmland.length >= totalSeeds) {
             return null; 
         }
@@ -52,7 +51,6 @@ export class TillTask implements Task {
         });
 
         // If not found, look WIDER (64 blocks) from the bot's current position
-        // This stops the "wandering" loop and forces it to migrate to water.
         if (!water) {
              water = bot.findBlock({
                 point: bot.entity.position,
@@ -77,27 +75,25 @@ export class TillTask implements Task {
         
         for (let x = -4; x <= 4; x++) {
             for (let z = -4; z <= 4; z++) {
-                for (let y = -1; y <= 1; y++) {
-                    const pos = waterPos.offset(x, y, z);
-                    
-                    if (role.failedBlocks.has(pos.toString())) continue;
+                // FIX: Strictly same Y-level as water for proper hydration
+                const pos = waterPos.offset(x, 0, z);
+                
+                if (pos.equals(waterPos)) continue; // Don't check the water itself
+                if (role.failedBlocks.has(pos.toString())) continue;
 
-                    const block = bot.blockAt(pos);
-                    // FIX: Null check
-                    if (!block || !block.name || (block.name !== 'grass_block' && block.name !== 'dirt')) continue;
+                const block = bot.blockAt(pos);
+                if (!block || !block.name || (block.name !== 'grass_block' && block.name !== 'dirt')) continue;
 
-                    const above = bot.blockAt(pos.offset(0, 1, 0));
-                    // FIX: Null check
-                    if (!above || !above.name || (above.name !== 'air' && above.name !== 'cave_air' && !above.name.includes('grass'))) continue;
+                const above = bot.blockAt(pos.offset(0, 1, 0));
+                if (!above || !above.name || (above.name !== 'air' && above.name !== 'cave_air' && !above.name.includes('grass') && !above.name.includes('fern'))) continue;
 
-                    let score = 0;
-                    const distToCenter = pos.distanceTo(farmAnchor);
-                    score -= distToCenter * 2; 
+                let score = 0;
+                const distToCenter = pos.distanceTo(farmAnchor);
+                score -= distToCenter * 2; 
 
-                    if (this.hasNeighboringFarmland(bot, pos)) score += 50;
+                if (this.hasNeighboringFarmland(bot, pos)) score += 50;
 
-                    candidates.push({ block, score });
-                }
+                candidates.push({ block, score });
             }
         }
 
@@ -138,6 +134,7 @@ export class TillTask implements Task {
             if (updatedBlock && updatedBlock.name === 'farmland') {
                 role.rememberPOI('farm_center', target.position);
             } else {
+                // If it failed, it might be protected or laggy
                 role.log(`❌ Tilling failed. Blacklisting.`);
                 role.blacklistBlock(target.position);
             }
