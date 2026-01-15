@@ -3,7 +3,7 @@ import type { FarmingRole } from '../FarmingRole';
 import type { Task, WorkProposal } from './Task';
 import { goals } from 'mineflayer-pathfinder';
 
-const { GoalLookAtBlock } = goals;
+const { GoalLookAtBlock, GoalNear } = goals;
 
 export class LogisticsTask implements Task {
     name = 'logistics';
@@ -43,24 +43,21 @@ export class LogisticsTask implements Task {
             }
         }
         
-        // 2. Scavenge Grass for Seeds (Using ResourceMixin)
+        // 2. Scavenge Grass for Seeds
         if (!hasSeeds) {
             const priority = hasHoe ? 60 : 20;
-
             const targetPlants = [
                 'grass', 'short_grass', 'tall_grass', 
                 'fern', 'large_fern', 'wheat', 'dead_bush'
             ];
 
-            // Use the Mixin's optimized search (64 blocks)
-            const grass = role.findNaturalBlock(bot, targetPlants, { maxDistance: 64 });
+            const grass = role.findNaturalBlock(bot, targetPlants, { maxDistance: 48 }); // Reduced distance slightly to avoid far pathfinding
             
             if (grass) {
                 return {
                     priority: priority,
                     description: `Gathering seeds from ${grass.name} at ${grass.position.floored()}`,
                     target: grass,
-                    range: 3.0,
                     task: this
                 };
             } else {
@@ -77,7 +74,7 @@ export class LogisticsTask implements Task {
     }
 
     async perform(bot: Bot, role: FarmingRole, target: any): Promise<void> {
-        // Case: Exploration (Target is null)
+        // Case: Exploration
         if (!target) {
             await role.wanderNewChunk(bot);
             return;
@@ -86,11 +83,24 @@ export class LogisticsTask implements Task {
         // Case: Breaking Grass
         if (target.name.includes('grass') || target.name.includes('fern') || target.name === 'dead_bush') {
              try {
-                // FIX: Move to block first!
-                await bot.pathfinder.goto(new GoalLookAtBlock(target.position, bot.world));
+                // FIX: Use GoalNear (Range 1) instead of LookAtBlock. 
+                // LookAtBlock can be strict about visibility. GoalNear just gets us close.
+                await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 1));
                 
-                await bot.dig(target);
-                await new Promise(r => setTimeout(r, 500)); 
+                // CRITICAL FIX: Stop pathfinding so it doesn't fight the look control
+                bot.pathfinder.stop();
+                bot.pathfinder.setGoal(null);
+
+                // CRITICAL FIX: Look at the CENTER of the block instantly
+                await bot.lookAt(target.position.offset(0.5, 0.5, 0.5), true);
+
+                if (bot.canDigBlock(target)) {
+                    await bot.dig(target);
+                    await new Promise(r => setTimeout(r, 250)); // Wait for drop
+                } else {
+                    role.log(`Cannot dig block (too far or obstructed).`);
+                    role.blacklistBlock(target.position);
+                }
              } catch (err) {
                  role.log(`Failed to break grass: ${err}`);
                  role.blacklistBlock(target.position);
@@ -100,11 +110,10 @@ export class LogisticsTask implements Task {
 
         // Case: Container Interaction
         if (target.name.includes('chest') || target.name.includes('barrel') || target.name.includes('shulker')) {
-            // FIX: Move to chest first!
             try {
                 await bot.pathfinder.goto(new GoalLookAtBlock(target.position, bot.world));
             } catch (e) {
-                role.log("Could not path to chest, trying to open anyway...");
+                // Ignore path error, try opening anyway
             }
 
             const container = await bot.openContainer(target);
@@ -114,7 +123,7 @@ export class LogisticsTask implements Task {
             const containerItems = container.items();
             let didAnything = false;
 
-            // Deposit
+            // Deposit logic...
             const crops = ['wheat', 'carrot', 'potato', 'beetroot', 'melon_slice', 'pumpkin', 'poisonous_potato'];
             for (const item of inventory) {
                 const isCrop = crops.includes(item.name);
@@ -134,7 +143,7 @@ export class LogisticsTask implements Task {
                 }
             }
 
-            // Withdraw
+            // Withdraw logic...
             const seedNames = ['wheat_seeds', 'beetroot_seeds', 'carrot', 'potato'];
             for (const name of seedNames) {
                 const currentCount = bot.inventory.items().filter(i => i.name === name).reduce((s, i) => s + i.count, 0);

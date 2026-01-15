@@ -3,7 +3,7 @@ import type { FarmingRole } from '../FarmingRole';
 import type { Task, WorkProposal } from './Task';
 import { goals } from 'mineflayer-pathfinder';
 
-const { GoalLookAtBlock } = goals;
+const { GoalNear } = goals;
 
 export class MaintenanceTask implements Task {
     name = 'maintenance';
@@ -14,14 +14,22 @@ export class MaintenanceTask implements Task {
         const planks = this.count(inventory, i => i.name.endsWith('_planks'));
         const logs = this.count(inventory, i => i.name.includes('_log') || i.name === 'log');
 
-        // 1. Gather Wood if we need it for tools
+        // 1. Gather Wood if we need it
         if (!hasHoe && planks < 8 && logs === 0) {
             const targetLogs = ['log', 'log2', 'oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log'];
             
             // USE RESOURCE MIXIN
+            // We search for logs, but we need to filter out high ones manually here 
+            // because findNaturalBlock returns closest 3D distance, which might be a high branch.
             const logBlock = role.findNaturalBlock(bot, targetLogs, { maxDistance: 64 });
 
             if (logBlock) {
+                // Sanity check: Is it way above us?
+                if (logBlock.position.y > bot.entity.position.y + 4) {
+                    role.blacklistBlock(logBlock.position); // Ignore high logs for now
+                    return null;
+                }
+
                 return {
                     priority: 50,
                     description: `Gathering wood at ${logBlock.position.floored()}`,
@@ -44,11 +52,26 @@ export class MaintenanceTask implements Task {
         // Case: Wood Gathering
         if (target && target.name && (target.name.includes('log') || target.name.endsWith('_log'))) {
             try {
-                await bot.pathfinder.goto(new GoalLookAtBlock(target.position, bot.world));
+                // FIX: Use GoalNear to get close to the tree base, range 2.5
+                await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 2.5));
+                
+                // Stop to stabilize
+                bot.pathfinder.stop();
+                bot.pathfinder.setGoal(null);
+
                 const axe = bot.inventory.items().find(i => i.name.includes('_axe'));
                 if (axe) await bot.equip(axe, 'hand');
-                await bot.dig(target);
-                await bot.waitForTicks(10); 
+
+                // Look at center
+                await bot.lookAt(target.position.offset(0.5, 0.5, 0.5), true);
+
+                if (bot.canDigBlock(target)) {
+                    await bot.dig(target);
+                    await bot.waitForTicks(10); 
+                } else {
+                    role.log("Cannot reach log.");
+                    role.blacklistBlock(target.position);
+                }
             } catch (err: any) {
                 role.log(`❌ Failed to cut tree: ${err.message}`);
                 if (target.position) role.blacklistBlock(target.position);
@@ -56,7 +79,7 @@ export class MaintenanceTask implements Task {
             return;
         }
 
-        // Case: Crafting
+        // Case: Crafting (unchanged)
         const inventory = bot.inventory.items();
         if (this.count(inventory, i => i.name.includes('_log')) > 0) {
              await this.craftPlanksFromLogs(bot, role);
