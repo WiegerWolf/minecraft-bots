@@ -29,6 +29,9 @@ export class TillTask implements Task {
             point: farmAnchor,
             maxDistance: 20,
             matching: (b) => {
+                // FIX: Strict Null Checks
+                if (!b || !b.position || !b.name) return false;
+
                 if (b.name !== 'farmland') return false;
                 const above = bot.blockAt(b.position.offset(0, 1, 0));
                 return !!(above && (above.name === 'air' || above.name === 'cave_air'));
@@ -41,18 +44,34 @@ export class TillTask implements Task {
         }
 
         // 3. Find water
-        const water = bot.findBlock({
+        // First check near the established farm center
+        let water = bot.findBlock({
             point: farmAnchor,
             maxDistance: 20,
             matching: b => !!b && (b.name === 'water' || b.name === 'flowing_water')
         });
 
+        // If not found, look WIDER (64 blocks) from the bot's current position
+        // This stops the "wandering" loop and forces it to migrate to water.
         if (!water) {
-             if (Math.random() < 0.01) role.log("⚠️ Have seeds, but no water found near farm center.");
+             water = bot.findBlock({
+                point: bot.entity.position,
+                maxDistance: 64, 
+                matching: b => !!b && (b.name === 'water' || b.name === 'flowing_water')
+            });
+
+            if (water) {
+                role.log("Found new water source! Moving farm center.");
+                role.rememberPOI('farm_center', water.position);
+            }
+        }
+
+        if (!water) {
+             if (Math.random() < 0.01) role.log("⚠️ Have seeds, but no water found anywhere nearby.");
              return null;
         }
 
-        // 4. Find valid dirt/grass
+        // 4. Find valid dirt/grass to till
         const candidates: { block: any, score: number }[] = [];
         const waterPos = water.position;
         
@@ -64,10 +83,12 @@ export class TillTask implements Task {
                     if (role.failedBlocks.has(pos.toString())) continue;
 
                     const block = bot.blockAt(pos);
-                    if (!block || (block.name !== 'grass_block' && block.name !== 'dirt')) continue;
+                    // FIX: Null check
+                    if (!block || !block.name || (block.name !== 'grass_block' && block.name !== 'dirt')) continue;
 
                     const above = bot.blockAt(pos.offset(0, 1, 0));
-                    if (!above || (above.name !== 'air' && above.name !== 'cave_air' && !above.name.includes('grass'))) continue;
+                    // FIX: Null check
+                    if (!above || !above.name || (above.name !== 'air' && above.name !== 'cave_air' && !above.name.includes('grass'))) continue;
 
                     let score = 0;
                     const distToCenter = pos.distanceTo(farmAnchor);
@@ -84,7 +105,6 @@ export class TillTask implements Task {
             candidates.sort((a, b) => b.score - a.score);
             const best = candidates[0];
             
-            // FIX: Add check for undefined
             if (!best) return null;
 
             return {
