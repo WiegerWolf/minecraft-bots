@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import type { Role } from '../../Role';
+import type { Role } from '../Role';
 import { goals, Movements } from 'mineflayer-pathfinder';
 import { CraftingMixin } from '../mixins/CraftingMixin';
 import { KnowledgeMixin } from '../mixins/KnowledgeMixin';
@@ -174,13 +174,18 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 if (isInventoryEmpty) {
                     this.scanSurroundings(bot);
                     this.log("⚠️ I am empty handed and can't find resources!");
+                    
+                    // Force a deeper check
+                    this.forceResourceCheck(bot);
                 }
                 
                 this.log(isInventoryEmpty ? "🏃 Searching/Wandering..." : "🚶 Wandering...");
                 this.idleTicks = 0;
                 
-                const x = bot.entity.position.x + (Math.random() * 40 - 20);
-                const z = bot.entity.position.z + (Math.random() * 40 - 20);
+                // Increase wander range
+                const range = 64; 
+                const x = bot.entity.position.x + (Math.random() * range - (range/2));
+                const z = bot.entity.position.z + (Math.random() * range - (range/2));
                 bot.pathfinder.setGoal(new GoalNear(x, bot.entity.position.y, z, 1));
                 
                 this.currentProposal = {
@@ -200,17 +205,18 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     }
 
     private scanSurroundings(bot: Bot) {
-        this.log("🔍 DEBUG: Scanning nearby blocks (Radius 4):");
+        this.log("🔍 DEBUG: Scanning nearby blocks (Radius 16):");
         const counts: Record<string, number> = {};
         const pos = bot.entity.position;
         
-        // Scan a small volume around the bot
-        for (let x = -4; x <= 4; x++) {
-            for (let y = -1; y <= 3; y++) {
-                for (let z = -4; z <= 4; z++) {
+        // Scan a larger volume
+        const radius = 16;
+        for (let x = -radius; x <= radius; x += 2) { // Step 2 to save CPU
+            for (let y = -2; y <= 6; y++) {
+                for (let z = -radius; z <= radius; z += 2) {
                     const block = bot.blockAt(pos.offset(x, y, z));
-                    if (block && block.name !== 'air' && block.name !== 'cave_air') {
-                        counts[block.name] = (counts[block.name] || 0) + 1;
+                    if (block && block.name !== 'air' && block.name !== 'cave_air' && block.name !== 'water' && block.name !== 'grass_block' && block.name !== 'sand' && block.name !== 'dirt' && block.name !== 'stone') {
+                         counts[block.name] = (counts[block.name] || 0) + 1;
                     }
                 }
             }
@@ -218,11 +224,24 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         
         const summary = Object.entries(counts)
             .sort((a, b) => b[1] - a[1]) // Sort by count desc
-            .slice(0, 10) // Top 10
+            .slice(0, 15)
             .map(([name, count]) => `${name}: ${count}`)
             .join(', ');
             
-        this.log(`Visible blocks: [${summary || 'Nothing!'}]`);
+        this.log(`Interesting blocks: [${summary || 'Nothing! (Only terrain)'}]`);
+    }
+    
+    private forceResourceCheck(bot: Bot) {
+        // Manual deep search for logs specifically
+        const log = bot.findBlock({
+            matching: b => b.name.includes('_log'),
+            maxDistance: 64
+        });
+        if (log) {
+            this.log(`✅ FORCE CHECK: Found ${log.name} at ${log.position}. Why isn't MaintenanceTask picking it up?`);
+        } else {
+            this.log(`❌ FORCE CHECK: findBlock found NO logs in 64 blocks.`);
+        }
     }
 
     private printDebugInventory(bot: Bot) {

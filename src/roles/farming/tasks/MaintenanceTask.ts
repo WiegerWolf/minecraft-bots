@@ -18,12 +18,12 @@ export class MaintenanceTask implements Task {
 
             // Case A: Gather wood
             if (planks < 2 && logs === 0) {
+                // role.log("DEBUG: Looking for wood...");
                 const tree = bot.findBlock({
                     matching: (b) => {
                         if (!b || !b.position) return false;
                         if (role.failedBlocks.has(b.position.toString())) return false;
                         
-                        // FIX: Broaden log matching
                         return b.name.endsWith('_log') || b.name === 'log' || b.name === 'log2'; 
                     },
                     maxDistance: 64
@@ -37,6 +37,8 @@ export class MaintenanceTask implements Task {
                         range: 2.5,
                         task: this
                     };
+                } else {
+                    // role.log("DEBUG: No trees found in MaintenanceTask.");
                 }
             }
             
@@ -118,12 +120,18 @@ export class MaintenanceTask implements Task {
         if (this.count(bot.inventory.items(), i => i.name.endsWith('_planks')) < 2) {
              const logItem = bot.inventory.items().find(i => i.name.includes('_log') || i.name === 'log' || i.name === 'log2');
              if (logItem) {
-                 // Try to guess plank name, usually 'oak_log' -> 'oak_planks'
-                 // But for 'log' (1.12), we rely on recipes
                  let plankName = 'oak_planks';
-                 if (logItem.name.includes('_log')) {
-                    plankName = logItem.name.replace('_log', '_planks');
-                 }
+                 // Map logs to planks
+                 const name = logItem.name;
+                 if (name.includes('spruce')) plankName = 'spruce_planks';
+                 else if (name.includes('birch')) plankName = 'birch_planks';
+                 else if (name.includes('jungle')) plankName = 'jungle_planks';
+                 else if (name.includes('acacia')) plankName = 'acacia_planks';
+                 else if (name.includes('dark_oak')) plankName = 'dark_oak_planks';
+                 else if (name.includes('mangrove')) plankName = 'mangrove_planks';
+                 else if (name.includes('cherry')) plankName = 'cherry_planks';
+                 // 'oak' is default
+
                  await role.tryCraft(bot, plankName);
              }
         }

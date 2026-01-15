@@ -42,7 +42,6 @@ export class LogisticsTask implements Task {
             }
             
             // Scavenge grass
-            // FIX: Broaden the search. Match anything with 'grass' in the name that isn't the block itself or underwater.
             const grass = bot.findBlock({
                 matching: b => {
                     if (!b || !b.position) return false;
