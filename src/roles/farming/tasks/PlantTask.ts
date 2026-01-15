@@ -25,23 +25,23 @@ export class PlantTask implements Task {
         const farmlandBlocks = bot.findBlocks({
             point: farmAnchor,
             maxDistance: 32,
-            count: 16,
+            count: 64,
             matching: (b) => {
                 if (!b || !b.position || !b.name) return false;
                 if (b.name !== 'farmland') return false;
                 if (role.failedBlocks.has(b.position.toString())) return false;
-                return true;
+
+                // Check for valid space above (empty or breakable)
+                const above = bot.blockAt(b.position.offset(0, 1, 0));
+                if (!above) return false;
+
+                return ['air', 'cave_air', 'void_air', 'short_grass', 'tall_grass', 'fern', 'snow'].includes(above.name) ||
+                    above.name.includes('flower');
             }
         });
 
-        // Filter valid planting spots (air or plants above)
-        const validSpots = farmlandBlocks.filter(pos => {
-            const above = bot.blockAt(pos.offset(0, 1, 0));
-            if (!above) return false;
-            // Relaxed check: Allow air, cave_air, or breakable plants/snow
-            const isClear = ['air', 'cave_air', 'void_air', 'short_grass', 'tall_grass', 'fern', 'snow'].includes(above.name) || above.name.includes('flower');
-            return isClear;
-        });
+        // Search results are already filtered by matching function
+        const validSpots = farmlandBlocks;
 
         if (validSpots.length > 0) {
             // Sort by distance to bot

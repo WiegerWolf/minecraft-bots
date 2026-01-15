@@ -127,8 +127,8 @@ export class TillTask implements Task {
         const candidates: { block: any, score: number }[] = [];
         const waterPos = waterBlock.position;
 
-        for (let x = -6; x <= 6; x++) {
-            for (let z = -6; z <= 6; z++) {
+        for (let x = -4; x <= 4; x++) {
+            for (let z = -4; z <= 4; z++) {
                 const pos = waterPos.offset(x, 0, z);
                 if (pos.equals(waterPos)) continue;
                 if (role.failedBlocks.has(pos.toString())) continue;
@@ -148,7 +148,7 @@ export class TillTask implements Task {
         }
 
         if (candidates.length === 0) {
-            // role.log(`[TillTask] Found 0 tillable spots around ${waterPos} (Radius: 6)`);
+            // role.log(`[TillTask] Found 0 tillable spots around ${waterPos} (Radius: 4)`);
 
             // Fallback: If we are far from the center, move back.
             if (bot.entity.position.distanceTo(farmAnchor) > 8) {
@@ -224,8 +224,8 @@ export class TillTask implements Task {
 
     private countTillableNeighbors(bot: Bot, center: Vec3, role: FarmingRole): number {
         let count = 0;
-        for (let x = -6; x <= 6; x++) {
-            for (let z = -6; z <= 6; z++) {
+        for (let x = -4; x <= 4; x++) {
+            for (let z = -4; z <= 4; z++) {
                 const pos = center.offset(x, 0, z);
                 if (pos.equals(center)) continue;
                 if (role.failedBlocks.has(pos.toString())) continue;
