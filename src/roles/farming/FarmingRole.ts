@@ -17,17 +17,18 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     name = 'farming';
     private active = false;
     private bot: Bot | null = null;
-    
+
     private tasks: Task[] = [];
     public failedBlocks: Map<string, number> = new Map();
     // LESSON: Add Container Cooldowns to prevent opening empty chests repeatedly
     public containerCooldowns: Map<string, number> = new Map();
-    
+
     private currentProposal: WorkProposal | null = null;
     private movementStartTime = 0;
     private readonly MOVEMENT_TIMEOUT = 20000;
-    
+
     private isWorking = false;
+    private idleTicks = 0;
 
     // LESSON: Bind handlers to class to allow removal
     private boundOnPathUpdate: ((r: any) => void) | null = null;
@@ -36,27 +37,27 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     constructor() {
         super();
         this.tasks = [
-            new PickupTask(),      
+            new PickupTask(),
             new MaintenanceTask(),
-            new LogisticsTask(),   
-            new HarvestTask(),     
-            new PlantTask(),       
-            new TillTask(),        
+            new LogisticsTask(),
+            new HarvestTask(),
+            new PlantTask(),
+            new TillTask(),
         ];
     }
 
     start(bot: Bot, options?: { center?: any }) {
         this.active = true;
         this.bot = bot;
-        
+
         // Setup Movements (Keep your improved settings)
         const defaultMove = new Movements(bot);
-        defaultMove.canDig = true; 
-        defaultMove.digCost = 10; 
-        defaultMove.allow1by1towers = true; 
-        (defaultMove as any).liquidCost = 5; 
+        defaultMove.canDig = true;
+        defaultMove.digCost = 10;
+        defaultMove.allow1by1towers = true;
+        (defaultMove as any).liquidCost = 5;
         bot.pathfinder.setMovements(defaultMove);
-        
+
         // LESSON: Bind Pathfinding Events for faster failure detection
         this.boundOnPathUpdate = (r: any) => {
             if (r.status === 'noPath' || r.status === 'timeout') {
@@ -72,7 +73,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.boundOnGoalReached = () => {
             // LESSON: If we reach the goal, force an update immediately to act
             if (this.currentProposal && this.active) {
-                this.update(bot); 
+                this.update(bot);
             }
         };
 
@@ -83,9 +84,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.failedBlocks.clear();
         this.containerCooldowns.clear();
         this.isWorking = false;
-        
+
         this.log('🚜 Modular Farming Role started.');
-        
+
         if (options?.center) {
             this.rememberPOI('farm_center', options.center);
         } else {
@@ -100,11 +101,11 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.bot = null;
         this.currentProposal = null;
         this.isWorking = false;
-        
+
         // Cleanup listeners
         if (this.boundOnPathUpdate) bot.removeListener('path_update', this.boundOnPathUpdate);
         if (this.boundOnGoalReached) bot.removeListener('goal_reached', this.boundOnGoalReached);
-        
+
         bot.pathfinder.setGoal(null);
         this.log('🛑 Farming Role stopped.');
     }
@@ -124,19 +125,19 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 // This prevents trying to interact with a block that changed state
                 const currentBlock = bot.blockAt(targetPos);
                 if (currentBlock && currentBlock.type !== this.currentProposal.target.type) {
-                     // Allow slight leeway for crops growing, but not block replacement
-                     if (this.currentProposal.task.name !== 'harvest') { 
+                    // Allow slight leeway for crops growing, but not block replacement
+                    if (this.currentProposal.task.name !== 'harvest') {
                         this.log(`⚠️ Block changed while moving. Aborting.`);
                         this.currentProposal = null;
                         bot.pathfinder.setGoal(null);
                         return;
-                     }
+                    }
                 }
 
                 if (dist <= reach) {
                     bot.pathfinder.setGoal(null);
                     bot.clearControlStates();
-                    
+
                     try {
                         await this.currentProposal.task.perform(bot, this, this.currentProposal.target);
                     } catch (error) {
@@ -182,7 +183,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             if (bestProposal) {
                 this.log(`📋 Selected: ${bestProposal.description} (Prio: ${bestProposal.priority})`);
                 this.currentProposal = bestProposal;
-                
+
                 if (bestProposal.target) {
                     const pos = bestProposal.target.position;
                     const reach = bestProposal.range || 3.5;
@@ -207,18 +208,18 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 if (this.idleTicks >= wanderThreshold) {
                     this.log(isInventoryEmpty ? "🏃 Searching/Wandering..." : "🚶 Wandering...");
                     this.idleTicks = 0;
-                    
+
                     const range = 16; // Reduced range to keep closer to farm
-                    const x = bot.entity.position.x + (Math.random() * range - (range/2));
-                    const z = bot.entity.position.z + (Math.random() * range - (range/2));
+                    const x = bot.entity.position.x + (Math.random() * range - (range / 2));
+                    const z = bot.entity.position.z + (Math.random() * range - (range / 2));
                     bot.pathfinder.setGoal(new GoalNear(x, bot.entity.position.y, z, 1));
-                    
+
                     this.currentProposal = {
                         priority: 1,
                         description: "Wandering",
                         target: { position: { x, y: bot.entity.position.y, z } },
                         range: 2,
-                        task: { 
+                        task: {
                             name: 'wander',
                             findWork: async () => null,
                             perform: async () => { this.log("Finished wandering."); }
@@ -237,12 +238,12 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         const counts: Record<string, number> = {};
         const pos = bot.entity.position;
         const radius = 16;
-        for (let x = -radius; x <= radius; x += 2) { 
+        for (let x = -radius; x <= radius; x += 2) {
             for (let y = -2; y <= 6; y++) {
                 for (let z = -radius; z <= radius; z += 2) {
                     const block = bot.blockAt(pos.offset(x, y, z));
                     if (block && !['air', 'cave_air', 'water', 'grass_block', 'sand', 'dirt', 'stone'].includes(block.name)) {
-                         counts[block.name] = (counts[block.name] || 0) + 1;
+                        counts[block.name] = (counts[block.name] || 0) + 1;
                     }
                 }
             }
