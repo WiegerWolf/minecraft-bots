@@ -43,17 +43,36 @@ function setRole(roleName: string | null) {
     }
 }
 
+let hasInitialized = false;
+
 // Event: Bot spawned into the world
 bot.on('spawn', () => {
     console.log('✅ Bot has spawned!');
     console.log(`📍 Position: ${bot.entity?.position || 'unknown'}`);
 
-    // Periodically update the current role
-    setInterval(() => {
-        if (currentRole) {
-            currentRole.update(bot);
-        }
-    }, 500);
+    if (!hasInitialized) {
+        hasInitialized = true;
+
+        // Auto-run to the nearest player after a brief delay (to let entities load)
+        setTimeout(() => {
+            const target = bot.nearestEntity(e => e.type === 'player' && e.username !== bot.username);
+            if (target) {
+                console.log(`🏃 Found ${target.username}, running to them!`);
+                bot.chat(`Coming to you, ${target.username}!`);
+                const pos = target.position;
+                bot.pathfinder.setGoal(new GoalNear(pos.x, pos.y, pos.z, 1));
+            } else {
+                console.log('🤷 No players found nearby to run to.');
+            }
+        }, 2000);
+
+        // Periodically update the current role
+        setInterval(() => {
+            if (currentRole) {
+                currentRole.update(bot);
+            }
+        }, 500);
+    }
 });
 
 // Event: Chat messages
