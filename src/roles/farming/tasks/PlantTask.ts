@@ -19,6 +19,7 @@ export class PlantTask implements Task {
 
         // 2. Find empty farmland near center
         const farmAnchor = role.getNearestPOI(bot, 'farm_center')?.position || bot.entity.position;
+        // role.log(`[PlantTask] Searching for farmland near ${farmAnchor} (HasSeeds: ${hasSeeds})`);
 
         // Use findBlocks (plural) to get a list
         const farmlandBlocks = bot.findBlocks({
@@ -47,7 +48,6 @@ export class PlantTask implements Task {
             validSpots.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
             const targetPos = validSpots[0]; // Closest valid spot
 
-            // FIX: Explicit undefined check
             if (targetPos) {
                 const targetBlock = bot.blockAt(targetPos);
 
@@ -61,8 +61,14 @@ export class PlantTask implements Task {
                 }
             }
         } else {
-            if (hasSeeds && farmlandBlocks.length > 0) {
-                role.log(`[PlantTask] Found ${farmlandBlocks.length} farmland blocks, but 0 valid spots.`);
+            // Fallback: If we have seeds but no farmland found, and we are far from center, go back
+            if (hasSeeds && bot.entity.position.distanceTo(farmAnchor) > 8) {
+                return {
+                    priority: 25, // Higher than Scavenging
+                    description: `Repositioning to farm center at ${farmAnchor} to find farmland`,
+                    target: { position: farmAnchor },
+                    task: this
+                };
             }
         }
 
@@ -72,12 +78,19 @@ export class PlantTask implements Task {
     async perform(bot: Bot, role: FarmingRole, target: any): Promise<void> {
         const cropName = this.getOptimalCrop(bot, target.position);
         if (!cropName) {
-            role.log("Abort planting: No seeds found in inventory.");
+            // role.log("Abort planting: No seeds found in inventory.");
             return;
         }
 
         const seedItem = bot.inventory.items().find(i => i.name === cropName);
         if (!seedItem) return;
+
+        // Special case: Repositioning
+        const center = role.getNearestPOI(bot, 'farm_center')?.position;
+        if (center && target.position && target.position.equals(center)) {
+            await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 2));
+            return;
+        }
 
         try {
             await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 2));

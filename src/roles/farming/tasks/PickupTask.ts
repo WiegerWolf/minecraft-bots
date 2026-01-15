@@ -48,7 +48,7 @@ export class PickupTask implements Task {
 
         return {
             priority: priority,
-            description: `Picking up ${itemDrop.objectType || 'item'} at ${itemDrop.position.floored()} (${dist.toFixed(1)}m)`,
+            description: `Picking up ${itemDrop.name || 'item'} at ${itemDrop.position.floored()} (${dist.toFixed(1)}m)`,
             target: itemDrop,
             range: 1.0,
             task: this

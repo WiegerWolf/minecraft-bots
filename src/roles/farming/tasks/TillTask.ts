@@ -17,7 +17,14 @@ export class TillTask implements Task {
             .filter(i => i.name.includes('seeds') || ['carrot', 'potato', 'beetroot'].includes(i.name))
             .reduce((sum, item) => sum + item.count, 0);
 
-        if (!hoe || totalSeeds === 0) return null;
+        if (!hoe) {
+            // role.log("[TillTask] No hoe found.");
+            return null;
+        }
+        if (totalSeeds === 0) {
+            // role.log("[TillTask] No seeds found.");
+            return null;
+        }
 
         // 2. Resolve Farm Anchor (Prospecting)
         let farmAnchor = role.getNearestPOI(bot, 'farm_center')?.position;
@@ -25,7 +32,6 @@ export class TillTask implements Task {
 
         // A. Validate existing anchor
         if (farmAnchor) {
-            // Check if it's still water
             // Check if it's still water
             if (!waterBlock) {
                 // Block is unloaded. Do not abandon yet.
@@ -40,6 +46,7 @@ export class TillTask implements Task {
                 });
 
                 if (nearbyWater.length > 0 && nearbyWater[0]) {
+                    role.forgetPOI('farm_center', farmAnchor);
                     role.rememberPOI('farm_center', nearbyWater[0]);
                     farmAnchor = nearbyWater[0];
                     waterBlock = bot.blockAt(farmAnchor);
@@ -120,8 +127,8 @@ export class TillTask implements Task {
         const candidates: { block: any, score: number }[] = [];
         const waterPos = waterBlock.position;
 
-        for (let x = -4; x <= 4; x++) {
-            for (let z = -4; z <= 4; z++) {
+        for (let x = -6; x <= 6; x++) {
+            for (let z = -6; z <= 6; z++) {
                 const pos = waterPos.offset(x, 0, z);
                 if (pos.equals(waterPos)) continue;
                 if (role.failedBlocks.has(pos.toString())) continue;
@@ -137,6 +144,20 @@ export class TillTask implements Task {
                 if (this.hasNeighboringFarmland(bot, pos, 1)) score += 50;
 
                 candidates.push({ block, score });
+            }
+        }
+
+        if (candidates.length === 0) {
+            // role.log(`[TillTask] Found 0 tillable spots around ${waterPos} (Radius: 6)`);
+
+            // Fallback: If we are far from the center, move back.
+            if (bot.entity.position.distanceTo(farmAnchor) > 8) {
+                return {
+                    priority: 20,
+                    description: `Repositioning to farm center at ${farmAnchor}`,
+                    target: { position: farmAnchor },
+                    task: this
+                };
             }
         }
 
@@ -168,6 +189,12 @@ export class TillTask implements Task {
 
             await bot.equip(hoe, 'hand');
 
+            // Special case: Repositioning
+            if (target.position.distanceTo(bot.entity.position) > 3 && target.name === 'water') {
+                // Just moving there was the goal
+                return;
+            }
+
             const abovePos = target.position.offset(0, 1, 0);
             const above = bot.blockAt(abovePos);
             if (above && above.boundingBox !== 'empty' && above.name !== 'air') {
@@ -197,8 +224,8 @@ export class TillTask implements Task {
 
     private countTillableNeighbors(bot: Bot, center: Vec3, role: FarmingRole): number {
         let count = 0;
-        for (let x = -4; x <= 4; x++) {
-            for (let z = -4; z <= 4; z++) {
+        for (let x = -6; x <= 6; x++) {
+            for (let z = -6; z <= 6; z++) {
                 const pos = center.offset(x, 0, z);
                 if (pos.equals(center)) continue;
                 if (role.failedBlocks.has(pos.toString())) continue;
