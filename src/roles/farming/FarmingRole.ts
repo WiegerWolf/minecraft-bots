@@ -10,6 +10,7 @@ import { LogisticsTask } from './tasks/LogisticsTask';
 import { TillTask } from './tasks/TillTask';
 import { MaintenanceTask } from './tasks/MaintenanceTask';
 import { PickupTask } from './tasks/PickupTask';
+import { Vec3 } from 'vec3';
 
 const { GoalNear, GoalXZ } = goals;
 
@@ -71,7 +72,6 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             }
         }
 
-        // Immediate debug scan
         this.scanSurroundings(bot);
     }
 
@@ -86,7 +86,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     async update(bot: Bot) {
         if (!this.active) return;
 
-        // 0. Enforce Proximity to Farm Center
+        // 0. Enforce Proximity
         const centerPOI = this.getNearestPOI(bot, 'farm_center');
         if (centerPOI && !this.currentProposal) {
             const dist = bot.entity.position.distanceTo(centerPOI.position);
@@ -168,21 +168,17 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             // Idle handling
             this.idleTicks++;
             const isInventoryEmpty = bot.inventory.items().length === 0;
-            const wanderThreshold = isInventoryEmpty ? 20 : 120; // Wander sooner if empty
+            const wanderThreshold = isInventoryEmpty ? 20 : 120;
 
             if (this.idleTicks >= wanderThreshold) {
                 if (isInventoryEmpty) {
-                    this.scanSurroundings(bot);
                     this.log("⚠️ I am empty handed and can't find resources!");
-                    
-                    // Force a deeper check
                     this.forceResourceCheck(bot);
                 }
                 
                 this.log(isInventoryEmpty ? "🏃 Searching/Wandering..." : "🚶 Wandering...");
                 this.idleTicks = 0;
                 
-                // Increase wander range
                 const range = 64; 
                 const x = bot.entity.position.x + (Math.random() * range - (range/2));
                 const z = bot.entity.position.z + (Math.random() * range - (range/2));
@@ -208,52 +204,51 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.log("🔍 DEBUG: Scanning nearby blocks (Radius 16):");
         const counts: Record<string, number> = {};
         const pos = bot.entity.position;
-        
-        // Scan a larger volume
         const radius = 16;
-        for (let x = -radius; x <= radius; x += 2) { // Step 2 to save CPU
+        for (let x = -radius; x <= radius; x += 2) { 
             for (let y = -2; y <= 6; y++) {
                 for (let z = -radius; z <= radius; z += 2) {
                     const block = bot.blockAt(pos.offset(x, y, z));
-                    if (block && block.name !== 'air' && block.name !== 'cave_air' && block.name !== 'water' && block.name !== 'grass_block' && block.name !== 'sand' && block.name !== 'dirt' && block.name !== 'stone') {
+                    if (block && !['air', 'cave_air', 'water', 'grass_block', 'sand', 'dirt', 'stone'].includes(block.name)) {
                          counts[block.name] = (counts[block.name] || 0) + 1;
                     }
                 }
             }
         }
-        
         const summary = Object.entries(counts)
-            .sort((a, b) => b[1] - a[1]) // Sort by count desc
-            .slice(0, 15)
-            .map(([name, count]) => `${name}: ${count}`)
-            .join(', ');
-            
-        this.log(`Interesting blocks: [${summary || 'Nothing! (Only terrain)'}]`);
+            .sort((a, b) => b[1] - a[1]).slice(0, 15)
+            .map(([name, count]) => `${name}: ${count}`).join(', ');
+        this.log(`Interesting blocks: [${summary || 'None'}]`);
     }
     
     private forceResourceCheck(bot: Bot) {
-        // Manual deep search for logs specifically
-        const log = bot.findBlock({
-            matching: b => b.name.includes('_log'),
-            maxDistance: 64
-        });
+        const log = bot.findBlock({ matching: b => b.name.includes('_log'), maxDistance: 64 });
         if (log) {
-            this.log(`✅ FORCE CHECK: Found ${log.name} at ${log.position}. Why isn't MaintenanceTask picking it up?`);
+            this.log(`✅ FORCE CHECK: Found ${log.name} at ${log.position}.`);
         } else {
             this.log(`❌ FORCE CHECK: findBlock found NO logs in 64 blocks.`);
         }
     }
 
-    private printDebugInventory(bot: Bot) {
-        const items = bot.inventory.items().map(i => `${i.name} x${i.count}`).join(', ');
-        this.log(`💤 No work found. Inv: [${items || 'Empty'}]`);
-    }
-
     public blacklistBlock(pos: any) {
-        if (pos && pos.toString) {
-            const key = pos.toString();
-            this.failedBlocks.set(key, Date.now());
+        if (!pos) return;
+        
+        let key: string;
+        // Check if it's a Vec3-like object or a plain object with coordinates
+        if (pos.x !== undefined && pos.y !== undefined && pos.z !== undefined) {
+            // Reconstruct Vec3 string manually to ensure consistency
+            key = `(${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)})`;
+            
+            // Or use standard Vec3 logic if it's a Vec3 instance, but floor it for safety
+            if (pos instanceof Vec3) {
+                key = pos.floored().toString();
+            }
+        } else {
+            key = pos.toString();
         }
+
+        // this.log(`⛔ Blacklisting position: ${key}`);
+        this.failedBlocks.set(key, Date.now());
     }
 
     public override log(message: string, ...args: any[]) {

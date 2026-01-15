@@ -18,24 +18,33 @@ export class MaintenanceTask implements Task {
         if (!hasHoe) {
             // Case A: Gather wood
             if (planks < 2 && logs === 0) {
-                // Only log if we are truly empty so we don't spam
+                // Debugging failure
                 if (bot.inventory.emptySlotCount() > 30) {
-                    role.log(`[Maintenance] Need wood. Logs: ${logs}, Planks: ${planks}. Searching...`);
+                    // role.log(`[Maintenance] Checking for logs... (Blacklist size: ${role.failedBlocks.size})`);
                 }
 
                 const tree = bot.findBlock({
                     matching: (b) => {
+                        // Basic validity
                         if (!b || !b.position) return false;
-                        if (role.failedBlocks.has(b.position.toString())) return false;
+
+                        // Check name first (optimization)
+                        const isLog = b.name.includes('_log') || b.name === 'log' || b.name === 'log2';
+                        if (!isLog) return false;
+
+                        // Check blacklist
+                        const key = b.position.toString();
+                        if (role.failedBlocks.has(key)) {
+                            // role.log(`[Maintenance] Ignoring blacklisted log at ${key}`);
+                            return false;
+                        }
                         
-                        // Broaden matching to catch everything
-                        return b.name.includes('_log') || b.name === 'log' || b.name === 'log2'; 
+                        return true; 
                     },
                     maxDistance: 64
                 });
                 
                 if (tree) {
-                    // role.log(`[Maintenance] Found tree: ${tree.name} at ${tree.position}`);
                     return {
                         priority: 50,
                         description: `Gathering wood from ${tree.name} at ${tree.position.floored()}`,
@@ -43,10 +52,6 @@ export class MaintenanceTask implements Task {
                         range: 2.5,
                         task: this
                     };
-                } else {
-                    if (bot.inventory.emptySlotCount() > 30) {
-                        role.log(`[Maintenance] ❌ No trees found via findBlock.`);
-                    }
                 }
             }
             
