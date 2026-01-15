@@ -11,7 +11,7 @@ import { LogisticsTask } from './tasks/LogisticsTask';
 import { TillTask } from './tasks/TillTask';
 import { MaintenanceTask } from './tasks/MaintenanceTask';
 import { PickupTask } from './tasks/PickupTask';
-import { Vec3 } from 'vec3'; // ADD THIS IMPORT
+import { Vec3 } from 'vec3';
 
 const { GoalNear } = goals;
 
@@ -21,7 +21,6 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
     private bot: Bot | null = null;
     private tasks: Task[] = [];
     
-    // State
     public failedBlocks: Map<string, number> = new Map();
     public containerCooldowns: Map<string, number> = new Map();
 
@@ -59,7 +58,15 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
         }
 
         this.log('🚜 Modular Farming Role started.');
-        this.loop();
+        this.log('⏳ Warming up scanner (waiting for entities to load)...');
+
+        // FIX: Wait 3 seconds for entities (dropped items) to load before making decisions
+        bot.waitForTicks(60).then(() => {
+            if (this.active) {
+                this.log('✅ Warmup complete. Starting main loop.');
+                this.loop();
+            }
+        });
     }
 
     stop(bot: Bot) {
@@ -121,15 +128,13 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
         }
     }
 
-    // NEW METHOD: Manually breaks blocks causing the bot to be stuck
     public async clearObstructions(bot: Bot) {
         this.log("⚠️ Detected stuck/obstruction. Clearing surroundings...");
         
-        // Check Head, Feet, and adjacent head-level blocks
         const offsets = [
-            new Vec3(0, 1, 0), // Head (Leaves often here)
-            new Vec3(0, 2, 0), // Jump space
-            new Vec3(0, 0, 0), // Feet (clipped inside block)
+            new Vec3(0, 1, 0),
+            new Vec3(0, 2, 0),
+            new Vec3(0, 0, 0),
             new Vec3(1, 1, 0),
             new Vec3(-1, 1, 0),
             new Vec3(0, 1, 1),
@@ -140,19 +145,15 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
             const target = bot.entity.position.plus(offset).floored();
             const block = bot.blockAt(target);
             
-            // Break if it's solid/leaves and we can dig it
             if (block && block.boundingBox !== 'empty' && block.diggable) {
-                 // Safety: Don't break valuable blocks
                  if (['chest', 'crafting_table', 'furnace', 'bed', 'hopper'].includes(block.name)) continue;
                  
                  this.log(`🔨 Breaking obstructing ${block.name} at ${target}`);
                  try {
                      await bot.lookAt(target.offset(0.5, 0.5, 0.5), true);
                      await bot.dig(block);
-                     await new Promise(r => setTimeout(r, 250)); // Wait for physics
-                 } catch (e) {
-                     // Ignore errors (e.g. if block broke while looking)
-                 }
+                     await new Promise(r => setTimeout(r, 250)); 
+                 } catch (e) {}
             }
         }
     }
