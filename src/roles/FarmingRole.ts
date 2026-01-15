@@ -18,10 +18,10 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     private lastLogTime = 0;
     private lastPlanTime = 0;
     private isUpdating = false;
-    
+
     private failedBlocks: Map<string, number> = new Map(); // position string -> timestamp (Hard failures: pathing, broken)
     private containerCooldowns: Map<string, number> = new Map(); // position string -> timestamp (Soft failures: empty chest)
-    
+
     private readonly RETRY_COOLDOWN = 5 * 60 * 1000; // 5 minutes for hard failures
     private readonly CONTAINER_COOLDOWN = 30 * 1000; // 30 seconds for re-checking chests
 
@@ -32,7 +32,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     private readonly COLLECTION_TIMEOUT = 10000; // 10 seconds
     private readonly ACTION_REACH = 3.5; // Distance to act on blocks without moving closer
     private readonly MAX_FARMLAND_PER_WATER = 81; // 9x9 area
-    
+
     // Deposit settings
     private readonly MAX_SEEDS_TO_KEEP = 64; // Keep 1 stack of seeds
 
@@ -197,7 +197,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     private validateBlockForIntention(block: any): boolean {
         // Special case for returning to farm anchor, no specific block needed
         if (this.intention === 'RETURN_TO_FARM') return true;
-        
+
         if (!block) return false;
 
         switch (this.intention) {
@@ -284,10 +284,10 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             }
             this.lastLogTime = now;
         }
-        
+
         // 1.0 Get Farm Anchor (POI)
         const farmAnchor = this.getNearestPOI(bot, 'farm_center');
-        
+
         // 1.1 DEPOSIT CHECK (High Priority)
         // If inventory is full or we have too many produce items, go deposit.
         if (this.shouldDeposit(bot)) {
@@ -298,7 +298,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 this.log("Inventory full/high but no chest found to deposit!");
             }
         }
-        
+
         const harvestable = bot.findBlock({
             matching: (block) => {
                 if (!block || !block.position) return false;
@@ -329,14 +329,14 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             if (shouldLog) this.log('No seeds in inventory. Prioritizing seed gathering...');
             // Try to find seeds nearby (breaking grass or checking chests)
             const foundSeedsTarget = await this.findSeedsNearby(bot);
-            
+
             if (foundSeedsTarget) {
                 return; // We have a target, exit findTask
             } else {
                 // IMPORTANT: If we have no seeds and cannot find any way to get them,
                 // we should NOT proceed to Tilling or Planting, as that will just loop forever.
                 if (shouldLog) this.log('No seeds and no grass/storage nearby (checked recently). Cannot farm. Waiting...');
-                return; 
+                return;
             }
         }
 
@@ -403,7 +403,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                     const aHydrated = this.isHydrated(bot, a.position) ? 1 : 0;
                     const bHydrated = this.isHydrated(bot, b.position) ? 1 : 0;
                     if (aHydrated !== bHydrated) return bHydrated - aHydrated;
-                    
+
                     // Sort by distance to Farm Anchor if it exists, otherwise bot
                     const targetPos = farmAnchor ? farmAnchor.position : bot.entity?.position;
                     if (!targetPos) return 0;
@@ -433,10 +433,10 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             }
 
             const waterIds = ['water', 'flowing_water'].map(name => mcData?.blocksByName?.[name]?.id).filter(id => id !== undefined);
-            
+
             // Search for water around the farm anchor if it exists
             const searchPoint = farmAnchor ? farmAnchor.position : bot.entity.position;
-            
+
             const waterBlocks = bot.findBlocks({
                 matching: (block) => waterIds.length > 0 ? waterIds.includes(block.type) : (block.name === 'water' || block.name === 'flowing_water'),
                 maxDistance: 32,
@@ -657,7 +657,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         }
 
         const block = bot.blockAt(this.targetBlock.position);
-        
+
         // Handle special return to farm intention
         if (this.intention === 'RETURN_TO_FARM') {
             this.log('Returned to farm area.');
@@ -710,7 +710,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                         this.log(`Attempting to plant ${cropToPlant} on ${block.name} at ${block.position}...`);
                         await bot.placeBlock(block, new Vec3(0, 1, 0));
                         this.log(`Successfully planted ${cropToPlant}.`);
-                        
+
                         // Update Farm Anchor
                         this.rememberPOI('farm_center', block.position);
                     } else {
@@ -731,7 +731,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                     if (updatedBlock && updatedBlock.name === 'farmland') {
                         this.log('Verification success: Block is now farmland.');
                         this.failedBlocks.delete(block.position.toString());
-                        
+
                         // Update Farm Anchor
                         this.rememberPOI('farm_center', block.position);
                     } else {
@@ -778,6 +778,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                         await container.withdraw(seed.type, null, seed.count);
                     }
                     this.log('Successfully withdrew seeds.');
+
+                    // Remember this chest as a farm chest since it had useful stuff
+                    this.rememberPOI('farm_chest', block.position);
                 } else {
                     this.log('No seeds found in this storage.');
                     // USE CONTAINER COOLDOWN INSTEAD OF FAILED BLOCKS
@@ -788,60 +791,60 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             } else if (this.intention === 'DEPOSIT_ITEMS') {
                 this.log(`Opening ${block.name} at ${block.position} to deposit produce...`);
                 const container = await bot.openContainer(block);
-                
+
                 // Deposit Logic
                 const items = bot.inventory.items();
                 for (const item of items) {
                     // Check if it's a produce item or seed
                     const isProduce = ['wheat', 'carrot', 'potato', 'beetroot', 'melon_slice', 'pumpkin', 'poisonous_potato'].includes(item.name);
                     const isSeed = item.name.includes('seeds') || item.name === 'carrot' || item.name === 'potato';
-                    
+
                     if (isProduce || isSeed) {
                         let amountToDeposit = item.count;
-                        
+
                         // If it's a seed (or seed-like crop), we need to reserve some
                         if (isSeed) {
-                             // Check total amount of this specific seed we have
-                             const totalCount = items.filter(i => i.name === item.name).reduce((sum, i) => sum + i.count, 0);
-                             
-                             // If this stack is part of the reserved amount
-                             if (totalCount <= this.MAX_SEEDS_TO_KEEP) {
-                                 continue; // Don't deposit any
-                             }
-                             
-                             // Simple strategy: deposit everything then withdraw needed amount
-                             await container.deposit(item.type, null, item.count);
-                             continue;
+                            // Check total amount of this specific seed we have
+                            const totalCount = items.filter(i => i.name === item.name).reduce((sum, i) => sum + i.count, 0);
+
+                            // If this stack is part of the reserved amount
+                            if (totalCount <= this.MAX_SEEDS_TO_KEEP) {
+                                continue; // Don't deposit any
+                            }
+
+                            // Simple strategy: deposit everything then withdraw needed amount
+                            await container.deposit(item.type, null, item.count);
+                            continue;
                         }
-                        
+
                         // If purely produce (wheat, melon, etc), deposit all
                         await container.deposit(item.type, null, item.count);
                     }
                 }
-                
+
                 // Now ensure we have seeds back
                 const seedNames = ['wheat_seeds', 'beetroot_seeds', 'carrot', 'potato'];
                 for (const seedName of seedNames) {
-                     const currentCount = bot.inventory.items().filter(i => i.name === seedName).reduce((sum, i) => sum + i.count, 0);
-                     if (currentCount < this.MAX_SEEDS_TO_KEEP) {
-                         // Withdraw difference
-                         const needed = this.MAX_SEEDS_TO_KEEP - currentCount;
-                         const itemInChest = container.items().find(i => i.name === seedName);
-                         if (itemInChest) {
-                             const withdrawAmt = Math.min(needed, itemInChest.count);
-                             if (withdrawAmt > 0) {
-                                 await container.withdraw(itemInChest.type, null, withdrawAmt);
-                             }
-                         }
-                     }
+                    const currentCount = bot.inventory.items().filter(i => i.name === seedName).reduce((sum, i) => sum + i.count, 0);
+                    if (currentCount < this.MAX_SEEDS_TO_KEEP) {
+                        // Withdraw difference
+                        const needed = this.MAX_SEEDS_TO_KEEP - currentCount;
+                        const itemInChest = container.items().find(i => i.name === seedName);
+                        if (itemInChest) {
+                            const withdrawAmt = Math.min(needed, itemInChest.count);
+                            if (withdrawAmt > 0) {
+                                await container.withdraw(itemInChest.type, null, withdrawAmt);
+                            }
+                        }
+                    }
                 }
-                
+
                 this.log('Deposit complete.');
                 container.close();
-                
+
                 // Remember this as farm chest
                 this.rememberPOI('farm_chest', block.position);
-                
+
                 this.state = 'FINDING';
             } else if (this.intention === 'PLACE_CHEST') {
                 this.log(`Placing farm chest on ${block.name} at ${block.position}...`);
@@ -850,7 +853,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                     await bot.equip(chestItem, 'hand');
                     await bot.placeBlock(block, new Vec3(0, 1, 0));
                     this.log('Chest placed.');
-                    
+
                     // The new chest will be at block.position + y1
                     const chestPos = block.position.offset(0, 1, 0);
                     this.rememberPOI('farm_chest', chestPos);
@@ -954,7 +957,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     private async checkNeeds(bot: Bot) {
         const inventory = bot.inventory.items();
         const count = (predicate: (item: any) => boolean) =>
-                inventory.filter(predicate).reduce((acc, item) => acc + item.count, 0);
+            inventory.filter(predicate).reduce((acc, item) => acc + item.count, 0);
 
         // 1. Tool check (Hoe)
         const hasHoe = inventory.some(item => item.name.includes('hoe'));
@@ -963,7 +966,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             const numPlanks = count(i => i.name.endsWith('_planks'));
             const numLogs = count(i => i.name.includes('_log') || i.name.includes('_stem'));
             const planksNeeded = 3 + (numSticks < 2 ? 2 : 0);
-            
+
             if (numPlanks < planksNeeded && numLogs > 0) {
                 const logItem = inventory.find(i => i.name.includes('_log') || i.name.includes('_stem'));
                 if (logItem) {
@@ -1017,7 +1020,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         // If we have a farm center but NO known farm chest, try to create one.
         const farmAnchor = this.getNearestPOI(bot, 'farm_center');
         const farmChest = this.getNearestPOI(bot, 'farm_chest');
-        
+
         if (farmAnchor && !farmChest) {
             // Check if there is already a chest nearby that we just missed or hasn't been registered
             const nearbyChest = bot.findBlock({
@@ -1030,7 +1033,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 this.rememberPOI('farm_chest', nearbyChest.position);
                 return;
             }
-            
+
             // Try to craft/place one
             const hasChestItem = inventory.some(i => i.name === 'chest');
             if (hasChestItem) {
@@ -1041,22 +1044,22 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                     new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1),
                     new Vec3(2, 0, 0), new Vec3(-2, 0, 0), new Vec3(0, 0, 2), new Vec3(0, 0, -2)
                 ];
-                
+
                 let placeTarget: any = null;
-                
+
                 for (const off of offsets) {
                     const groundPos = center.plus(off);
                     // We need groundPos to be solid, and groundPos.up to be air
                     const ground = bot.blockAt(groundPos);
                     const above = bot.blockAt(groundPos.offset(0, 1, 0));
-                    
-                    if (ground && ground.boundingBox === 'block' && ground.name !== 'farmland' && 
+
+                    if (ground && ground.boundingBox === 'block' && ground.name !== 'farmland' &&
                         above && above.boundingBox === 'empty') {
                         placeTarget = ground;
                         break;
                     }
                 }
-                
+
                 if (placeTarget) {
                     this.log(`Found spot to place farm chest at ${placeTarget.position} (on ${placeTarget.name}).`);
                     this.setMovementTarget(bot, placeTarget, 'PLACE_CHEST');
@@ -1068,7 +1071,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 // Need to craft a chest (8 planks)
                 const numPlanks = count(i => i.name.endsWith('_planks'));
                 const numLogs = count(i => i.name.includes('_log') || i.name.includes('_stem'));
-                
+
                 if (numPlanks >= 8) {
                     this.log('Crafting chest...');
                     await this.tryCraft(bot, 'chest', (target) => {
@@ -1080,7 +1083,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                     // Need more wood
                     const totalWoodValue = numPlanks + (numLogs * 4);
                     if (totalWoodValue < 8) {
-                         // Go gather wood
+                        // Go gather wood
                         const logBlock = bot.findBlock({
                             matching: block => block && (block.name.includes('_log') || block.name.includes('_stem')),
                             maxDistance: 32
@@ -1125,6 +1128,20 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     }
 
     private async findSeedsNearby(bot: Bot): Promise<boolean> {
+        // 0. Check known farm chest POI first
+        const knownChest = this.getNearestPOI(bot, 'farm_chest');
+        if (knownChest) {
+             const block = bot.blockAt(knownChest.position);
+             // Verify it is still a container
+             if (block && ['chest', 'barrel', 'trapped_chest'].includes(block.name)) {
+                 this.log(`Going to known farm chest at ${knownChest.position} for seeds.`);
+                 this.setMovementTarget(bot, block, 'CHECK_STORAGE');
+                 return true;
+             } else {
+                 this.forgetPOI('farm_chest', knownChest.position);
+             }
+        }
+
         // 1. Search for grass
         const grass = bot.findBlock({
             matching: block => {
@@ -1141,61 +1158,69 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             return true;
         }
 
-        // 2. Search for containers
-        const storage = bot.findBlock({
-            matching: block => {
-                if (!block || !block.position) return false;
-                if (!['chest', 'barrel', 'trapped_chest'].includes(block.name)) return false;
-                
-                const posStr = block.position.toString();
-                // Check hard failures (pathing/broken)
-                if (this.failedBlocks.has(posStr)) {
-                     const failedAt = this.failedBlocks.get(posStr)!;
-                     if (Date.now() - failedAt < this.RETRY_COOLDOWN) return false;
-                }
-                // Check soft failures (empty/checked recently)
-                if (this.containerCooldowns.has(posStr)) {
-                     const checkedAt = this.containerCooldowns.get(posStr)!;
-                     if (Date.now() - checkedAt < this.CONTAINER_COOLDOWN) return false;
-                }
+        // 2. Search for containers (Check near bot AND near farm center)
+        const farmAnchor = this.getNearestPOI(bot, 'farm_center');
+        const pointsToCheck = [bot.entity.position];
+        if (farmAnchor) pointsToCheck.push(farmAnchor.position);
+
+        for (const point of pointsToCheck) {
+            const storage = bot.findBlock({
+                matching: block => {
+                    if (!block || !block.position) return false;
+                    if (!['chest', 'barrel', 'trapped_chest'].includes(block.name)) return false;
+                    
+                    const posStr = block.position.toString();
+                    // Check hard failures (pathing/broken)
+                    if (this.failedBlocks.has(posStr)) {
+                         const failedAt = this.failedBlocks.get(posStr)!;
+                         if (Date.now() - failedAt < this.RETRY_COOLDOWN) return false;
+                    }
+                    // Check soft failures (empty/checked recently)
+                    if (this.containerCooldowns.has(posStr)) {
+                         const checkedAt = this.containerCooldowns.get(posStr)!;
+                         if (Date.now() - checkedAt < this.CONTAINER_COOLDOWN) return false;
+                    }
+                    return true;
+                },
+                maxDistance: 32,
+                point: point
+            });
+            
+            if (storage) {
+                const locationName = point === bot.entity.position ? 'bot' : 'farm center';
+                this.log(`Found ${storage.name} at ${storage.position} (near ${locationName}). Checking for seeds...`);
+                this.setMovementTarget(bot, storage, 'CHECK_STORAGE');
                 return true;
-            },
-            maxDistance: 32
-        });
-        
-        if (storage) {
-            this.log(`Found ${storage.name} at ${storage.position}. Checking for seeds...`);
-            this.setMovementTarget(bot, storage, 'CHECK_STORAGE');
-            return true;
+            }
         }
 
         return false;
     }
-    
+
     // Deposit Helpers
     private shouldDeposit(bot: Bot): boolean {
         if (!bot.inventory) return false;
-        
+
         // 1. Inventory Fullness (empty slots < 3)
         if (bot.inventory.emptySlotCount() < 3) return true;
-        
+
         // 2. Check for abundance of produce (more than 2 stacks of any crop)
         const produce = ['wheat', 'carrot', 'potato', 'beetroot', 'melon_slice', 'pumpkin'];
         for (const name of produce) {
             const count = bot.inventory.items().filter(i => i.name === name).reduce((sum, i) => sum + i.count, 0);
             if (count > 128) return true;
         }
-        
+
         // 3. Too many seeds?
         const seedNames = ['wheat_seeds', 'beetroot_seeds'];
         for (const name of seedNames) {
             const count = bot.inventory.items().filter(i => i.name === name).reduce((sum, i) => sum + i.count, 0);
             if (count > 128) return true;
         }
-        
+
         return false;
     }
-    
+
     private async findDepositTarget(bot: Bot, farmAnchor: any): Promise<boolean> {
         // 1. Check for known farm chest
         const knownChest = this.getNearestPOI(bot, 'farm_chest');
@@ -1211,7 +1236,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 this.forgetPOI('farm_chest', knownChest.position);
             }
         }
-        
+
         // 2. Find closest chest to FARM CENTER (if exists), else Bot
         const searchPoint = farmAnchor ? farmAnchor.position : bot.entity.position;
         const chest = bot.findBlock({
@@ -1219,13 +1244,13 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             maxDistance: 32,
             point: searchPoint
         });
-        
+
         if (chest) {
             this.log(`Found new candidate for farm chest at ${chest.position}.`);
             this.setMovementTarget(bot, chest, 'DEPOSIT_ITEMS');
             return true;
         }
-        
+
         return false;
     }
 }
