@@ -3,7 +3,7 @@ import type { Role } from '../Role';
 import { Movements, goals } from 'mineflayer-pathfinder';
 import { CraftingMixin } from '../mixins/CraftingMixin';
 import { KnowledgeMixin } from '../mixins/KnowledgeMixin';
-import { ResourceMixin } from '../mixins/ResourceMixin'; // Import new mixin
+import { ResourceMixin } from '../mixins/ResourceMixin';
 import type { Task, WorkProposal } from './tasks/Task';
 import { HarvestTask } from './tasks/HarvestTask';
 import { PlantTask } from './tasks/PlantTask';
@@ -11,10 +11,10 @@ import { LogisticsTask } from './tasks/LogisticsTask';
 import { TillTask } from './tasks/TillTask';
 import { MaintenanceTask } from './tasks/MaintenanceTask';
 import { PickupTask } from './tasks/PickupTask';
+import { Vec3 } from 'vec3'; // ADD THIS IMPORT
 
 const { GoalNear } = goals;
 
-// Apply ResourceMixin to the chain
 export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(class { }))) implements Role {
     name = 'farming';
     private active = false;
@@ -79,7 +79,6 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
                     this.log(`📋 Executing: ${proposal.description}`);
                     await proposal.task.perform(this.bot, this, proposal.target);
                 } else {
-                    // Use the smart idle function
                     await this.idle(this.bot);
                 }
 
@@ -116,12 +115,45 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
 
     private async idle(bot: Bot) {
         this.log("💤 No immediate work. Exploring for resources...");
-        // Use the ResourceMixin's smart wander (avoids water)
         const moved = await this.wanderNewChunk(bot);
-        
         if (!moved) {
-            // Fallback if exploration fails (e.g. middle of ocean)
             await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+    }
+
+    // NEW METHOD: Manually breaks blocks causing the bot to be stuck
+    public async clearObstructions(bot: Bot) {
+        this.log("⚠️ Detected stuck/obstruction. Clearing surroundings...");
+        
+        // Check Head, Feet, and adjacent head-level blocks
+        const offsets = [
+            new Vec3(0, 1, 0), // Head (Leaves often here)
+            new Vec3(0, 2, 0), // Jump space
+            new Vec3(0, 0, 0), // Feet (clipped inside block)
+            new Vec3(1, 1, 0),
+            new Vec3(-1, 1, 0),
+            new Vec3(0, 1, 1),
+            new Vec3(0, 1, -1),
+        ];
+
+        for (const offset of offsets) {
+            const target = bot.entity.position.plus(offset).floored();
+            const block = bot.blockAt(target);
+            
+            // Break if it's solid/leaves and we can dig it
+            if (block && block.boundingBox !== 'empty' && block.diggable) {
+                 // Safety: Don't break valuable blocks
+                 if (['chest', 'crafting_table', 'furnace', 'bed', 'hopper'].includes(block.name)) continue;
+                 
+                 this.log(`🔨 Breaking obstructing ${block.name} at ${target}`);
+                 try {
+                     await bot.lookAt(target.offset(0.5, 0.5, 0.5), true);
+                     await bot.dig(block);
+                     await new Promise(r => setTimeout(r, 250)); // Wait for physics
+                 } catch (e) {
+                     // Ignore errors (e.g. if block broke while looking)
+                 }
+            }
         }
     }
 
