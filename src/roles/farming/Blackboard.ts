@@ -142,15 +142,15 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 
-    // Find grass (for seeds)
+    // Find grass (for seeds) - expanded list for different MC versions
+    const grassNames = ['short_grass', 'tall_grass', 'grass', 'fern', 'large_fern'];
     bb.nearbyGrass = bot.findBlocks({
         point: pos, // Search around bot, not farm center
         maxDistance: 48,
         count: 10,
         matching: b => {
-            // FIX: Add null checks
             if (!b || !b.position || !b.name) return false;
-            return ['short_grass', 'tall_grass', 'grass', 'fern'].includes(b.name);
+            return grassNames.includes(b.name);
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 

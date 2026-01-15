@@ -14,7 +14,8 @@ export {
     GatherSeeds,
     CraftHoe,
     GatherWood,
-    Explore
+    Explore,
+    FindFarmCenter
 } from './actions';
 
 // Import for tree building
@@ -29,7 +30,8 @@ import {
     GatherSeeds,
     CraftHoe,
     GatherWood,
-    Explore
+    Explore,
+    FindFarmCenter
 } from './actions';
 
 /**
@@ -37,9 +39,10 @@ import {
  * 1. Pick up nearby items (always do this first)
  * 2. Deposit if inventory full
  * 3. Get tools if needed (craft hoe)
- * 4. Main farming loop (harvest, plant, till)
- * 5. Get seeds if needed
- * 6. Explore as last resort
+ * 4. Find farm center if we don't have one
+ * 5. Main farming loop (harvest, plant, till)
+ * 6. Get seeds if needed
+ * 7. Explore as last resort
  */
 export function createFarmingBehaviorTree(): BehaviorNode {
     return new Selector('Root', [
@@ -58,20 +61,26 @@ export function createFarmingBehaviorTree(): BehaviorNode {
             ])
         ]),
 
-        // Priority 4: Main farming loop
+        // Priority 4: Find farm center if we don't have one
+        new Sequence('EstablishFarm', [
+            new Condition('NoFarmCenter', bb => !bb.farmCenter),
+            new FindFarmCenter(),
+        ]),
+
+        // Priority 5: Get seeds if needed (before farming work so we can till)
+        new Sequence('GetSeeds', [
+            new Condition('NeedsSeeds', bb => bb.needsSeeds),
+            new GatherSeeds(),
+        ]),
+
+        // Priority 6: Main farming loop
         new Selector('FarmingWork', [
             new HarvestCrops(),
             new PlantSeeds(),
             new TillGround(),
         ]),
 
-        // Priority 5: Get seeds if needed
-        new Sequence('GetSeeds', [
-            new Condition('NeedsSeeds', bb => bb.needsSeeds),
-            new GatherSeeds(),
-        ]),
-
-        // Priority 6: Explore as last resort
+        // Priority 7: Explore as last resort
         new Explore(),
     ]);
 }

@@ -90,6 +90,6 @@ export class FarmingRole implements Role {
 
     private logStatus() {
         const bb = this.blackboard;
-        console.log(`[Farming Status] Hoe:${bb.hasHoe} Seeds:${bb.seedCount} Farmland:${bb.nearbyFarmland.length} Crops:${bb.nearbyMatureCrops.length} Center:${bb.farmCenter || 'none'}`);
+        console.log(`[Farming Status] Hoe:${bb.hasHoe} Seeds:${bb.seedCount} Farmland:${bb.nearbyFarmland.length} Crops:${bb.nearbyMatureCrops.length} Water:${bb.nearbyWater.length} Grass:${bb.nearbyGrass.length} Center:${bb.farmCenter || 'none'}`);
     }
 }
