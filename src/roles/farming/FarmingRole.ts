@@ -27,6 +27,20 @@ export class FarmingRole implements Role {
         movements.digCost = 10;
         bot.pathfinder.setMovements(movements);
 
+        // Handle pathfinder errors that escape try/catch (event-based errors)
+        bot.on('path_stop', () => {
+            // Path stopped, this is normal
+        });
+
+        // Suppress unhandled pathfinder errors
+        process.on('uncaughtException', (err) => {
+            if (err.message?.includes('goal was changed') || err.name === 'GoalChanged') {
+                // Ignore goal changed errors - these are normal when actions interrupt each other
+                return;
+            }
+            console.error('[Farming] Uncaught exception:', err);
+        });
+
         // Initialize blackboard
         this.blackboard = createBlackboard();
 
@@ -81,7 +95,12 @@ export class FarmingRole implements Role {
                 // ═══════════════════════════════════════════════
                 await new Promise(resolve => setTimeout(resolve, 100));
 
-            } catch (error) {
+            } catch (error: unknown) {
+                // Ignore pathfinder goal changed errors - these happen when actions interrupt each other
+                if (error instanceof Error && (error.message.includes('goal was changed') || error.name === 'GoalChanged')) {
+                    // Normal interruption, continue immediately
+                    continue;
+                }
                 console.error('[Farming] Loop error:', error);
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
