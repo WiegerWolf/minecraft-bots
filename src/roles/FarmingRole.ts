@@ -105,7 +105,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         }
     }
 
-    private intention: 'NONE' | 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' | 'GATHER_WOOD' = 'NONE';
+    private intention: 'NONE' | 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' | 'GATHER_WOOD' | 'GATHER_SEEDS' | 'CHECK_STORAGE' = 'NONE';
     // lastRequestTime is inherited from CraftingMixin
 
     async update(bot: Bot) {
@@ -155,7 +155,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     }
 
     // Helper to set movement target or act immediately if within reach
-    private setMovementTarget(bot: Bot, block: any, intention: 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' | 'GATHER_WOOD', goalRange: number = 1) {
+    private setMovementTarget(bot: Bot, block: any, intention: 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' | 'GATHER_WOOD' | 'GATHER_SEEDS' | 'CHECK_STORAGE', goalRange: number = 1) {
         this.targetBlock = block;
         this.intention = intention;
 
@@ -199,6 +199,14 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             case 'GATHER_WOOD':
                 // Must be a log or stem
                 return block.name.includes('_log') || block.name.includes('_stem');
+
+            case 'GATHER_SEEDS':
+                // Must be grass or tall grass
+                return block.name === 'grass' || block.name === 'tall_grass';
+
+            case 'CHECK_STORAGE':
+                // Must be a container
+                return ['chest', 'barrel', 'trapped_chest'].includes(block.name);
 
             case 'NONE':
                 // If crafting, allow crafting table
@@ -442,7 +450,17 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         // 5. Check needs (crafting etc)
         await this.checkNeeds(bot);
 
-        // 6. If still no hoe, try to gather wood
+        // 6. If no seeds and we have farmland or want to farm, try to gather seeds
+        if (this.state === 'FINDING') {
+            const inventory = bot.inventory.items();
+            const hasSeeds = inventory.some(item =>
+                item.name.includes('seeds') || item.name === 'carrot' || item.name === 'potato' || item.name === 'beetroot'
+            );
+            if (!hasSeeds) {
+                if (await this.findSeedsNearby(bot)) return;
+            }
+        }
+
         if (this.state === 'FINDING') {
             const inventory = bot.inventory.items();
             const hasHoe = inventory.some(item => item.name.includes('hoe'));
@@ -648,6 +666,31 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 this.log('Gathering wood...');
                 await bot.dig(block);
                 this.log('Wood gathered.');
+                this.state = 'COLLECTING';
+            } else if (this.intention === 'GATHER_SEEDS') {
+                this.log('Breaking grass for seeds...');
+                await bot.dig(block);
+                this.log('Grass broken.');
+                this.state = 'COLLECTING';
+            } else if (this.intention === 'CHECK_STORAGE') {
+                this.log(`Opening ${block.name} at ${block.position} to check for seeds...`);
+                const container = await bot.openContainer(block);
+                const items = container.items();
+                const seeds = items.filter(item =>
+                    item.name.includes('seeds') || item.name === 'carrot' || item.name === 'potato' || item.name === 'beetroot'
+                );
+
+                if (seeds.length > 0) {
+                    this.log(`Found ${seeds.length} seed stacks in storage. Withdrawing...`);
+                    for (const seed of seeds) {
+                        await container.withdraw(seed.type, null, seed.count);
+                    }
+                    this.log('Successfully withdrew seeds.');
+                } else {
+                    this.log('No seeds found in this storage.');
+                    this.failedBlocks.set(block.position.toString(), Date.now());
+                }
+                container.close();
                 this.state = 'FINDING';
             } else {
                 this.log(`Unknown intention ${this.intention}, resetting.`);
@@ -802,5 +845,31 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 this.lastRequestTime = Date.now();
             }
         }
+    }
+
+    private async findSeedsNearby(bot: Bot): Promise<boolean> {
+        // 1. Search for grass
+        const grass = bot.findBlock({
+            matching: block => block && (block.name === 'grass' || block.name === 'tall_grass'),
+            maxDistance: 32
+        });
+        if (grass && !this.failedBlocks.has(grass.position.toString())) {
+            this.log(`Found grass at ${grass.position}. Gathering seeds...`);
+            this.setMovementTarget(bot, grass, 'GATHER_SEEDS');
+            return true;
+        }
+
+        // 2. Search for containers
+        const storage = bot.findBlock({
+            matching: block => block && ['chest', 'barrel', 'trapped_chest'].includes(block.name),
+            maxDistance: 32
+        });
+        if (storage && !this.failedBlocks.has(storage.position.toString())) {
+            this.log(`Found ${storage.name} at ${storage.position}. Checking for seeds...`);
+            this.setMovementTarget(bot, storage, 'CHECK_STORAGE');
+            return true;
+        }
+
+        return false;
     }
 }
