@@ -46,8 +46,11 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         const defaultMove = new Movements(bot);
         defaultMove.canDig = false; 
         defaultMove.allow1by1towers = false;
-        // FIX: Use liquidCost instead of canSwim to allow water traversal
-        defaultMove.liquidCost = 1; 
+        
+        // FIX: 'liquidCost' exists in JS but is missing from the TypeScript definition file.
+        // We cast to 'any' to suppress the error so the bot can swim.
+        (defaultMove as any).liquidCost = 1; 
+        
         bot.pathfinder.setMovements(defaultMove);
         
         this.currentProposal = null;
