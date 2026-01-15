@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import type { Role } from '../../Role';
+import type { Role } from '../Role';
 import { goals, Movements } from 'mineflayer-pathfinder';
 import { CraftingMixin } from '../mixins/CraftingMixin';
 import { KnowledgeMixin } from '../mixins/KnowledgeMixin';
