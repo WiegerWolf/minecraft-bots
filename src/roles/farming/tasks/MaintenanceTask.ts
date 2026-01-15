@@ -21,7 +21,7 @@ export class MaintenanceTask implements Task {
                         if (!b || !b.position) return false;
                         return b.name.includes('_log') && !role.failedBlocks.has(b.position.toString());
                     },
-                    maxDistance: 64 // Increased range
+                    maxDistance: 64
                 });
                 
                 if (tree) {
@@ -32,6 +32,9 @@ export class MaintenanceTask implements Task {
                         range: 2.5,
                         task: this
                     };
+                } else {
+                    // DEBUG: If we need wood but can't find it
+                    // role.log("Need wood, but no logs found within 64 blocks.");
                 }
             }
             

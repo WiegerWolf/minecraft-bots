@@ -4,11 +4,11 @@ import { goals, Movements } from 'mineflayer-pathfinder';
 import { CraftingMixin } from '../mixins/CraftingMixin';
 import { KnowledgeMixin } from '../mixins/KnowledgeMixin';
 import type { Task, WorkProposal } from './tasks/Task';
-import { HarvestTask } from './tasks/HarvestTask.ts';
-import { PlantTask } from './tasks/PlantTask.ts';
-import { LogisticsTask } from './tasks/LogisticsTask.ts';
-import { TillTask } from './tasks/TillTask.ts';
-import { MaintenanceTask } from './tasks/MaintenanceTask.ts';
+import { HarvestTask } from './tasks/HarvestTask';
+import { PlantTask } from './tasks/PlantTask';
+import { LogisticsTask } from './tasks/LogisticsTask';
+import { TillTask } from './tasks/TillTask';
+import { MaintenanceTask } from './tasks/MaintenanceTask';
 
 const { GoalNear, GoalXZ } = goals;
 
@@ -26,7 +26,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     private movementStartTime = 0;
     private readonly MOVEMENT_TIMEOUT = 20000;
     
-    private idleTicks = 0; // Track how long we've been idle
+    private idleTicks = 0;
 
     constructor() {
         super();
@@ -46,6 +46,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         const defaultMove = new Movements(bot);
         defaultMove.canDig = false; 
         defaultMove.allow1by1towers = false;
+        defaultMove.canSwim = true; // FIX: Allow swimming
         bot.pathfinder.setMovements(defaultMove);
         
         this.currentProposal = null;
@@ -142,25 +143,23 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             // Idle handling
             this.idleTicks++;
             if (this.idleTicks % 20 === 0) { // Every ~10 seconds
-                this.log("💤 No work found...");
+                this.printDebugInventory(bot);
             }
             if (this.idleTicks > 60) { // ~30 seconds of pure idle
                 this.log("🚶 Wandering to find resources...");
                 this.idleTicks = 0;
                 
-                // Wander randomly 20 blocks away
                 const x = bot.entity.position.x + (Math.random() * 40 - 20);
                 const z = bot.entity.position.z + (Math.random() * 40 - 20);
                 bot.pathfinder.setGoal(new GoalXZ(x, z));
                 this.movementStartTime = Date.now();
                 
-                // Create a fake proposal to track movement state
                 this.currentProposal = {
                     priority: 1,
                     description: "Wandering",
                     target: { position: { x, y: bot.entity.position.y, z } },
                     range: 2,
-                    task: { // Dummy task
+                    task: { 
                         name: 'wander',
                         findWork: async () => null,
                         perform: async () => { this.log("Finished wandering."); }
@@ -168,6 +167,11 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 };
             }
         }
+    }
+
+    private printDebugInventory(bot: Bot) {
+        const items = bot.inventory.items().map(i => `${i.name} x${i.count}`).join(', ');
+        this.log(`💤 No work found. Inv: [${items || 'Empty'}]`);
     }
 
     public blacklistBlock(pos: any) {
