@@ -19,8 +19,15 @@ export class MaintenanceTask implements Task {
             if (planks < 2 && logs === 0) {
                 const tree = bot.findBlock({
                     matching: b => !!b && b.name.includes('_log'),
-                    maxDistance: 32
+                    maxDistance: 32,
+                    // --- FIX START: Respect failed blocks ---
+                    useExtraInfo: (block) => {
+                        if (role.failedBlocks.has(block.position.toString())) return false;
+                        return true;
+                    }
+                    // --- FIX END ---
                 });
+                
                 if (tree) {
                     return {
                         priority: 50,
@@ -55,8 +62,12 @@ export class MaintenanceTask implements Task {
                         point: center,
                         maxDistance: 5,
                         matching: (b) => {
-                            if (!b || !b.position) return false; // FIX: Robust Null check
+                            if (!b || !b.position) return false;
                             if (b.name === 'farmland' || b.name === 'water') return false;
+                            
+                            // Check blacklist
+                            if (role.failedBlocks.has(b.position.toString())) return false;
+
                             const above = bot.blockAt(b.position.offset(0,1,0));
                             return !!(above && above.name === 'air');
                         }
