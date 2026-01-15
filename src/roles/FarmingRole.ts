@@ -105,7 +105,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         }
     }
 
-    private intention: 'NONE' | 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' | 'GATHER_WOOD' | 'GATHER_SEEDS' | 'CHECK_STORAGE' = 'NONE';
+    private intention: 'NONE' | 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' | 'GATHER_WOOD' | 'GATHER_SEEDS' | 'CHECK_STORAGE' | 'RETURN_TO_FARM' = 'NONE';
     // lastRequestTime is inherited from CraftingMixin
 
     async update(bot: Bot) {
@@ -155,7 +155,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     }
 
     // Helper to set movement target or act immediately if within reach
-    private setMovementTarget(bot: Bot, block: any, intention: 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' | 'GATHER_WOOD' | 'GATHER_SEEDS' | 'CHECK_STORAGE', goalRange: number = 1) {
+    private setMovementTarget(bot: Bot, block: any, intention: typeof this.intention, goalRange: number = 1) {
         this.targetBlock = block;
         this.intention = intention;
 
@@ -177,6 +177,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
 
     // Fix 4: Validate that the block matches what we expect for our intention
     private validateBlockForIntention(block: any): boolean {
+        // Special case for returning to farm anchor, no specific block needed
+        if (this.intention === 'RETURN_TO_FARM') return true;
+        
         if (!block) return false;
 
         switch (this.intention) {
@@ -257,6 +260,10 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             }
             this.lastLogTime = now;
         }
+        
+        // 1.0 Get Farm Anchor (POI)
+        const farmAnchor = this.getNearestPOI(bot, 'farm_center');
+        
         const harvestable = bot.findBlock({
             matching: (block) => {
                 if (!block || !block.position) return false;
@@ -267,7 +274,8 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 return this.isMature(block);
             },
             maxDistance: 32,
-            useExtraInfo: true
+            useExtraInfo: true,
+            point: farmAnchor ? farmAnchor.position : bot.entity.position // Search near farm if we have one
         });
 
         if (harvestable) {
@@ -293,10 +301,19 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 // IMPORTANT: If we have no seeds and cannot find any way to get them,
                 // we should NOT proceed to Tilling or Planting, as that will just loop forever.
                 if (shouldLog) this.log('No seeds and no grass/storage nearby. Cannot farm. Waiting...');
-                
-                // Optional: Wander a bit to find new chunks? 
-                // For now, just return to avoid the infinite loop of tilling.
                 return; 
+            }
+        }
+
+        // 1.6 PRIORITY: Return to farm anchor if we drifted away
+        if (farmAnchor) {
+            const dist = bot.entity.position.distanceTo(farmAnchor.position);
+            // If we are far away (> 32 blocks) and not currently busy with a specific task
+            if (dist > 32) {
+                this.log(`Drifted too far from farm anchor (${dist.toFixed(1)}m). Returning to ${farmAnchor.position}...`);
+                // Create a dummy target block just for the position
+                this.setMovementTarget(bot, { position: farmAnchor.position } as any, 'RETURN_TO_FARM', 2);
+                return;
             }
         }
 
@@ -309,7 +326,8 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         const allFarmlands = bot.findBlocks({
             matching: (block) => farmlandId ? block.type === farmlandId : block.name === 'farmland',
             maxDistance: 32,
-            count: 256
+            count: 256,
+            point: farmAnchor ? farmAnchor.position : bot.entity.position // Prioritize existing farm area
         });
 
         if (shouldLog) {
@@ -350,9 +368,11 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                     const aHydrated = this.isHydrated(bot, a.position) ? 1 : 0;
                     const bHydrated = this.isHydrated(bot, b.position) ? 1 : 0;
                     if (aHydrated !== bHydrated) return bHydrated - aHydrated;
-                    const botPos = bot.entity?.position;
-                    if (!botPos) return 0;
-                    return botPos.distanceTo(a.position) - botPos.distanceTo(b.position);
+                    
+                    // Sort by distance to Farm Anchor if it exists, otherwise bot
+                    const targetPos = farmAnchor ? farmAnchor.position : bot.entity?.position;
+                    if (!targetPos) return 0;
+                    return targetPos.distanceTo(a.position) - targetPos.distanceTo(b.position);
                 })[0];
 
             if (bestFarmland) {
@@ -378,9 +398,14 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             }
 
             const waterIds = ['water', 'flowing_water'].map(name => mcData?.blocksByName?.[name]?.id).filter(id => id !== undefined);
+            
+            // Search for water around the farm anchor if it exists
+            const searchPoint = farmAnchor ? farmAnchor.position : bot.entity.position;
+            
             const waterBlocks = bot.findBlocks({
                 matching: (block) => waterIds.length > 0 ? waterIds.includes(block.type) : (block.name === 'water' || block.name === 'flowing_water'),
                 maxDistance: 32,
+                point: searchPoint,
                 count: 20
             });
 
@@ -425,8 +450,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                                     // Prefer same level as water
                                     if (dy === 0) score += 5;
 
-                                    // Slight penalty for distance to bot
-                                    const dist = bot.entity.position.distanceTo(pos);
+                                    // Penalty for distance to FARM ANCHOR if exists, otherwise bot
+                                    const distRef = farmAnchor ? farmAnchor.position : bot.entity.position;
+                                    const dist = distRef.distanceTo(pos);
                                     score -= dist * 0.5;
 
                                     candidates.push({ pos, block, score });
@@ -596,6 +622,15 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         }
 
         const block = bot.blockAt(this.targetBlock.position);
+        
+        // Handle special return to farm intention
+        if (this.intention === 'RETURN_TO_FARM') {
+            this.log('Returned to farm area.');
+            this.state = 'FINDING';
+            this.intention = 'NONE';
+            return;
+        }
+
         if (!block) {
             this.log('Target block no longer exists. Back to FINDING.');
             this.state = 'FINDING';
@@ -640,6 +675,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                         this.log(`Attempting to plant ${cropToPlant} on ${block.name} at ${block.position}...`);
                         await bot.placeBlock(block, new Vec3(0, 1, 0));
                         this.log(`Successfully planted ${cropToPlant}.`);
+                        
+                        // Update Farm Anchor
+                        this.rememberPOI('farm_center', block.position);
                     } else {
                         this.log(`Could not find seed item ${cropToPlant} in inventory!`);
                     }
@@ -658,6 +696,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                     if (updatedBlock && updatedBlock.name === 'farmland') {
                         this.log('Verification success: Block is now farmland.');
                         this.failedBlocks.delete(block.position.toString());
+                        
+                        // Update Farm Anchor
+                        this.rememberPOI('farm_center', block.position);
                     } else {
                         this.log(`Verification failed: Block is ${updatedBlock?.name}. Blacklisting ${block.position} for cooldown.`);
                         this.failedBlocks.set(block.position.toString(), Date.now());
