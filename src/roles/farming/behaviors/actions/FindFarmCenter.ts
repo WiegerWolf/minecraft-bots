@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
+import { Vec3 } from 'vec3';
 
 const { GoalNear } = goals;
 
@@ -16,11 +17,14 @@ export class FindFarmCenter implements BehaviorNode {
         // Already have a farm center
         if (bb.farmCenter) return 'failure';
 
-        // Try to find water nearby
+        // Try to find water nearby via blackboard
         if (bb.nearbyWater.length > 0) {
-            // Water found - farm center will be set by Blackboard
-            console.log(`[BT] Found water source, establishing farm center`);
-            return 'success';
+            const water = bb.nearbyWater[0];
+            if (water) {
+                bb.farmCenter = water.position.clone();
+                console.log(`[BT] Established farm center at ${water.position}`);
+                return 'success';
+            }
         }
 
         // No water in perception range, search more actively
@@ -37,11 +41,16 @@ export class FindFarmCenter implements BehaviorNode {
         if (waterBlocks.length > 0) {
             const waterPos = waterBlocks[0];
             if (waterPos) {
-                console.log(`[BT] Found water at ${waterPos}, moving closer`);
+                console.log(`[BT] Found water at ${waterPos}, moving to establish farm`);
                 bb.lastAction = 'find_farm';
 
                 try {
-                    await bot.pathfinder.goto(new GoalNear(waterPos.x, waterPos.y, waterPos.z, 8));
+                    await bot.pathfinder.goto(new GoalNear(waterPos.x, waterPos.y, waterPos.z, 4));
+
+                    // Set farm center directly
+                    bb.farmCenter = new Vec3(waterPos.x, waterPos.y, waterPos.z);
+                    console.log(`[BT] Established farm center at ${bb.farmCenter}`);
+
                     return 'success';
                 } catch {
                     return 'failure';
