@@ -35,7 +35,7 @@ export class TillTask implements Task {
                 const nearbyWater = bot.findBlocks({
                     point: farmAnchor,
                     matching: (b) => b.name === 'water' || b.name === 'flowing_water',
-                    maxDistance: 5,
+                    maxDistance: 50,
                     count: 1
                 });
 

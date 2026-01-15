@@ -12,7 +12,7 @@ export class PlantTask implements Task {
     async findWork(bot: Bot, role: FarmingRole): Promise<WorkProposal | null> {
         // 1. Do we have any seeds?
         const inventory = bot.inventory.items();
-        const hasSeeds = inventory.some(item => 
+        const hasSeeds = inventory.some(item =>
             item.name.includes('seeds') || ['carrot', 'potato', 'beetroot'].includes(item.name)
         );
         if (!hasSeeds) return null;
@@ -46,19 +46,23 @@ export class PlantTask implements Task {
             // Sort by distance to bot
             validSpots.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
             const targetPos = validSpots[0]; // Closest valid spot
-            
+
             // FIX: Explicit undefined check
             if (targetPos) {
                 const targetBlock = bot.blockAt(targetPos);
 
                 if (targetBlock) {
-                     return {
-                        priority: 25, // CRITICAL: Higher than TillTask (15)
+                    return {
+                        priority: 50, // CRITICAL: Higher than Scavenging (35)
                         description: `Planting on farmland at ${targetPos}`,
                         target: targetBlock,
                         task: this
                     };
                 }
+            }
+        } else {
+            if (hasSeeds && farmlandBlocks.length > 0) {
+                role.log(`[PlantTask] Found ${farmlandBlocks.length} farmland blocks, but 0 valid spots.`);
             }
         }
 
@@ -89,12 +93,11 @@ export class PlantTask implements Task {
 
             await bot.equip(seedItem, 'hand');
             await bot.lookAt(target.position.offset(0.5, 1, 0.5), true);
-            
+
             // Place on top (0, 1, 0)
             await bot.placeBlock(target, new Vec3(0, 1, 0));
-            
+
             role.log(`Planted ${cropName}`);
-            role.rememberPOI('farm_center', target.position);
         } catch (err) {
             role.log(`Planting failed: ${err}`);
             role.blacklistBlock(target.position);
@@ -103,7 +106,7 @@ export class PlantTask implements Task {
 
     private getOptimalCrop(bot: Bot, position: Vec3): string | null {
         const inventory = bot.inventory.items();
-        const availableSeeds = inventory.filter(item => 
+        const availableSeeds = inventory.filter(item =>
             item.name.includes('seeds') || ['carrot', 'potato', 'beetroot'].includes(item.name)
         );
         availableSeeds.sort((a, b) => b.count - a.count);
