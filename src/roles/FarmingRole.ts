@@ -275,6 +275,18 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             return;
         }
 
+        // 1.5 PRIORITY: Check if we have any seeds. If not, we must gather them before doing anything else.
+        const inventory = bot.inventory.items();
+        const hasSeeds = inventory.some(item =>
+            item.name.includes('seeds') || item.name === 'carrot' || item.name === 'potato' || item.name === 'beetroot'
+        );
+
+        if (!hasSeeds) {
+            if (shouldLog) this.log('No seeds in inventory. Prioritizing seed gathering...');
+            // Try to find seeds nearby (breaking grass or checking chests)
+            if (await this.findSeedsNearby(bot)) return;
+        }
+
         // 2. Find empty farmland to plant
         if (shouldLog && bot.entity?.position) {
             this.log(`Bot position: ${bot.entity.position.floored()}. Searching for farmland (maxDist: 32)...`);
@@ -449,17 +461,6 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
 
         // 5. Check needs (crafting etc)
         await this.checkNeeds(bot);
-
-        // 6. If no seeds and we have farmland or want to farm, try to gather seeds
-        if (this.state === 'FINDING') {
-            const inventory = bot.inventory.items();
-            const hasSeeds = inventory.some(item =>
-                item.name.includes('seeds') || item.name === 'carrot' || item.name === 'potato' || item.name === 'beetroot'
-            );
-            if (!hasSeeds) {
-                if (await this.findSeedsNearby(bot)) return;
-            }
-        }
 
         if (this.state === 'FINDING') {
             const inventory = bot.inventory.items();
