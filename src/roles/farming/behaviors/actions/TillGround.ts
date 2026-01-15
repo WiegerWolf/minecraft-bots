@@ -36,7 +36,10 @@ export class TillGround implements BehaviorNode {
             if (target) break;
         }
 
-        if (!target) return 'failure';
+        if (!target) {
+            console.log(`[BT] No tillable blocks found near farm center ${bb.farmCenter}`);
+            return 'failure';
+        }
 
         const hoe = bot.inventory.items().find(i => i.name.includes('hoe'));
         if (!hoe) return 'failure';
@@ -54,6 +57,14 @@ export class TillGround implements BehaviorNode {
                 await bot.lookAt(target.position.offset(0.5, 1, 0.5), true);
                 await bot.activateBlock(block);
                 await sleep(200);
+
+                // Verify tilling worked
+                const afterBlock = bot.blockAt(target.position);
+                if (afterBlock?.name === 'farmland') {
+                    console.log(`[BT] Successfully created farmland at ${target.position}`);
+                } else {
+                    console.log(`[BT] Tilling may have failed - block is ${afterBlock?.name} not farmland`);
+                }
             }
             return 'success';
         } catch {

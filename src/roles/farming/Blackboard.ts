@@ -116,30 +116,29 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         }
     }
 
-    // Find farmland - only hydrated blocks with adequate light
-    bb.nearbyFarmland = bot.findBlocks({
+    // Find farmland - simplified detection (removed overly strict filters)
+    const rawFarmland = bot.findBlocks({
         point: searchCenter,
-        maxDistance: 16, // Reduced from 32 - focus on nearby farmland
+        maxDistance: 32,
         count: 50,
         matching: b => {
-            // FIX: Add comprehensive null checks
-            if (!b || !b.position || !b.name) return false;
-            if (b.name !== 'farmland') return false;
-
-            const above = bot.blockAt(b.position.offset(0, 1, 0));
-            return above !== null && above.name === 'air';
+            if (!b || !b.name) return false;
+            return b.name === 'farmland';
         }
-    }).map(p => bot.blockAt(p)).filter((b): b is Block => {
+    });
+
+    bb.nearbyFarmland = rawFarmland.map(p => bot.blockAt(p)).filter((b): b is Block => {
         if (!b) return false;
-        // Only include farmland within 4 blocks of water (hydration range)
-        // Also check against farm center directly in case nearbyWater is empty
-        const hydratedByWater = isWithinHydrationRange(b.position, bb.nearbyWater);
-        const hydratedByFarmCenter = bb.farmCenter && isWithinHydrationRangeOfPoint(b.position, bb.farmCenter);
-        if (!hydratedByWater && !hydratedByFarmCenter) return false;
-        // Only include farmland with adequate light for crop growth
-        if (!hasAdequateLight(bot, b.position)) return false;
+        // Check if there's air above (can plant)
+        const above = bot.blockAt(b.position.offset(0, 1, 0));
+        if (!above || above.name !== 'air') return false;
         return true;
     });
+
+    // Debug: log if we found farmland
+    if (rawFarmland.length > 0 && bb.nearbyFarmland.length === 0) {
+        console.log(`[Blackboard] Found ${rawFarmland.length} farmland blocks but none with air above`);
+    }
 
     // Find mature crops
     bb.nearbyMatureCrops = bot.findBlocks({
