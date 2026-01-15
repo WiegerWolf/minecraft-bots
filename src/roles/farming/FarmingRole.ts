@@ -4,11 +4,11 @@ import { goals, Movements } from 'mineflayer-pathfinder';
 import { CraftingMixin } from '../mixins/CraftingMixin';
 import { KnowledgeMixin } from '../mixins/KnowledgeMixin';
 import type { Task, WorkProposal } from './tasks/Task';
-import { HarvestTask } from './tasks/HarvestTask';
-import { PlantTask } from './tasks/PlantTask';
-import { LogisticsTask } from './tasks/LogisticsTask';
-import { TillTask } from './tasks/TillTask';
-import { MaintenanceTask } from './tasks/MaintenanceTask';
+import { HarvestTask } from './tasks/HarvestTask.ts';
+import { PlantTask } from './tasks/PlantTask.ts';
+import { LogisticsTask } from './tasks/LogisticsTask.ts';
+import { TillTask } from './tasks/TillTask.ts';
+import { MaintenanceTask } from './tasks/MaintenanceTask.ts';
 
 const { GoalNear } = goals;
 
