@@ -24,7 +24,6 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     public failedBlocks: Map<string, number> = new Map();
     public containerCooldowns: Map<string, number> = new Map();
     public readonly RETRY_COOLDOWN = 5 * 60 * 1000;    // 5 minutes
-    public readonly CONTAINER_COOLDOWN = 30 * 1000;    // 30 seconds
     
     // Movement tracking
     private currentProposal: WorkProposal | null = null;
@@ -34,11 +33,11 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     constructor() {
         super();
         this.tasks = [
-            new MaintenanceTask(), // High Prio (Crafting tools/Saving self)
-            new LogisticsTask(),   // High Prio (Emptying inventory)
-            new HarvestTask(),     // Normal
-            new PlantTask(),       // Normal
-            new TillTask(),        // Low (Expansion)
+            new MaintenanceTask(), // High Prio
+            new LogisticsTask(),   
+            new HarvestTask(),     
+            new PlantTask(),       
+            new TillTask(),        
         ];
     }
 
@@ -46,9 +45,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.active = true;
         this.bot = bot;
         
-        // Setup Movements to prevent getting stuck
+        // Setup Movements
         const defaultMove = new Movements(bot);
-        defaultMove.canDig = false; // Don't break blocks while pathing
+        defaultMove.canDig = false; 
         defaultMove.allow1by1towers = false;
         bot.pathfinder.setMovements(defaultMove);
         
@@ -60,7 +59,6 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.log('🚜 Modular Farming Role started.');
         bot.chat('🚜 Farming started (Modular).');
         
-        // Initialize Mixins
         const existingFarm = bot.findBlock({ matching: b => b.name === 'farmland', maxDistance: 32 });
         if (existingFarm) this.rememberPOI('farm_center', existingFarm.position);
     }
@@ -92,25 +90,24 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
 
             // Arrived?
             if (dist <= reach) {
-                // STOP moving completely
+                // STOP moving
                 bot.pathfinder.setGoal(null);
-                bot.clearControlStates();
+                bot.clearControlStates(); // Stop physics immediately
                 
                 // Execute the specific task logic
                 try {
                     await this.currentProposal.task.perform(bot, this, this.currentProposal.target);
                 } catch (error) {
                     this.log(`❌ Error executing ${this.currentProposal.description}:`, error);
-                    // IMPORTANT: Blacklist block if action fails so we don't loop forever
+                    // IMPORTANT: Blacklist block if action fails
                     if (this.currentProposal.target?.position) {
                         this.blacklistBlock(this.currentProposal.target.position);
                     }
                 }
                 
-                // Reset to find new work
                 this.currentProposal = null;
             }
-            return; // Busy moving/acting, don't look for new work yet
+            return; // Busy moving/acting
         }
 
         // 2. Find new work
@@ -121,7 +118,6 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 const proposal = await task.findWork(bot, this);
                 if (!proposal) continue;
 
-                // Immediate override for critical tasks (e.g. starving, full inventory)
                 if (proposal.priority >= 100) {
                     bestProposal = proposal;
                     break;
@@ -141,28 +137,25 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             this.currentProposal = bestProposal;
             
             if (bestProposal.target) {
-                // Start moving
                 this.movementStartTime = Date.now();
                 const pos = bestProposal.target.position;
                 const range = bestProposal.range || 3.5;
                 bot.pathfinder.setGoal(new GoalNear(pos.x, pos.y, pos.z, range));
             } else {
-                // Task has no target (instant action), run immediately
                 await bestProposal.task.perform(bot, this);
                 this.currentProposal = null;
             }
         }
     }
 
-    // --- Helper Methods for Tasks ---
-
     public blacklistBlock(pos: any) {
         if (pos && pos.toString) {
-            this.failedBlocks.set(pos.toString(), Date.now());
+            const key = pos.toString();
+            this.log(`⛔ Blacklisting position: ${key}`);
+            this.failedBlocks.set(key, Date.now());
         }
     }
 
-    // Expose mixin logs and fix 'override' error
     public override log(message: string, ...args: any[]) {
         console.log(`[Farming] ${message}`, ...args);
     }
