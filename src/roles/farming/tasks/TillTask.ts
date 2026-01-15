@@ -15,7 +15,6 @@ export class TillTask implements Task {
         const inventory = bot.inventory.items();
         const hoe = inventory.find(i => i.name.includes('hoe'));
         
-        // Count total seeds available
         const seedNames = ['wheat_seeds', 'beetroot_seeds', 'carrot', 'potato'];
         const totalSeeds = inventory
             .filter(i => i.name.includes('seeds') || ['carrot', 'potato', 'beetroot'].includes(i.name))
@@ -23,13 +22,12 @@ export class TillTask implements Task {
 
         if (!hoe || totalSeeds === 0) return null;
 
-        // 2. Check if we have enough unplanted farmland already
-        // This prevents tilling the whole world with just 1 seed.
+        // 2. Check if we have enough unplanted farmland
         const farmAnchor = role.getNearestPOI(bot, 'farm_center')?.position || bot.entity.position;
 
         const unplantedFarmland = bot.findBlocks({
             point: farmAnchor,
-            maxDistance: 20, // Check immediate farm area
+            maxDistance: 20,
             matching: (b) => {
                 if (b.name !== 'farmland') return false;
                 const above = bot.blockAt(b.position.offset(0, 1, 0));
@@ -38,35 +36,31 @@ export class TillTask implements Task {
             count: 100
         });
 
-        // RULE: Don't till more than we can plant
         if (unplantedFarmland.length >= totalSeeds) {
-            return null; // Let PlantTask take over
+            return null; 
         }
 
-        // 3. Find water to expand around (Strictly near Anchor)
+        // 3. Find water
         const water = bot.findBlock({
             point: farmAnchor,
-            maxDistance: 20, // Keep it tight to the farm center
+            maxDistance: 20,
             matching: b => !!b && (b.name === 'water' || b.name === 'flowing_water')
         });
 
         if (!water) {
-             // Only warn occasionally
              if (Math.random() < 0.01) role.log("⚠️ Have seeds, but no water found near farm center.");
              return null;
         }
 
-        // 4. Find valid dirt/grass to till
+        // 4. Find valid dirt/grass
         const candidates: { block: any, score: number }[] = [];
         const waterPos = water.position;
         
-        // Scan specifically around the water source
         for (let x = -4; x <= 4; x++) {
             for (let z = -4; z <= 4; z++) {
                 for (let y = -1; y <= 1; y++) {
                     const pos = waterPos.offset(x, y, z);
                     
-                    // Skip if blacklisted
                     if (role.failedBlocks.has(pos.toString())) continue;
 
                     const block = bot.blockAt(pos);
@@ -76,12 +70,9 @@ export class TillTask implements Task {
                     if (!above || (above.name !== 'air' && above.name !== 'cave_air' && !above.name.includes('grass'))) continue;
 
                     let score = 0;
-                    
-                    // Heavy weight: Closeness to Farm Center
                     const distToCenter = pos.distanceTo(farmAnchor);
                     score -= distToCenter * 2; 
 
-                    // Bonus: Next to existing farmland (Continuous Patch)
                     if (this.hasNeighboringFarmland(bot, pos)) score += 50;
 
                     candidates.push({ block, score });
@@ -93,8 +84,11 @@ export class TillTask implements Task {
             candidates.sort((a, b) => b.score - a.score);
             const best = candidates[0];
             
+            // FIX: Add check for undefined
+            if (!best) return null;
+
             return {
-                priority: 15, // Lower than PlantTask (20) but higher than Idle
+                priority: 15,
                 description: `Tilling ground at ${best.block.position}`,
                 target: best.block,
                 task: this
@@ -109,15 +103,12 @@ export class TillTask implements Task {
         if (!hoe) return;
 
         try {
-            // FIX: Move close enough to touch it
             await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 2));
             
-            // Stop and Equip
             bot.pathfinder.stop();
             bot.pathfinder.setGoal(null);
             await bot.equip(hoe, 'hand');
 
-            // Look and Activate
             await bot.lookAt(target.position.offset(0.5, 1, 0.5), true);
             await bot.activateBlock(target);
             
