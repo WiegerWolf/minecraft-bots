@@ -17,7 +17,7 @@ export class HarvestTask implements Task {
             point,
             maxDistance: 32,
             matching: (b) => {
-                if (!b || !b.position) return false; // FIX: Robust Null check
+                if (!b || !b.position) return false;
                 // Filter out blacklisted blocks
                 if (role.failedBlocks.has(b.position.toString())) return false;
                 return this.isMature(b);
@@ -29,7 +29,7 @@ export class HarvestTask implements Task {
                 priority: 10,
                 description: `Harvesting ${block.name}`,
                 target: block,
-                range: 3.5,
+                range: 2.5, // FIX: Reduce range
                 task: this
             };
         }
@@ -41,13 +41,10 @@ export class HarvestTask implements Task {
         if (!target) return;
         
         role.log(`Digging ${target.name}...`);
+        await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
         await bot.dig(target);
         
-        // Simple pickup logic
-        const item = bot.nearestEntity(e => e.name === 'item' && e.position.distanceTo(target.position) < 3);
-        if (item) {
-             // We are likely close enough to pick it up automatically due to GoalNear
-        }
+        // Simple pickup logic (GoalNear usually handles this)
     }
 
     private isMature(block: any): boolean {

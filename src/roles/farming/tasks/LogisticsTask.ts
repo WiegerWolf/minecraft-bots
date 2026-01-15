@@ -22,6 +22,7 @@ export class LogisticsTask implements Task {
                     priority: 100,
                     description: 'Depositing items (Inventory Full)',
                     target: chest,
+                    range: 2.5, // Closer range for chest interaction
                     task: this
                 };
             } else {
@@ -38,13 +39,18 @@ export class LogisticsTask implements Task {
                     priority: 50,
                     description: 'Checking chest for seeds',
                     target: chest,
+                    range: 2.5,
                     task: this
                 };
             }
             
             // If no chest, look for grass to break (Scavenging)
             const grass = bot.findBlock({
-                matching: b => !!b && ['grass', 'tall_grass', 'short_grass', 'fern'].includes(b.name), // FIX: Null check
+                matching: b => {
+                    if (!b || !b.position) return false;
+                    if (role.failedBlocks.has(b.position.toString())) return false; // Check blacklist
+                    return ['grass', 'tall_grass', 'short_grass', 'fern'].includes(b.name);
+                },
                 maxDistance: 32
             });
             if (grass) {
@@ -52,6 +58,7 @@ export class LogisticsTask implements Task {
                     priority: 20,
                     description: 'Gathering seeds from grass',
                     target: grass,
+                    range: 2.5, // Closer range for digging
                     task: this
                 };
             }
@@ -65,6 +72,7 @@ export class LogisticsTask implements Task {
 
         // Action: Scavenge Grass
         if (blockName.includes('grass') || blockName.includes('fern')) {
+            await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
             await bot.dig(target);
             return;
         }
@@ -123,7 +131,7 @@ export class LogisticsTask implements Task {
 
         // 2. Scan
         return bot.findBlock({
-            matching: b => !!b && ['chest', 'barrel', 'trapped_chest'].includes(b.name), // FIX: Null check
+            matching: b => !!b && ['chest', 'barrel', 'trapped_chest'].includes(b.name), 
             maxDistance: 32
         });
     }

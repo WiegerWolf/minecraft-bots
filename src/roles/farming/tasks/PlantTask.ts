@@ -22,7 +22,7 @@ export class PlantTask implements Task {
             point,
             maxDistance: 32,
             matching: (b) => {
-                if (!b || !b.position) return false; // FIX: Robust Null check
+                if (!b || !b.position) return false;
                 if (b.name !== 'farmland') return false;
                 if (role.failedBlocks.has(b.position.toString())) return false;
                 
@@ -37,7 +37,7 @@ export class PlantTask implements Task {
                 priority: 8,
                 description: `Planting on farmland at ${farmland.position}`,
                 target: farmland,
-                range: 3.5,
+                range: 2.5, // FIX: Reduce range
                 task: this
             };
         }
@@ -58,6 +58,7 @@ export class PlantTask implements Task {
         await bot.equip(seedItem, 'hand');
         
         try {
+            await bot.lookAt(target.position.offset(0.5, 1, 0.5));
             await bot.placeBlock(target, new Vec3(0, 1, 0));
             role.log(`Planted ${cropName}`);
             role.rememberPOI('farm_center', target.position);
