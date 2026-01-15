@@ -1,4 +1,3 @@
-// ./src/roles/farming/tasks/TillTask.ts
 import type { Bot } from 'mineflayer';
 import type { FarmingRole } from '../FarmingRole';
 import type { Task, WorkProposal } from './Task';
@@ -35,7 +34,6 @@ export class TillTask implements Task {
             } 
             else {
                 // Check if it's productive (has tillable land)
-                // If we have active farmland nearby, we keep it. If not, and it has no potential, dump it.
                 const hasActiveFarm = this.hasNeighboringFarmland(bot, farmAnchor, 5);
                 const potential = this.countTillableNeighbors(bot, farmAnchor, role);
 
@@ -50,10 +48,9 @@ export class TillTask implements Task {
 
         // B. Find NEW Anchor if needed
         if (!farmAnchor) {
-            // Scan for multiple candidates
             const waterCandidates = bot.findBlocks({
                 matching: (b) => b.name === 'water' || b.name === 'flowing_water',
-                maxDistance: 64, // Good range
+                maxDistance: 64,
                 count: 16
             });
 
@@ -61,7 +58,6 @@ export class TillTask implements Task {
             let bestScore = -1;
 
             for (const pos of waterCandidates) {
-                // Score based on tillable neighbors
                 const tillableCount = this.countTillableNeighbors(bot, pos, role);
                 
                 if (tillableCount > bestScore) {
@@ -70,7 +66,6 @@ export class TillTask implements Task {
                 }
             }
 
-            // Require at least 3 valid blocks to accept a spot
             if (bestPos && bestScore >= 3) {
                 role.log(`Found suitable farm location at ${bestPos} (Capacity: ~${bestScore} blocks).`);
                 role.rememberPOI('farm_center', bestPos);
@@ -79,19 +74,16 @@ export class TillTask implements Task {
             }
         }
 
-        // If still no anchor, we fail (this triggers exploration in LogisticsTask/Idle)
         if (!farmAnchor || !waterBlock) {
              return null;
         }
 
-        // 3. Limit Check (Don't till if we have enough spots for seeds)
-        // Check active farmland count around anchor
+        // 3. Limit Check
         const unplantedFarmland = bot.findBlocks({
             point: farmAnchor,
             maxDistance: 10,
             matching: (b) => {
                 if (b.name !== 'farmland') return false;
-                // Only count unplanted ones
                 const above = bot.blockAt(b.position.offset(0, 1, 0));
                 return !!(above && (above.name === 'air' || above.name === 'cave_air'));
             },
@@ -108,7 +100,6 @@ export class TillTask implements Task {
 
         for (let x = -4; x <= 4; x++) {
             for (let z = -4; z <= 4; z++) {
-                // STRICT: Same Y level as water
                 const pos = waterPos.offset(x, 0, z);
                 if (pos.equals(waterPos)) continue;
                 if (role.failedBlocks.has(pos.toString())) continue;
@@ -116,16 +107,11 @@ export class TillTask implements Task {
                 const block = bot.blockAt(pos);
                 if (!block) continue;
 
-                // Must be dirt/grass
                 if (block.name !== 'grass_block' && block.name !== 'dirt') continue;
-
-                // Must have open space above (air or breakable plants)
                 if (!this.isClearAbove(bot, pos)) continue;
 
                 let score = 100;
-                // Prefer closer to water
                 score -= pos.distanceTo(waterPos);
-                // Prefer adjacent to existing farmland (clumping)
                 if (this.hasNeighboringFarmland(bot, pos, 1)) score += 50;
 
                 candidates.push({ block, score });
@@ -134,10 +120,15 @@ export class TillTask implements Task {
 
         if (candidates.length > 0) {
             candidates.sort((a, b) => b.score - a.score);
+            const best = candidates[0];
+
+            // FIX: Explicit undefined check
+            if (!best) return null;
+
             return {
                 priority: 15,
-                description: `Tilling ground at ${candidates[0].block.position}`,
-                target: candidates[0].block,
+                description: `Tilling ground at ${best.block.position}`,
+                target: best.block,
                 task: this
             };
         }
@@ -156,7 +147,6 @@ export class TillTask implements Task {
             
             await bot.equip(hoe, 'hand');
             
-            // Clean block above if it's grass/fern
             const abovePos = target.position.offset(0, 1, 0);
             const above = bot.blockAt(abovePos);
             if (above && above.boundingBox !== 'empty' && above.name !== 'air') {
@@ -180,14 +170,12 @@ export class TillTask implements Task {
     private isClearAbove(bot: Bot, pos: Vec3): boolean {
         const above = bot.blockAt(pos.offset(0, 1, 0));
         if (!above) return false;
-        // Allow air, cave_air, and common ground plants
         const allowed = ['air', 'cave_air', 'void_air', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'poppy', 'dandelion', 'snow'];
         return allowed.includes(above.name) || above.name.includes('flower');
     }
 
     private countTillableNeighbors(bot: Bot, center: Vec3, role: FarmingRole): number {
         let count = 0;
-        // Scan 9x9 area around center (radius 4)
         for (let x = -4; x <= 4; x++) {
             for (let z = -4; z <= 4; z++) {
                 const pos = center.offset(x, 0, z);
