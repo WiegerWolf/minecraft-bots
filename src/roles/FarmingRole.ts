@@ -123,7 +123,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         }
     }
 
-    private intention: 'NONE' | 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' | 'GATHER_WOOD' | 'GATHER_SEEDS' | 'CHECK_STORAGE' | 'RETURN_TO_FARM' | 'DEPOSIT_ITEMS' = 'NONE';
+    private intention: 'NONE' | 'HARVEST' | 'PLANT' | 'TILL' | 'MAKE_WATER' | 'GATHER_WOOD' | 'GATHER_SEEDS' | 'CHECK_STORAGE' | 'RETURN_TO_FARM' | 'DEPOSIT_ITEMS' | 'PLACE_CHEST' = 'NONE';
     // lastRequestTime is inherited from CraftingMixin
 
     async update(bot: Bot) {
@@ -230,6 +230,11 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             case 'DEPOSIT_ITEMS':
                 // Must be a container
                 return ['chest', 'barrel', 'trapped_chest'].includes(block.name);
+
+            case 'PLACE_CHEST':
+                // Validating the "ground" block we want to place on
+                // It must be solid.
+                return block.boundingBox === 'block';
 
             case 'NONE':
                 // If crafting, allow crafting table
@@ -797,10 +802,6 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                         // If it's a seed (or seed-like crop), we need to reserve some
                         if (isSeed) {
                              // Check total amount of this specific seed we have
-                             // We iterate through stacks, so we must be careful not to deposit the reserved amount from the first stack if we have multiple
-                             // Simple logic: if item is seed, only deposit if we have > MAX_SEEDS_TO_KEEP.
-                             
-                             // Count total in inventory
                              const totalCount = items.filter(i => i.name === item.name).reduce((sum, i) => sum + i.count, 0);
                              
                              // If this stack is part of the reserved amount
@@ -808,21 +809,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                                  continue; // Don't deposit any
                              }
                              
-                             // If we have excess, calculate how much of THIS stack to deposit
-                             // This is slightly complex if split across stacks, but let's assume simple stack logic:
-                             // Deposit all, but ensure we don't drop below reserve.
-                             // Actually, simplest is:
-                             // If inventory has 100 seeds. Reserve 64. 36 to deposit.
-                             // Current stack has 64. We can deposit 36.
-                             // Next stack has 36. We can deposit 0.
-                             // This requires global state of what we've processed.
-                             
-                             // SIMPLIFIED: Deposit everything, then withdraw 64 seeds if we went to 0.
-                             // OR: Calculate exactly.
-                             
-                             // Let's do the Safe Withdraw method: Deposit all seeds, then withdraw a stack immediately.
-                             // This ensures the chest is the storage for excess.
-                             
+                             // Simple strategy: deposit everything then withdraw needed amount
                              await container.deposit(item.type, null, item.count);
                              continue;
                         }
@@ -855,6 +842,21 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 // Remember this as farm chest
                 this.rememberPOI('farm_chest', block.position);
                 
+                this.state = 'FINDING';
+            } else if (this.intention === 'PLACE_CHEST') {
+                this.log(`Placing farm chest on ${block.name} at ${block.position}...`);
+                const chestItem = bot.inventory.items().find(i => i.name === 'chest');
+                if (chestItem) {
+                    await bot.equip(chestItem, 'hand');
+                    await bot.placeBlock(block, new Vec3(0, 1, 0));
+                    this.log('Chest placed.');
+                    
+                    // The new chest will be at block.position + y1
+                    const chestPos = block.position.offset(0, 1, 0);
+                    this.rememberPOI('farm_chest', chestPos);
+                } else {
+                    this.log('No chest item found to place!');
+                }
                 this.state = 'FINDING';
             } else {
                 this.log(`Unknown intention ${this.intention}, resetting.`);
@@ -951,22 +953,22 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
 
     private async checkNeeds(bot: Bot) {
         const inventory = bot.inventory.items();
-        const hasHoe = inventory.some(item => item.name.includes('hoe'));
-        const seeds = inventory.filter(item =>
-            item.name.includes('seeds') || item.name === 'carrot' || item.name === 'potato' || item.name === 'beetroot'
-        );
-        if (!hasHoe) {
-            const count = (predicate: (item: any) => boolean) =>
+        const count = (predicate: (item: any) => boolean) =>
                 inventory.filter(predicate).reduce((acc, item) => acc + item.count, 0);
+
+        // 1. Tool check (Hoe)
+        const hasHoe = inventory.some(item => item.name.includes('hoe'));
+        if (!hasHoe) {
             const numSticks = count(i => i.name === 'stick');
             const numPlanks = count(i => i.name.endsWith('_planks'));
             const numLogs = count(i => i.name.includes('_log') || i.name.includes('_stem'));
             const planksNeeded = 3 + (numSticks < 2 ? 2 : 0);
+            
             if (numPlanks < planksNeeded && numLogs > 0) {
                 const logItem = inventory.find(i => i.name.includes('_log') || i.name.includes('_stem'));
                 if (logItem) {
                     const plankName = logItem.name.replace('_log', '_planks').replace('_stem', '_planks');
-                    this.log(`Crafting planks from ${logItem.name}...`);
+                    this.log(`Crafting planks from ${logItem.name} for hoe...`);
                     await this.tryCraft(bot, plankName, (target) => {
                         this.targetBlock = target;
                         this.state = 'MOVING';
@@ -975,7 +977,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 }
             }
             if (numSticks < 2 && numPlanks >= 2) {
-                this.log('Crafting sticks...');
+                this.log('Crafting sticks for hoe...');
                 await this.tryCraft(bot, 'stick', (target) => {
                     this.targetBlock = target;
                     this.state = 'MOVING';
@@ -993,11 +995,122 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 if (success) return;
             }
             if (Date.now() - this.lastRequestTime > 30000) {
-                bot.chat(`I need a wooden hoe! I have ${numLogs} logs, ${numPlanks} planks, ${numSticks} sticks.`);
+                bot.chat(`I need a wooden hoe!`);
                 this.lastRequestTime = Date.now();
+            }
+            // If we have no wood, we need to gather it.
+            if (numLogs === 0 && numPlanks < 3) {
+                const logBlock = bot.findBlock({
+                    matching: block => block && (block.name.includes('_log') || block.name.includes('_stem')),
+                    maxDistance: 32
+                });
+                if (logBlock && !this.failedBlocks.has(logBlock.position.toString())) {
+                    this.log(`Found log at ${logBlock.position}. Targeting for wood (hoe).`);
+                    this.setMovementTarget(bot, logBlock, 'GATHER_WOOD');
+                    return;
+                }
             }
             return;
         }
+
+        // 2. Storage Check (Chest)
+        // If we have a farm center but NO known farm chest, try to create one.
+        const farmAnchor = this.getNearestPOI(bot, 'farm_center');
+        const farmChest = this.getNearestPOI(bot, 'farm_chest');
+        
+        if (farmAnchor && !farmChest) {
+            // Check if there is already a chest nearby that we just missed or hasn't been registered
+            const nearbyChest = bot.findBlock({
+                matching: b => ['chest', 'barrel'].includes(b.name),
+                maxDistance: 8,
+                point: farmAnchor.position
+            });
+            if (nearbyChest) {
+                this.log(`Found existing chest near farm at ${nearbyChest.position}. Registering as farm_chest.`);
+                this.rememberPOI('farm_chest', nearbyChest.position);
+                return;
+            }
+            
+            // Try to craft/place one
+            const hasChestItem = inventory.some(i => i.name === 'chest');
+            if (hasChestItem) {
+                // Find a spot to place it.
+                // Logic: Look for a solid block next to farm_center that is NOT farmland and has AIR above.
+                const center = farmAnchor.position;
+                const offsets = [
+                    new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1),
+                    new Vec3(2, 0, 0), new Vec3(-2, 0, 0), new Vec3(0, 0, 2), new Vec3(0, 0, -2)
+                ];
+                
+                let placeTarget: any = null;
+                
+                for (const off of offsets) {
+                    const groundPos = center.plus(off);
+                    // We need groundPos to be solid, and groundPos.up to be air
+                    const ground = bot.blockAt(groundPos);
+                    const above = bot.blockAt(groundPos.offset(0, 1, 0));
+                    
+                    if (ground && ground.boundingBox === 'block' && ground.name !== 'farmland' && 
+                        above && above.boundingBox === 'empty') {
+                        placeTarget = ground;
+                        break;
+                    }
+                }
+                
+                if (placeTarget) {
+                    this.log(`Found spot to place farm chest at ${placeTarget.position} (on ${placeTarget.name}).`);
+                    this.setMovementTarget(bot, placeTarget, 'PLACE_CHEST');
+                    return;
+                } else {
+                    this.log('Could not find a valid spot to place a chest near farm center.');
+                }
+            } else {
+                // Need to craft a chest (8 planks)
+                const numPlanks = count(i => i.name.endsWith('_planks'));
+                const numLogs = count(i => i.name.includes('_log') || i.name.includes('_stem'));
+                
+                if (numPlanks >= 8) {
+                    this.log('Crafting chest...');
+                    await this.tryCraft(bot, 'chest', (target) => {
+                        this.targetBlock = target;
+                        this.state = 'MOVING';
+                    });
+                    return;
+                } else {
+                    // Need more wood
+                    const totalWoodValue = numPlanks + (numLogs * 4);
+                    if (totalWoodValue < 8) {
+                         // Go gather wood
+                        const logBlock = bot.findBlock({
+                            matching: block => block && (block.name.includes('_log') || block.name.includes('_stem')),
+                            maxDistance: 32
+                        });
+                        if (logBlock && !this.failedBlocks.has(logBlock.position.toString())) {
+                            this.log(`Found log at ${logBlock.position}. Targeting for wood (chest).`);
+                            this.setMovementTarget(bot, logBlock, 'GATHER_WOOD');
+                            return;
+                        }
+                    } else {
+                        // Have logs, turn to planks
+                        const logItem = inventory.find(i => i.name.includes('_log') || i.name.includes('_stem'));
+                        if (logItem) {
+                            const plankName = logItem.name.replace('_log', '_planks').replace('_stem', '_planks');
+                            this.log(`Crafting planks from ${logItem.name} for chest...`);
+                            await this.tryCraft(bot, plankName, (target) => {
+                                this.targetBlock = target;
+                                this.state = 'MOVING';
+                            });
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Seed Alert
+        const seeds = inventory.filter(item =>
+            item.name.includes('seeds') || item.name === 'carrot' || item.name === 'potato' || item.name === 'beetroot'
+        );
         if (seeds.length === 0) {
             const harvestable = bot.findBlock({
                 matching: (block) => this.isMature(block),
