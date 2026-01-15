@@ -22,9 +22,44 @@ export class TillTask implements Task {
 
         if (!hoe || totalSeeds === 0) return null;
 
-        // 2. Check if we have enough unplanted farmland
-        const farmAnchor = role.getNearestPOI(bot, 'farm_center')?.position || bot.entity.position;
+        // 2. Find water (The true anchor of a farm)
+        // We prioritize finding water first, because that dictates where the farm IS.
+        
+        let farmAnchor = role.getNearestPOI(bot, 'farm_center')?.position;
+        let water: any = null;
 
+        // A. If we have a center, look for water there
+        if (farmAnchor) {
+            water = bot.findBlock({
+                point: farmAnchor,
+                maxDistance: 10, // Must be very close to center
+                matching: b => !!b && (b.name === 'water' || b.name === 'flowing_water')
+            });
+        }
+
+        // B. If no center or no water at center, search wide for new water
+        if (!water) {
+             water = bot.findBlock({
+                point: bot.entity.position,
+                maxDistance: 64, 
+                matching: b => !!b && (b.name === 'water' || b.name === 'flowing_water')
+            });
+
+            if (water) {
+                // Found new water! Establish this as the farm center.
+                // This stops the drifting.
+                farmAnchor = water.position;
+                role.rememberPOI('farm_center', water.position);
+                role.log(`⚓ Established farm center at water source: ${water.position}`);
+            }
+        }
+
+        if (!water || !farmAnchor) {
+             if (Math.random() < 0.01) role.log("⚠️ Have seeds, but no water found anywhere nearby.");
+             return null;
+        }
+
+        // 3. Check existing unplanted farmland around the ANCHOR
         const unplantedFarmland = bot.findBlocks({
             point: farmAnchor,
             maxDistance: 20,
@@ -34,51 +69,24 @@ export class TillTask implements Task {
                 const above = bot.blockAt(b.position.offset(0, 1, 0));
                 return !!(above && (above.name === 'air' || above.name === 'cave_air'));
             },
-            count: 100
+            count: 200 // Check enough blocks
         });
 
-        // Limit tilling to roughly the number of seeds we have
+        // STRICT LIMIT: Don't till if we already have enough spots for our seeds
         if (unplantedFarmland.length >= totalSeeds) {
             return null; 
         }
 
-        // 3. Find water
-        // First check near the established farm center
-        let water = bot.findBlock({
-            point: farmAnchor,
-            maxDistance: 20,
-            matching: b => !!b && (b.name === 'water' || b.name === 'flowing_water')
-        });
-
-        // If not found, look WIDER (64 blocks) from the bot's current position
-        if (!water) {
-             water = bot.findBlock({
-                point: bot.entity.position,
-                maxDistance: 64, 
-                matching: b => !!b && (b.name === 'water' || b.name === 'flowing_water')
-            });
-
-            if (water) {
-                role.log("Found new water source! Moving farm center.");
-                role.rememberPOI('farm_center', water.position);
-            }
-        }
-
-        if (!water) {
-             if (Math.random() < 0.01) role.log("⚠️ Have seeds, but no water found anywhere nearby.");
-             return null;
-        }
-
-        // 4. Find valid dirt/grass to till
+        // 4. Find valid dirt/grass to till around the WATER
         const candidates: { block: any, score: number }[] = [];
         const waterPos = water.position;
         
         for (let x = -4; x <= 4; x++) {
             for (let z = -4; z <= 4; z++) {
-                // FIX: Strictly same Y-level as water for proper hydration
+                // Strictly same Y-level as water
                 const pos = waterPos.offset(x, 0, z);
                 
-                if (pos.equals(waterPos)) continue; // Don't check the water itself
+                if (pos.equals(waterPos)) continue;
                 if (role.failedBlocks.has(pos.toString())) continue;
 
                 const block = bot.blockAt(pos);
@@ -88,9 +96,11 @@ export class TillTask implements Task {
                 if (!above || !above.name || (above.name !== 'air' && above.name !== 'cave_air' && !above.name.includes('grass') && !above.name.includes('fern'))) continue;
 
                 let score = 0;
-                const distToCenter = pos.distanceTo(farmAnchor);
+                // Prefer being close to the water (center)
+                const distToCenter = pos.distanceTo(waterPos);
                 score -= distToCenter * 2; 
 
+                // Bonus for extending existing fields
                 if (this.hasNeighboringFarmland(bot, pos)) score += 50;
 
                 candidates.push({ block, score });
@@ -132,9 +142,8 @@ export class TillTask implements Task {
             
             const updatedBlock = bot.blockAt(target.position);
             if (updatedBlock && updatedBlock.name === 'farmland') {
-                role.rememberPOI('farm_center', target.position);
+                // DO NOT update farm_center here. Keep it at the water source.
             } else {
-                // If it failed, it might be protected or laggy
                 role.log(`❌ Tilling failed. Blacklisting.`);
                 role.blacklistBlock(target.position);
             }
