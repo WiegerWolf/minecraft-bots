@@ -284,10 +284,10 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             }
             this.lastLogTime = now;
         }
-
+        
         // 1.0 Get Farm Anchor (POI)
         const farmAnchor = this.getNearestPOI(bot, 'farm_center');
-
+        
         // 1.1 DEPOSIT CHECK (High Priority)
         // If inventory is full or we have too many produce items, go deposit.
         if (this.shouldDeposit(bot)) {
@@ -295,10 +295,10 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             if (await this.findDepositTarget(bot, farmAnchor)) {
                 return;
             } else if (shouldLog) {
-                this.log("Inventory full/high but no chest found to deposit!");
+                this.log("Inventory full/high (or needs seeds) but no chest found to deposit!");
             }
         }
-
+        
         const harvestable = bot.findBlock({
             matching: (block) => {
                 if (!block || !block.position) return false;
@@ -328,15 +328,23 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         if (!hasSeeds) {
             if (shouldLog) this.log('No seeds in inventory. Prioritizing seed gathering...');
             // Try to find seeds nearby (breaking grass or checking chests)
-            const foundSeedsTarget = await this.findSeedsNearby(bot);
-
+            let foundSeedsTarget = await this.findSeedsNearby(bot);
+            
+            // DESPERATION RETRY: If we failed to find seeds, clear cooldowns and try one more time.
+            // This fixes the issue where the bot ignores a chest it recently checked that the player just filled.
+            if (!foundSeedsTarget && this.containerCooldowns.size > 0) {
+                if (shouldLog) this.log('No seeds found. Clearing container cooldowns and retrying...');
+                this.containerCooldowns.clear();
+                foundSeedsTarget = await this.findSeedsNearby(bot);
+            }
+            
             if (foundSeedsTarget) {
                 return; // We have a target, exit findTask
             } else {
                 // IMPORTANT: If we have no seeds and cannot find any way to get them,
                 // we should NOT proceed to Tilling or Planting, as that will just loop forever.
                 if (shouldLog) this.log('No seeds and no grass/storage nearby (checked recently). Cannot farm. Waiting...');
-                return;
+                return; 
             }
         }
 
@@ -1214,24 +1222,40 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     // Deposit Helpers
     private shouldDeposit(bot: Bot): boolean {
         if (!bot.inventory) return false;
+        
+        const items = bot.inventory.items();
+
+        // 0. NEW: If we have NO seeds, but we DO have produce, trigger a deposit.
+        // This forces the bot to go to the chest, deposit the wheat/produce, and (crucially) 
+        // trigger the "withdraw seeds" logic inside DEPOSIT_ITEMS.
+        const hasSeeds = items.some(item => 
+            item.name.includes('seeds') || item.name === 'carrot' || item.name === 'potato' || item.name === 'beetroot'
+        );
+        const hasProduce = items.some(item => 
+            ['wheat', 'carrot', 'potato', 'beetroot', 'melon_slice', 'pumpkin', 'poisonous_potato'].includes(item.name)
+        );
+
+        if (!hasSeeds && hasProduce) {
+            return true;
+        }
 
         // 1. Inventory Fullness (empty slots < 3)
         if (bot.inventory.emptySlotCount() < 3) return true;
-
+        
         // 2. Check for abundance of produce (more than 2 stacks of any crop)
         const produce = ['wheat', 'carrot', 'potato', 'beetroot', 'melon_slice', 'pumpkin'];
         for (const name of produce) {
-            const count = bot.inventory.items().filter(i => i.name === name).reduce((sum, i) => sum + i.count, 0);
+            const count = items.filter(i => i.name === name).reduce((sum, i) => sum + i.count, 0);
             if (count > 128) return true;
         }
-
+        
         // 3. Too many seeds?
         const seedNames = ['wheat_seeds', 'beetroot_seeds'];
         for (const name of seedNames) {
-            const count = bot.inventory.items().filter(i => i.name === name).reduce((sum, i) => sum + i.count, 0);
+            const count = items.filter(i => i.name === name).reduce((sum, i) => sum + i.count, 0);
             if (count > 128) return true;
         }
-
+        
         return false;
     }
 
