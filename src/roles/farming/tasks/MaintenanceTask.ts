@@ -12,22 +12,18 @@ export class MaintenanceTask implements Task {
         // 1. NEED HOE?
         const hasHoe = inventory.some(i => i.name.includes('hoe'));
         if (!hasHoe) {
-            // Can we craft one?
-            
             const planks = this.count(inventory, i => i.name.endsWith('_planks'));
-            const sticks = this.count(inventory, i => i.name === 'stick');
             const logs = this.count(inventory, i => i.name.includes('_log'));
 
-            // Case A: Have materials -> Craft Hoe (Logic usually handled by Mixin, here we just flag it)
-            // But if we have NO wood, we must gather.
+            // Case A: Gather wood
             if (planks < 2 && logs === 0) {
                 const tree = bot.findBlock({
-                    matching: b => b.name.includes('_log'),
+                    matching: b => !!b && b.name.includes('_log'),
                     maxDistance: 32
                 });
                 if (tree) {
                     return {
-                        priority: 50, // High priority, can't farm without tools
+                        priority: 50,
                         description: 'Gathering wood for tools',
                         target: tree,
                         task: this
@@ -35,8 +31,7 @@ export class MaintenanceTask implements Task {
                 }
             }
             
-            // Case B: Have materials, just need to craft
-            // We return a "self-target" task to trigger the crafting logic
+            // Case B: Craft
             if (logs > 0 || (planks >= 2)) {
                 return {
                     priority: 50,
@@ -46,23 +41,21 @@ export class MaintenanceTask implements Task {
             }
         }
 
-        // 2. NEED CHEST? (If inventory is full and no chest found)
+        // 2. NEED CHEST?
         if (bot.inventory.emptySlotCount() < 3) {
             const nearbyChest = role.getNearestPOI(bot, 'farm_chest');
             if (!nearbyChest) {
-                // We are full and have no chest. We need to place one.
                 const hasChestItem = inventory.some(i => i.name === 'chest');
                 
                 if (hasChestItem) {
-                    // Find a spot to place it near farm center
                     const anchor = role.getNearestPOI(bot, 'farm_center');
                     const center = anchor ? anchor.position : bot.entity.position;
                     
-                    // Simple search for a ground block to place chest on
                     const spot = bot.findBlock({
                         point: center,
                         maxDistance: 5,
                         matching: (b) => {
+                            if (!b || !b.position) return false; // FIX: Robust Null check
                             if (b.name === 'farmland' || b.name === 'water') return false;
                             const above = bot.blockAt(b.position.offset(0,1,0));
                             return !!(above && above.name === 'air');
@@ -71,7 +64,7 @@ export class MaintenanceTask implements Task {
 
                     if (spot) {
                         return {
-                            priority: 95, // Very high, we are stuck otherwise
+                            priority: 95,
                             description: 'Placing new storage chest',
                             target: spot,
                             task: this
@@ -103,22 +96,18 @@ export class MaintenanceTask implements Task {
         }
 
         // Case: Crafting (No target passed)
-        // 1. Logs -> Planks
         if (this.count(bot.inventory.items(), i => i.name.endsWith('_planks')) < 2) {
              const logItem = bot.inventory.items().find(i => i.name.includes('_log'));
              if (logItem) {
                  const plankName = logItem.name.replace('_log', '_planks');
-                 // Calling public method from mixin
                  await role.tryCraft(bot, plankName);
              }
         }
         
-        // 2. Planks -> Sticks (if needed)
         if (this.count(bot.inventory.items(), i => i.name === 'stick') < 2) {
             await role.tryCraft(bot, 'stick');
         }
 
-        // 3. Craft Hoe
         await role.tryCraft(bot, 'wooden_hoe');
     }
 

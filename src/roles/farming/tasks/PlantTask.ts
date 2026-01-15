@@ -22,6 +22,7 @@ export class PlantTask implements Task {
             point,
             maxDistance: 32,
             matching: (b) => {
+                if (!b || !b.position) return false; // FIX: Robust Null check
                 if (b.name !== 'farmland') return false;
                 if (role.failedBlocks.has(b.position.toString())) return false;
                 
@@ -33,7 +34,7 @@ export class PlantTask implements Task {
 
         if (farmland) {
             return {
-                priority: 8, // Slightly lower than harvest
+                priority: 8,
                 description: `Planting on farmland at ${farmland.position}`,
                 target: farmland,
                 range: 3.5,
@@ -56,12 +57,9 @@ export class PlantTask implements Task {
 
         await bot.equip(seedItem, 'hand');
         
-        // Place on top of the farmland
         try {
             await bot.placeBlock(target, new Vec3(0, 1, 0));
             role.log(`Planted ${cropName}`);
-            
-            // Update farm center memory
             role.rememberPOI('farm_center', target.position);
         } catch (err) {
             role.blacklistBlock(target.position);
@@ -70,14 +68,11 @@ export class PlantTask implements Task {
 
     private getOptimalCrop(bot: Bot, position: Vec3): string | null {
         const inventory = bot.inventory.items();
-        
-        // Get available seed types
         const availableSeeds = inventory.filter(item => 
             item.name.includes('seeds') || ['carrot', 'potato', 'beetroot'].includes(item.name)
         );
         if (availableSeeds.length === 0) return null;
 
-        // Use optional chaining/nullish coalescing to prevent TS error
         return availableSeeds[0]?.name ?? null;
     }
 }

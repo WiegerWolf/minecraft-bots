@@ -44,7 +44,7 @@ export class LogisticsTask implements Task {
             
             // If no chest, look for grass to break (Scavenging)
             const grass = bot.findBlock({
-                matching: b => ['grass', 'tall_grass', 'short_grass', 'fern'].includes(b.name),
+                matching: b => !!b && ['grass', 'tall_grass', 'short_grass', 'fern'].includes(b.name), // FIX: Null check
                 maxDistance: 32
             });
             if (grass) {
@@ -79,15 +79,11 @@ export class LogisticsTask implements Task {
             const crops = ['wheat', 'carrot', 'potato', 'beetroot', 'melon_slice', 'pumpkin'];
             
             for (const item of items) {
-                // If it's a crop or excess seed
                 if (crops.includes(item.name) || item.name.includes('seeds')) {
-                    // Logic: Keep some seeds, deposit rest
                     if (item.name.includes('seeds') || ['carrot', 'potato', 'beetroot'].includes(item.name)) {
                         const count = item.count;
-                        // Rough logic: deposit all, then withdraw what we need
                         await container.deposit(item.type, null, count);
                     } else {
-                        // Pure crop (wheat), deposit all
                         await container.deposit(item.type, null, item.count);
                     }
                 }
@@ -127,7 +123,7 @@ export class LogisticsTask implements Task {
 
         // 2. Scan
         return bot.findBlock({
-            matching: b => ['chest', 'barrel', 'trapped_chest'].includes(b.name),
+            matching: b => !!b && ['chest', 'barrel', 'trapped_chest'].includes(b.name), // FIX: Null check
             maxDistance: 32
         });
     }
