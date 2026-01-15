@@ -48,12 +48,11 @@ export class LogisticsTask implements Task {
                     if (role.failedBlocks.has(b.position.toString())) return false;
                     
                     const name = b.name;
-                    // Match "grass", "tall_grass", "short_grass", "fern", "large_fern"
                     const isPlant = (name.includes('grass') || name.includes('fern')) && 
                                     !name.includes('grass_block') && 
                                     !name.includes('seagrass');
                                     
-                    return isPlant || name === 'dead_bush' || name === 'wheat'; // Sometimes wheat spawns in villages
+                    return isPlant || name === 'dead_bush' || name === 'wheat'; 
                 },
                 maxDistance: 64
             });
@@ -66,6 +65,10 @@ export class LogisticsTask implements Task {
                     range: 3.0,
                     task: this
                 };
+            } else {
+                 if (bot.inventory.emptySlotCount() > 30) {
+                     // role.log(`[Logistics] ❌ No grass/ferns found via findBlock.`);
+                 }
             }
         }
 
@@ -75,12 +78,10 @@ export class LogisticsTask implements Task {
     async perform(bot: Bot, role: FarmingRole, target: any): Promise<void> {
         const blockName = target.name;
 
-        // Verify it's a plant we want to break
         if (blockName.includes('grass') || blockName.includes('fern') || blockName === 'dead_bush') {
             await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
             await bot.dig(target);
             
-            // Walk to the drop location to pick it up
             const dropPos = target.position;
             await new Promise(r => setTimeout(r, 200));
             await bot.pathfinder.setGoal(new GoalNear(dropPos.x, dropPos.y, dropPos.z, 0.5));

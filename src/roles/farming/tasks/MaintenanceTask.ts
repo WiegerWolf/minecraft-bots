@@ -12,24 +12,30 @@ export class MaintenanceTask implements Task {
         const inventory = bot.inventory.items();
         
         const hasHoe = inventory.some(i => i.name.includes('hoe'));
-        if (!hasHoe) {
-            const planks = this.count(inventory, i => i.name.endsWith('_planks'));
-            const logs = this.count(inventory, i => i.name.includes('_log'));
+        const planks = this.count(inventory, i => i.name.endsWith('_planks'));
+        const logs = this.count(inventory, i => i.name.includes('_log'));
 
+        if (!hasHoe) {
             // Case A: Gather wood
             if (planks < 2 && logs === 0) {
-                // role.log("DEBUG: Looking for wood...");
+                // Only log if we are truly empty so we don't spam
+                if (bot.inventory.emptySlotCount() > 30) {
+                    role.log(`[Maintenance] Need wood. Logs: ${logs}, Planks: ${planks}. Searching...`);
+                }
+
                 const tree = bot.findBlock({
                     matching: (b) => {
                         if (!b || !b.position) return false;
                         if (role.failedBlocks.has(b.position.toString())) return false;
                         
-                        return b.name.endsWith('_log') || b.name === 'log' || b.name === 'log2'; 
+                        // Broaden matching to catch everything
+                        return b.name.includes('_log') || b.name === 'log' || b.name === 'log2'; 
                     },
                     maxDistance: 64
                 });
                 
                 if (tree) {
+                    // role.log(`[Maintenance] Found tree: ${tree.name} at ${tree.position}`);
                     return {
                         priority: 50,
                         description: `Gathering wood from ${tree.name} at ${tree.position.floored()}`,
@@ -38,7 +44,9 @@ export class MaintenanceTask implements Task {
                         task: this
                     };
                 } else {
-                    // role.log("DEBUG: No trees found in MaintenanceTask.");
+                    if (bot.inventory.emptySlotCount() > 30) {
+                        role.log(`[Maintenance] ❌ No trees found via findBlock.`);
+                    }
                 }
             }
             
@@ -121,7 +129,6 @@ export class MaintenanceTask implements Task {
              const logItem = bot.inventory.items().find(i => i.name.includes('_log') || i.name === 'log' || i.name === 'log2');
              if (logItem) {
                  let plankName = 'oak_planks';
-                 // Map logs to planks
                  const name = logItem.name;
                  if (name.includes('spruce')) plankName = 'spruce_planks';
                  else if (name.includes('birch')) plankName = 'birch_planks';
@@ -130,7 +137,6 @@ export class MaintenanceTask implements Task {
                  else if (name.includes('dark_oak')) plankName = 'dark_oak_planks';
                  else if (name.includes('mangrove')) plankName = 'mangrove_planks';
                  else if (name.includes('cherry')) plankName = 'cherry_planks';
-                 // 'oak' is default
 
                  await role.tryCraft(bot, plankName);
              }
