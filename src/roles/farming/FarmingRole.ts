@@ -29,6 +29,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     private readonly MOVEMENT_TIMEOUT = 20000;
     
     private idleTicks = 0;
+    private isWorking = false; // Re-entry guard
 
     constructor() {
         super();
@@ -57,6 +58,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.failedBlocks.clear();
         this.containerCooldowns.clear();
         this.idleTicks = 0;
+        this.isWorking = false;
         
         this.log('🚜 Modular Farming Role started.');
         
@@ -79,128 +81,127 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.active = false;
         this.bot = null;
         this.currentProposal = null;
+        this.isWorking = false;
         bot.pathfinder.setGoal(null);
         this.log('🛑 Farming Role stopped.');
     }
 
     async update(bot: Bot) {
-        if (!this.active) return;
+        // Prevent overlapping updates
+        if (!this.active || this.isWorking) return;
+        this.isWorking = true;
 
-        // 0. Enforce Proximity
-        const centerPOI = this.getNearestPOI(bot, 'farm_center');
-        if (centerPOI && !this.currentProposal) {
-            const dist = bot.entity.position.distanceTo(centerPOI.position);
-            if (dist > 40) {
-                this.log("🏃 Returning to farm center...");
-                bot.pathfinder.setGoal(new GoalNear(centerPOI.position.x, centerPOI.position.y, centerPOI.position.z, 2));
-                return;
-            }
-        }
-
-        // 1. Moving/Executing
-        if (this.currentProposal && this.currentProposal.target) {
-            const dist = bot.entity.position.distanceTo(this.currentProposal.target.position);
-            const reach = this.currentProposal.range || 3.5;
-
-            // Timeout check
-            if (Date.now() - this.movementStartTime > this.MOVEMENT_TIMEOUT) {
-                this.log(`⚠️ Movement timed out for ${this.currentProposal.description}`);
-                this.blacklistBlock(this.currentProposal.target.position);
-                bot.pathfinder.setGoal(null);
-                this.currentProposal = null;
-                return;
+        try {
+            // 0. Enforce Proximity
+            const centerPOI = this.getNearestPOI(bot, 'farm_center');
+            if (centerPOI && !this.currentProposal) {
+                const dist = bot.entity.position.distanceTo(centerPOI.position);
+                if (dist > 40) {
+                    this.log("🏃 Returning to farm center...");
+                    bot.pathfinder.setGoal(new GoalNear(centerPOI.position.x, centerPOI.position.y, centerPOI.position.z, 2));
+                    return;
+                }
             }
 
-            // Arrived check
-            if (dist <= reach) {
-                bot.pathfinder.setGoal(null);
-                bot.clearControlStates();
-                
+            // 1. Moving/Executing
+            if (this.currentProposal && this.currentProposal.target) {
+                const dist = bot.entity.position.distanceTo(this.currentProposal.target.position);
+                const reach = this.currentProposal.range || 3.5;
+
+                if (Date.now() - this.movementStartTime > this.MOVEMENT_TIMEOUT) {
+                    this.log(`⚠️ Movement timed out for ${this.currentProposal.description}`);
+                    this.blacklistBlock(this.currentProposal.target.position);
+                    bot.pathfinder.setGoal(null);
+                    this.currentProposal = null;
+                    return;
+                }
+
+                if (dist <= reach) {
+                    bot.pathfinder.setGoal(null);
+                    bot.clearControlStates();
+                    
+                    try {
+                        await this.currentProposal.task.perform(bot, this, this.currentProposal.target);
+                    } catch (error) {
+                        this.log(`❌ Error executing ${this.currentProposal.description}:`, error);
+                        if (this.currentProposal.target?.position) {
+                            this.blacklistBlock(this.currentProposal.target.position);
+                        }
+                    }
+                    
+                    this.currentProposal = null;
+                }
+                return;
+            }
+
+            // 2. Find new work
+            let bestProposal: WorkProposal | null = null;
+
+            for (const task of this.tasks) {
                 try {
-                    await this.currentProposal.task.perform(bot, this, this.currentProposal.target);
-                } catch (error) {
-                    this.log(`❌ Error executing ${this.currentProposal.description}:`, error);
-                    // If action failed, blacklist to prevent loop
-                    if (this.currentProposal.target?.position) {
-                        this.blacklistBlock(this.currentProposal.target.position);
+                    const proposal = await task.findWork(bot, this);
+                    if (!proposal) continue;
+
+                    if (proposal.priority >= 100) {
+                        bestProposal = proposal;
+                        break;
                     }
+
+                    if (!bestProposal || proposal.priority > bestProposal.priority) {
+                        bestProposal = proposal;
+                    }
+                } catch (err) {
+                    console.error(`Error in task ${task.name}:`, err);
                 }
-                
-                this.currentProposal = null;
             }
-            return;
-        }
 
-        // 2. Find new work
-        let bestProposal: WorkProposal | null = null;
-
-        for (const task of this.tasks) {
-            try {
-                const proposal = await task.findWork(bot, this);
-                if (!proposal) continue;
-
-                if (proposal.priority >= 100) {
-                    bestProposal = proposal;
-                    break;
-                }
-
-                if (!bestProposal || proposal.priority > bestProposal.priority) {
-                    bestProposal = proposal;
-                }
-            } catch (err) {
-                console.error(`Error in task ${task.name}:`, err);
-            }
-        }
-
-        // 3. Act
-        if (bestProposal) {
-            this.idleTicks = 0;
-            this.log(`📋 Selected: ${bestProposal.description} (Prio: ${bestProposal.priority})`);
-            this.currentProposal = bestProposal;
-            
-            if (bestProposal.target) {
-                this.movementStartTime = Date.now();
-                const pos = bestProposal.target.position;
-                const range = bestProposal.range || 3.5;
-                bot.pathfinder.setGoal(new GoalNear(pos.x, pos.y, pos.z, range));
-            } else {
-                await bestProposal.task.perform(bot, this);
-                this.currentProposal = null;
-            }
-        } else {
-            // Idle handling
-            this.idleTicks++;
-            const isInventoryEmpty = bot.inventory.items().length === 0;
-            const wanderThreshold = isInventoryEmpty ? 20 : 120; // 1s if empty, 6s if not
-
-            if (this.idleTicks >= wanderThreshold) {
-                if (isInventoryEmpty) {
-                    this.log("⚠️ I am empty handed and can't find resources!");
-                    // Force a re-scan of surroundings debug logic if needed
-                    // this.forceResourceCheck(bot);
-                }
-                
-                this.log(isInventoryEmpty ? "🏃 Searching/Wandering..." : "🚶 Wandering...");
+            // 3. Act
+            if (bestProposal) {
                 this.idleTicks = 0;
+                this.log(`📋 Selected: ${bestProposal.description} (Prio: ${bestProposal.priority})`);
+                this.currentProposal = bestProposal;
                 
-                const range = 32; 
-                const x = bot.entity.position.x + (Math.random() * range - (range/2));
-                const z = bot.entity.position.z + (Math.random() * range - (range/2));
-                bot.pathfinder.setGoal(new GoalNear(x, bot.entity.position.y, z, 1));
-                
-                this.currentProposal = {
-                    priority: 1,
-                    description: "Wandering",
-                    target: { position: { x, y: bot.entity.position.y, z } },
-                    range: 2,
-                    task: { 
-                        name: 'wander',
-                        findWork: async () => null,
-                        perform: async () => { this.log("Finished wandering."); }
-                    }
-                };
-                this.movementStartTime = Date.now();
+                if (bestProposal.target) {
+                    this.movementStartTime = Date.now();
+                    const pos = bestProposal.target.position;
+                    const range = bestProposal.range || 3.5;
+                    bot.pathfinder.setGoal(new GoalNear(pos.x, pos.y, pos.z, range));
+                } else {
+                    // Task without movement (e.g. crafting from inventory)
+                    await bestProposal.task.perform(bot, this);
+                    this.currentProposal = null;
+                }
+            } else {
+                // Idle handling
+                this.idleTicks++;
+                const isInventoryEmpty = bot.inventory.items().length === 0;
+                const wanderThreshold = isInventoryEmpty ? 20 : 120;
+
+                if (this.idleTicks >= wanderThreshold) {
+                    this.log(isInventoryEmpty ? "🏃 Searching/Wandering..." : "🚶 Wandering...");
+                    this.idleTicks = 0;
+                    
+                    const range = 32; 
+                    const x = bot.entity.position.x + (Math.random() * range - (range/2));
+                    const z = bot.entity.position.z + (Math.random() * range - (range/2));
+                    bot.pathfinder.setGoal(new GoalNear(x, bot.entity.position.y, z, 1));
+                    
+                    this.currentProposal = {
+                        priority: 1,
+                        description: "Wandering",
+                        target: { position: { x, y: bot.entity.position.y, z } },
+                        range: 2,
+                        task: { 
+                            name: 'wander',
+                            findWork: async () => null,
+                            perform: async () => { this.log("Finished wandering."); }
+                        }
+                    };
+                    this.movementStartTime = Date.now();
+                }
             }
+        } finally {
+            this.isWorking = false;
         }
     }
 
@@ -224,22 +225,11 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             .map(([name, count]) => `${name}: ${count}`).join(', ');
         this.log(`Interesting blocks: [${summary || 'None'}]`);
     }
-    
-    private forceResourceCheck(bot: Bot) {
-        const log = bot.findBlock({ matching: b => b.name.includes('_log'), maxDistance: 64 });
-        if (log) {
-            this.log(`✅ FORCE CHECK: Found ${log.name} at ${log.position}.`);
-        } else {
-            this.log(`❌ FORCE CHECK: findBlock found NO logs in 64 blocks.`);
-        }
-    }
 
     public blacklistBlock(pos: any) {
         if (!pos) return;
         
         let key: string;
-        
-        // Ensure consistent string representation for Vec3 (integers)
         if (pos.floored && typeof pos.floored === 'function') {
              key = pos.floored().toString();
         } else if (pos.x !== undefined && pos.y !== undefined && pos.z !== undefined) {
@@ -248,7 +238,6 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             key = String(pos);
         }
 
-        // this.log(`⛔ Blacklisting position: ${key}`);
         this.failedBlocks.set(key, Date.now());
     }
 
