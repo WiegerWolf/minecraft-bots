@@ -10,9 +10,8 @@ import { LogisticsTask } from './tasks/LogisticsTask';
 import { TillTask } from './tasks/TillTask';
 import { MaintenanceTask } from './tasks/MaintenanceTask';
 import { PickupTask } from './tasks/PickupTask';
-import { Vec3 } from 'vec3';
 
-const { GoalNear, GoalXZ } = goals;
+const { GoalNear } = goals;
 
 export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implements Role {
     name = 'farming';
@@ -21,15 +20,18 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     
     private tasks: Task[] = [];
     public failedBlocks: Map<string, number> = new Map();
+    // LESSON: Add Container Cooldowns to prevent opening empty chests repeatedly
     public containerCooldowns: Map<string, number> = new Map();
-    public readonly RETRY_COOLDOWN = 5 * 60 * 1000;
     
     private currentProposal: WorkProposal | null = null;
     private movementStartTime = 0;
     private readonly MOVEMENT_TIMEOUT = 20000;
     
-    private idleTicks = 0;
-    private isWorking = false; // Re-entry guard
+    private isWorking = false;
+
+    // LESSON: Bind handlers to class to allow removal
+    private boundOnPathUpdate: ((r: any) => void) | null = null;
+    private boundOnGoalReached: (() => void) | null = null;
 
     constructor() {
         super();
@@ -47,44 +49,50 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.active = true;
         this.bot = bot;
         
-        // --- FIX START: Improved Movement Settings ---
+        // Setup Movements (Keep your improved settings)
         const defaultMove = new Movements(bot);
-        
-        // Allow breaking blocks (leaves, grass) to get to destination
         defaultMove.canDig = true; 
-        defaultMove.digCost = 10; // High cost so it prefers walking around valid paths
-        
-        // Allow simple pillaring to reach trees or get out of holes
+        defaultMove.digCost = 10; 
         defaultMove.allow1by1towers = true; 
-        
-        // Protect the farm: Don't break crops or farmland if possible
-        // (Note: Pathfinder logic varies, but keeping liquidCost high helps avoid water)
         (defaultMove as any).liquidCost = 5; 
-        
         bot.pathfinder.setMovements(defaultMove);
-        // --- FIX END ---
         
+        // LESSON: Bind Pathfinding Events for faster failure detection
+        this.boundOnPathUpdate = (r: any) => {
+            if (r.status === 'noPath' || r.status === 'timeout') {
+                if (this.currentProposal?.target) {
+                    this.log(`❌ Path failed to ${this.currentProposal.description}. Blacklisting.`);
+                    this.blacklistBlock(this.currentProposal.target.position);
+                    this.currentProposal = null;
+                    bot.pathfinder.setGoal(null);
+                }
+            }
+        };
+
+        this.boundOnGoalReached = () => {
+            // LESSON: If we reach the goal, force an update immediately to act
+            if (this.currentProposal && this.active) {
+                this.update(bot); 
+            }
+        };
+
+        bot.on('path_update', this.boundOnPathUpdate);
+        bot.on('goal_reached', this.boundOnGoalReached);
+
         this.currentProposal = null;
         this.failedBlocks.clear();
         this.containerCooldowns.clear();
-        this.idleTicks = 0;
         this.isWorking = false;
         
         this.log('🚜 Modular Farming Role started.');
         
         if (options?.center) {
             this.rememberPOI('farm_center', options.center);
-            this.log(`📍 Farm center set to ${options.center}`);
         } else {
             const existingFarm = bot.findBlock({ matching: b => b.name === 'farmland', maxDistance: 32 });
-            if (existingFarm) {
-                this.rememberPOI('farm_center', existingFarm.position);
-            } else {
-                this.rememberPOI('farm_center', bot.entity.position);
-            }
+            if (existingFarm) this.rememberPOI('farm_center', existingFarm.position);
+            else this.rememberPOI('farm_center', bot.entity.position);
         }
-
-        this.scanSurroundings(bot);
     }
 
     stop(bot: Bot) {
@@ -92,6 +100,11 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.bot = null;
         this.currentProposal = null;
         this.isWorking = false;
+        
+        // Cleanup listeners
+        if (this.boundOnPathUpdate) bot.removeListener('path_update', this.boundOnPathUpdate);
+        if (this.boundOnGoalReached) bot.removeListener('goal_reached', this.boundOnGoalReached);
+        
         bot.pathfinder.setGoal(null);
         this.log('🛑 Farming Role stopped.');
     }
@@ -101,38 +114,23 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.isWorking = true;
 
         try {
-            // 0. Enforce Proximity
-            const centerPOI = this.getNearestPOI(bot, 'farm_center');
-            if (centerPOI && !this.currentProposal) {
-                const dist = bot.entity.position.distanceTo(centerPOI.position);
-                if (dist > 40) {
-                    this.log("🏃 Returning to farm center...");
-                    bot.pathfinder.setGoal(new GoalNear(centerPOI.position.x, centerPOI.position.y, centerPOI.position.z, 2));
-                    return;
-                }
-            }
-
             // 1. Moving/Executing
             if (this.currentProposal && this.currentProposal.target) {
-                const dist = bot.entity.position.distanceTo(this.currentProposal.target.position);
+                const targetPos = this.currentProposal.target.position;
+                const dist = bot.entity.position.distanceTo(targetPos);
                 const reach = this.currentProposal.range || 3.5;
 
-                // --- FIX START: Better Stuck Detection ---
-                // If moving for > 5 seconds and velocity is near zero, jump to unstuck
-                const isMoving = bot.entity.velocity.scaled(1).norm() > 0.05;
-                if (!isMoving && Date.now() - this.movementStartTime > 5000) {
-                     bot.setControlState('jump', true);
-                } else {
-                     bot.setControlState('jump', false);
-                }
-                // --- FIX END ---
-
-                if (Date.now() - this.movementStartTime > this.MOVEMENT_TIMEOUT) {
-                    this.log(`⚠️ Movement timed out for ${this.currentProposal.description}`);
-                    this.blacklistBlock(this.currentProposal.target.position);
-                    bot.pathfinder.setGoal(null);
-                    this.currentProposal = null;
-                    return;
+                // LESSON: Check if block invalid (e.g., dirt turned to grass while moving)
+                // This prevents trying to interact with a block that changed state
+                const currentBlock = bot.blockAt(targetPos);
+                if (currentBlock && currentBlock.type !== this.currentProposal.target.type) {
+                     // Allow slight leeway for crops growing, but not block replacement
+                     if (this.currentProposal.task.name !== 'harvest') { 
+                        this.log(`⚠️ Block changed while moving. Aborting.`);
+                        this.currentProposal = null;
+                        bot.pathfinder.setGoal(null);
+                        return;
+                     }
                 }
 
                 if (dist <= reach) {
@@ -143,11 +141,16 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                         await this.currentProposal.task.perform(bot, this, this.currentProposal.target);
                     } catch (error) {
                         this.log(`❌ Error executing ${this.currentProposal.description}:`, error);
-                        if (this.currentProposal.target?.position) {
-                            this.blacklistBlock(this.currentProposal.target.position);
-                        }
+                        this.blacklistBlock(targetPos);
                     }
-                    
+                    this.currentProposal = null;
+                    return; // Return to allow re-evaluating priorities
+                }
+
+                if (Date.now() - this.movementStartTime > this.MOVEMENT_TIMEOUT) {
+                    this.log(`⚠️ Movement timed out.`);
+                    this.blacklistBlock(targetPos);
+                    bot.pathfinder.setGoal(null);
                     this.currentProposal = null;
                 }
                 return;
@@ -161,6 +164,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                     const proposal = await task.findWork(bot, this);
                     if (!proposal) continue;
 
+                    // Critical actions take immediate precedence
                     if (proposal.priority >= 100) {
                         bestProposal = proposal;
                         break;
@@ -176,15 +180,21 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
 
             // 3. Act
             if (bestProposal) {
-                this.idleTicks = 0;
                 this.log(`📋 Selected: ${bestProposal.description} (Prio: ${bestProposal.priority})`);
                 this.currentProposal = bestProposal;
                 
                 if (bestProposal.target) {
-                    this.movementStartTime = Date.now();
                     const pos = bestProposal.target.position;
-                    const range = bestProposal.range || 3.5;
-                    bot.pathfinder.setGoal(new GoalNear(pos.x, pos.y, pos.z, range));
+                    const reach = bestProposal.range || 3.5;
+
+                    // LESSON: Optimization - If already close, don't pathfind, just loop back to perform
+                    if (bot.entity.position.distanceTo(pos) <= reach) {
+                        this.movementStartTime = Date.now(); // Reset timer for action phase
+                        // Let the next loop iteration handle execution via the 'dist <= reach' check
+                    } else {
+                        this.movementStartTime = Date.now();
+                        bot.pathfinder.setGoal(new GoalNear(pos.x, pos.y, pos.z, reach));
+                    }
                 } else {
                     await bestProposal.task.perform(bot, this);
                     this.currentProposal = null;
@@ -228,16 +238,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
 
     public blacklistBlock(pos: any) {
         if (!pos) return;
-        
-        let key: string;
-        if (pos.floored && typeof pos.floored === 'function') {
-             key = pos.floored().toString();
-        } else if (pos.x !== undefined && pos.y !== undefined && pos.z !== undefined) {
-             key = `(${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)})`;
-        } else {
-            key = String(pos);
-        }
-
+        let key = pos.floored ? pos.floored().toString() : String(pos);
         this.failedBlocks.set(key, Date.now());
     }
 

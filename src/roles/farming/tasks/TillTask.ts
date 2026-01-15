@@ -88,7 +88,17 @@ export class TillTask implements Task {
             role.log(`Tilling ${target.position}...`);
             await bot.lookAt(target.position.offset(0.5, 1, 0.5));
             await bot.activateBlock(target);
-            role.rememberPOI('farm_center', target.position);
+            
+            // LESSON: Verification Step
+            await new Promise(resolve => setTimeout(resolve, 500)); // Wait for server update
+            const updatedBlock = bot.blockAt(target.position);
+            
+            if (updatedBlock && updatedBlock.name === 'farmland') {
+                role.rememberPOI('farm_center', target.position);
+            } else {
+                role.log(`❌ Tilling failed (Lag? Protected?). Blacklisting.`);
+                role.blacklistBlock(target.position);
+            }
         } catch (err) {
             role.blacklistBlock(target.position);
         }
