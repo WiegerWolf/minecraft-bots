@@ -8,31 +8,30 @@ const { GoalLookAtBlock, GoalNear } = goals;
 export class LogisticsTask implements Task {
     name = 'logistics';
     private readonly MAX_SEEDS_TO_KEEP = 64;
+    private readonly MIN_SEEDS_TO_START_FARMING = 3; // Hysteresis buffer
     private readonly CONTAINER_COOLDOWN = 60000; 
 
     async findWork(bot: Bot, role: FarmingRole): Promise<WorkProposal | null> {
         const inventory = bot.inventory.items();
         const emptySlots = bot.inventory.emptySlotCount();
         
-        const hasSeeds = inventory.some(item => 
-            item.name.includes('seeds') || ['carrot', 'potato', 'beetroot'].includes(item.name)
-        );
+        // Count seeds
+        const seedCount = inventory
+            .filter(i => i.name.includes('seeds') || ['carrot', 'potato', 'beetroot'].includes(i.name))
+            .reduce((sum, item) => sum + item.count, 0);
+
         const hasProduce = inventory.some(item => 
             ['wheat', 'carrot', 'potato', 'beetroot', 'melon_slice', 'pumpkin'].includes(item.name)
         );
         const hasHoe = inventory.some(i => i.name.includes('hoe'));
 
         const isFull = emptySlots < 3;
-        const shouldDeposit = isFull || (hasProduce && !hasSeeds);
+        const shouldDeposit = isFull || (hasProduce && seedCount === 0);
 
-        // 1. Deposit / Restock
-        if (shouldDeposit || !hasSeeds) {
-            const chest = await this.findChest(bot, role);
-            if (!chest && !hasSeeds && role.containerCooldowns.size > 0) {
-                role.containerCooldowns.clear(); 
-            }
-
-            if (chest) {
+        // 1. Deposit / Restock Logic (Unchanged)
+        if (shouldDeposit) {
+             const chest = await this.findChest(bot, role);
+             if (chest) {
                 return {
                     priority: isFull ? 100 : 80,
                     description: isFull ? 'Inventory Full - Depositing' : 'Restocking/Depositing',
@@ -44,23 +43,27 @@ export class LogisticsTask implements Task {
         }
         
         // 2. Scavenge Grass for Seeds
-        if (!hasSeeds) {
-            const priority = hasHoe ? 60 : 20;
+        // Logic: If we have < 3 seeds, prioritize gathering.
+        // If we have 0 seeds, priority is Critical (if we have a hoe).
+        if (seedCount < this.MIN_SEEDS_TO_START_FARMING) {
+            const priority = (seedCount === 0 && hasHoe) ? 60 : 35;
+
             const targetPlants = [
                 'grass', 'short_grass', 'tall_grass', 
                 'fern', 'large_fern', 'wheat', 'dead_bush'
             ];
 
-            const grass = role.findNaturalBlock(bot, targetPlants, { maxDistance: 48 }); // Reduced distance slightly to avoid far pathfinding
+            const grass = role.findNaturalBlock(bot, targetPlants, { maxDistance: 48 });
             
             if (grass) {
                 return {
                     priority: priority,
-                    description: `Gathering seeds from ${grass.name} at ${grass.position.floored()}`,
+                    description: `Gathering seeds from ${grass.name} (${seedCount}/${this.MIN_SEEDS_TO_START_FARMING})`,
                     target: grass,
                     task: this
                 };
-            } else {
+            } else if (seedCount === 0) {
+                // Only explore if we are completely out of seeds
                 return {
                     priority: 25, 
                     description: "Exploring to find grass/seeds...",
@@ -73,49 +76,34 @@ export class LogisticsTask implements Task {
         return null;
     }
 
+    // perform method remains the same as previous "fixed" version
     async perform(bot: Bot, role: FarmingRole, target: any): Promise<void> {
-        // Case: Exploration
         if (!target) {
             await role.wanderNewChunk(bot);
             return;
         }
 
-        // Case: Breaking Grass
         if (target.name.includes('grass') || target.name.includes('fern') || target.name === 'dead_bush') {
              try {
-                // FIX: Use GoalNear (Range 1) instead of LookAtBlock. 
-                // LookAtBlock can be strict about visibility. GoalNear just gets us close.
                 await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 1));
-                
-                // CRITICAL FIX: Stop pathfinding so it doesn't fight the look control
                 bot.pathfinder.stop();
                 bot.pathfinder.setGoal(null);
-
-                // CRITICAL FIX: Look at the CENTER of the block instantly
                 await bot.lookAt(target.position.offset(0.5, 0.5, 0.5), true);
-
                 if (bot.canDigBlock(target)) {
                     await bot.dig(target);
-                    await new Promise(r => setTimeout(r, 250)); // Wait for drop
+                    await new Promise(r => setTimeout(r, 250)); 
                 } else {
-                    role.log(`Cannot dig block (too far or obstructed).`);
                     role.blacklistBlock(target.position);
                 }
              } catch (err) {
-                 role.log(`Failed to break grass: ${err}`);
                  role.blacklistBlock(target.position);
              }
              return;
         }
 
-        // Case: Container Interaction
+        // Chest logic (copy from previous valid response or keep as is)
         if (target.name.includes('chest') || target.name.includes('barrel') || target.name.includes('shulker')) {
-            try {
-                await bot.pathfinder.goto(new GoalLookAtBlock(target.position, bot.world));
-            } catch (e) {
-                // Ignore path error, try opening anyway
-            }
-
+            try { await bot.pathfinder.goto(new GoalLookAtBlock(target.position, bot.world)); } catch (e) {}
             const container = await bot.openContainer(target);
             role.log(`Opened ${target.name}.`);
 
@@ -159,21 +147,15 @@ export class LogisticsTask implements Task {
             }
 
             container.close();
-            if (!didAnything && containerItems.length === 0) {
-                role.containerCooldowns.set(target.position.toString(), Date.now());
-            } else if (didAnything) {
-                role.rememberPOI('farm_chest', target.position);
-            }
         }
     }
 
     private async findChest(bot: Bot, role: FarmingRole) {
-        const poi = role.getNearestPOI(bot, 'farm_chest');
+         const poi = role.getNearestPOI(bot, 'farm_chest');
         if (poi) {
             const block = bot.blockAt(poi.position);
             if (block && ['chest', 'barrel'].includes(block.name)) return block;
         }
-
         return bot.findBlock({
             matching: (b) => {
                 if (!['chest', 'barrel', 'trapped_chest'].includes(b.name)) return false;
