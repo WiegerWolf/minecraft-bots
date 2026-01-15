@@ -112,20 +112,40 @@ export class MaintenanceTask implements Task {
     private async craftPlanksFromLogs(bot: Bot, role: FarmingRole) {
         // Simple 2x2 crafting for planks (doesn't need table)
         const logs = bot.inventory.items().filter(i => i.name.includes('_log') || i.name === 'log');
+        
         for (const log of logs) {
-             // Find the plank recipe for this log type
-             const recipes = bot.recipesAll(bot.registry.itemsByName['oak_planks'].id, null, null); 
-             // Note: generic logic to find plank result from log input is complex, 
-             // simplest way is iterate all plank types or trust tryCraft knows recipe
-             
-             // Simplification: Just try crafting 'oak_planks' or generic planks if 1.16+
-             // A more robust solution uses recipesFor() on the log item ID
-             const recipesForLog = bot.recipesAll(null, null, null).filter(r => r.delta.some(d => d.id === log.type && d.count < 0));
-             
-             if (recipesForLog.length > 0) {
-                 await bot.craft(recipesForLog[0], 1, null);
-                 return;
-             }
+            // Attempt to derive plank name from log name to find the correct recipe
+            // e.g. oak_log -> oak_planks
+            const potentialPlankNames = [
+                log.name.replace(/_?log2?$/, '_planks'),
+                'oak_planks', // fallback common type
+            ];
+
+            let success = false;
+
+            for (const plankName of potentialPlankNames) {
+                const plankItem = bot.registry.itemsByName[plankName];
+                if (!plankItem) continue;
+
+                // Find recipes that produce this plank
+                const recipes = bot.recipesFor(plankItem.id, null, 1, null);
+
+                // Find a recipe that uses our specific log as input
+                const matchingRecipe = recipes.find(r => r.delta.some(d => d.id === log.type && d.count < 0));
+                
+                if (matchingRecipe) {
+                    try {
+                        role.log(`Crafting ${plankName} from ${log.name}...`);
+                        await bot.craft(matchingRecipe, 1, undefined); // FIX: changed null to undefined
+                        success = true;
+                        break; // Move to next log type or finish
+                    } catch (err) {
+                        role.log(`Failed to craft ${plankName}: ${err}`);
+                    }
+                }
+            }
+
+            if (success) return; // Perform one craft action per tick/task cycle
         }
     }
 
