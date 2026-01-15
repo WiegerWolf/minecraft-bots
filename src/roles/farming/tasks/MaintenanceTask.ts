@@ -177,17 +177,14 @@ export class MaintenanceTask implements Task {
         const mcData = minecraftData(bot.version);
 
         for (const logItem of logs) {
-            // Find what this log makes
-            // We search recipes that USE this log item
-            const recipes = bot.recipesAll(logItem.type, null, true); // (itemType, null, craftingTable=false) doesn't exist like this in all versions, 
-                                                                    // but bot.recipesAll usually takes (itemType, count, craftingTable)
-
             // Safer approach: iterate all plank items and see if we have ingredients
             const plankItems = Object.keys(mcData.itemsByName)
                 .filter(name => name.endsWith('_planks'))
                 .map(name => mcData.itemsByName[name]);
 
             for (const plank of plankItems) {
+                if (!plank) continue; // FIX: Ensure plank is not undefined
+
                 // Check if we can craft this specific plank type
                 // 2x2 crafting (null table)
                 const validRecipes = bot.recipesFor(plank.id, null, 1, null);
