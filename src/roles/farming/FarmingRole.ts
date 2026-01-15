@@ -1,3 +1,4 @@
+// ./src/roles/farming/FarmingRole.ts
 import type { Bot } from 'mineflayer';
 import type { Role } from '../Role';
 import { Movements, goals } from 'mineflayer-pathfinder';
@@ -58,15 +59,9 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
         }
 
         this.log('🚜 Modular Farming Role started.');
-        this.log('⏳ Warming up scanner (waiting for entities to load)...');
-
-        // FIX: Wait 3 seconds for entities (dropped items) to load before making decisions
-        bot.waitForTicks(60).then(() => {
-            if (this.active) {
-                this.log('✅ Warmup complete. Starting main loop.');
-                this.loop();
-            }
-        });
+        
+        // Removed warmup. Starting loop immediately.
+        this.loop();
     }
 
     stop(bot: Bot) {
@@ -108,6 +103,7 @@ export class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(clas
                 const proposal = await task.findWork(this.bot, this);
                 if (!proposal) continue;
 
+                // Immediate short-circuit for critical tasks (Pickup/Depositing)
                 if (proposal.priority >= 100) return proposal;
 
                 if (!bestProposal || proposal.priority > bestProposal.priority) {
