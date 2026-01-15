@@ -36,7 +36,9 @@ function startBot(isRestart = false) {
 
     // Handle stdout to detect successful spawn
     const handleStdout = async () => {
-        if (!botProcess?.stdout) return;
+        // Fix: Ensure stdout is defined AND is not a number (file descriptor)
+        if (!botProcess?.stdout || typeof botProcess.stdout === 'number') return;
+        
         const reader = botProcess.stdout.getReader();
         const decoder = new TextDecoder();
         while (true) {

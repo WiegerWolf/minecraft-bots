@@ -1,7 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
-// Use import instead of require for cleaner types (though require works if setup correctly)
 import minecraftData from 'minecraft-data';
 import prismarineBlock from 'prismarine-block';
 
@@ -37,11 +36,15 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
             const hasTableInInv = !!bot.inventory.items().find(i => i.name === 'crafting_table');
 
             const tableItem = mcData.itemsByName['crafting_table'];
-            const canMakeTable = bot.recipesFor(tableItem.id, null, 1, null).length > 0;
+            // Fix: Check if tableItem exists before accessing .id
+            const canMakeTable = tableItem ? bot.recipesFor(tableItem.id, null, 1, null).length > 0 : false;
 
-            if (tableNearby || hasTableInInv || canMakeTable) {
+            const tableBlock = mcData.blocksByName.crafting_table;
+            
+            // Fix: Check if tableBlock exists before creating fake table
+            if ((tableNearby || hasTableInInv || canMakeTable) && tableBlock) {
                 const Block = prismarineBlock(bot.version);
-                const fakeTable = new Block(mcData.blocksByName.crafting_table.id, 0, 0);
+                const fakeTable = new Block(tableBlock.id, 0, 0);
                 recipes = bot.recipesFor(item.id, null, 1, fakeTable);
                 return recipes.length > 0;
             }
@@ -70,7 +73,6 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
             });
         }
 
-        // Changed to public so MaintenanceTask can use it
         public async tryCraft(bot: Bot, itemName: string, onTargetSet?: (target: any) => void) {
             const mcData = minecraftData(bot.version);
             const item = mcData.itemsByName[itemName];
@@ -107,32 +109,41 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
             if (craftingTable) this.log(`Found crafting table at ${craftingTable.position}`);
 
             if (!craftingTable) {
-                const Block = prismarineBlock(bot.version);
-                const fakeTable = new Block(mcData.blocksByName.crafting_table.id, 0, 0);
-                const recipes3x3 = bot.recipesFor(item.id, null, 1, fakeTable);
+                const tableBlock = mcData.blocksByName.crafting_table;
+                
+                // Fix: Check if tableBlock exists
+                if (tableBlock) {
+                    const Block = prismarineBlock(bot.version);
+                    const fakeTable = new Block(tableBlock.id, 0, 0);
+                    const recipes3x3 = bot.recipesFor(item.id, null, 1, fakeTable);
 
-                if (recipes3x3.length > 0) {
-                    const tableInInventory = bot.inventory.items().find(i => i.name === 'crafting_table');
-                    if (tableInInventory) {
-                        const success = await this.placeCraftingTable(bot);
-                        if (success) {
-                            // Wait for world update
-                            await new Promise(resolve => setTimeout(resolve, 500));
-                            craftingTable = this.findCraftingTable(bot);
-                        }
-                    } else {
-                        this.log('No table found or in inventory. Trying to craft one.');
-                        const tableItemData = mcData.itemsByName['crafting_table'];
-                        const tableRecipes = bot.recipesFor(tableItemData.id, null, 1, null);
-                        const tableRecipe = tableRecipes[0];
-                        if (tableRecipe) {
-                            bot.chat('I need a crafting table, making one...');
-                            this.log('Crafting a crafting table...');
-                            await bot.craft(tableRecipe, 1, undefined);
+                    if (recipes3x3.length > 0) {
+                        const tableInInventory = bot.inventory.items().find(i => i.name === 'crafting_table');
+                        if (tableInInventory) {
                             const success = await this.placeCraftingTable(bot);
                             if (success) {
+                                // Wait for world update
                                 await new Promise(resolve => setTimeout(resolve, 500));
                                 craftingTable = this.findCraftingTable(bot);
+                            }
+                        } else {
+                            this.log('No table found or in inventory. Trying to craft one.');
+                            const tableItemData = mcData.itemsByName['crafting_table'];
+                            
+                            // Fix: Check if tableItemData exists
+                            if (tableItemData) {
+                                const tableRecipes = bot.recipesFor(tableItemData.id, null, 1, null);
+                                const tableRecipe = tableRecipes[0];
+                                if (tableRecipe) {
+                                    bot.chat('I need a crafting table, making one...');
+                                    this.log('Crafting a crafting table...');
+                                    await bot.craft(tableRecipe, 1, undefined);
+                                    const success = await this.placeCraftingTable(bot);
+                                    if (success) {
+                                        await new Promise(resolve => setTimeout(resolve, 500));
+                                        craftingTable = this.findCraftingTable(bot);
+                                    }
+                                }
                             }
                         }
                     }
