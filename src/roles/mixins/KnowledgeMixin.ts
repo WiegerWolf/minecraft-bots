@@ -1,7 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 
-export type POICategory = 'crafting_table' | 'chest' | 'farm_center';
+export type POICategory = 'crafting_table' | 'chest' | 'farm_center' | 'farm_chest';
 
 export interface POI {
     position: Vec3;
