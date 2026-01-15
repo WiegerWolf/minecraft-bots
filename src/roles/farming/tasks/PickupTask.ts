@@ -1,6 +1,9 @@
 import type { Bot } from 'mineflayer';
 import type { FarmingRole } from '../FarmingRole';
 import type { Task, WorkProposal } from './Task';
+import { goals } from 'mineflayer-pathfinder';
+
+const { GoalNear } = goals;
 
 export class PickupTask implements Task {
     name = 'pickup';
@@ -10,14 +13,13 @@ export class PickupTask implements Task {
         if (bot.inventory.emptySlotCount() === 0) return null;
 
         // Find nearest dropped item
-        // e.type === 'object' (or 'orb' for XP) represents dropped items in Mineflayer
         const itemDrop = bot.nearestEntity(e => {
             return e.type === 'object' || e.type === 'orb';
         });
 
         if (itemDrop && bot.entity.position.distanceTo(itemDrop.position) < 20) {
              return {
-                priority: 30, // Higher than grass breaking (20), lower than maintenance (50)
+                priority: 30, 
                 description: `Picking up item at ${itemDrop.position.floored()}`,
                 target: itemDrop,
                 range: 1.0, 
@@ -29,8 +31,16 @@ export class PickupTask implements Task {
     }
 
     async perform(bot: Bot, role: FarmingRole, target: any): Promise<void> {
-        // The movement is handled by the Role (range 1.0).
-        // We just wait a brief moment to ensure pickup registration.
-        await new Promise(r => setTimeout(r, 200));
+        if (!target) return;
+        
+        try {
+            // FIX: Walk to the item!
+            await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 1));
+            
+            // Wait briefly to ensure pickup registration
+            await new Promise(r => setTimeout(r, 200));
+        } catch (err) {
+            // Ignore movement errors for drops, they might despawn or move
+        }
     }
 }

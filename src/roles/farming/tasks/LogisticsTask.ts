@@ -1,6 +1,9 @@
 import type { Bot } from 'mineflayer';
 import type { FarmingRole } from '../FarmingRole';
 import type { Task, WorkProposal } from './Task';
+import { goals } from 'mineflayer-pathfinder';
+
+const { GoalLookAtBlock } = goals;
 
 export class LogisticsTask implements Task {
     name = 'logistics';
@@ -61,12 +64,10 @@ export class LogisticsTask implements Task {
                     task: this
                 };
             } else {
-                // IMPORTANT: If we need seeds but can't find grass, explicitly EXPLORE.
-                // This replaces the passive "idle" with an active "Search" task.
                 return {
-                    priority: 25, // Higher than idle
+                    priority: 25, 
                     description: "Exploring to find grass/seeds...",
-                    target: null, // Logic handled in perform
+                    target: null, 
                     task: this
                 };
             }
@@ -85,6 +86,9 @@ export class LogisticsTask implements Task {
         // Case: Breaking Grass
         if (target.name.includes('grass') || target.name.includes('fern') || target.name === 'dead_bush') {
              try {
+                // FIX: Move to block first!
+                await bot.pathfinder.goto(new GoalLookAtBlock(target.position, bot.world));
+                
                 await bot.dig(target);
                 await new Promise(r => setTimeout(r, 500)); 
              } catch (err) {
@@ -96,6 +100,13 @@ export class LogisticsTask implements Task {
 
         // Case: Container Interaction
         if (target.name.includes('chest') || target.name.includes('barrel') || target.name.includes('shulker')) {
+            // FIX: Move to chest first!
+            try {
+                await bot.pathfinder.goto(new GoalLookAtBlock(target.position, bot.world));
+            } catch (e) {
+                role.log("Could not path to chest, trying to open anyway...");
+            }
+
             const container = await bot.openContainer(target);
             role.log(`Opened ${target.name}.`);
 
