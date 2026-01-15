@@ -1144,7 +1144,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         // 2. Search for containers
         const storage = bot.findBlock({
             matching: block => {
-                if (!block) return false;
+                if (!block || !block.position) return false;
                 if (!['chest', 'barrel', 'trapped_chest'].includes(block.name)) return false;
                 
                 const posStr = block.position.toString();
