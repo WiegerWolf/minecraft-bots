@@ -1133,7 +1133,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         if (knownChest) {
              const block = bot.blockAt(knownChest.position);
              // Verify it is still a container
-             if (block && ['chest', 'barrel', 'trapped_chest'].includes(block.name)) {
+             if (block && (['chest', 'barrel', 'trapped_chest'].includes(block.name) || block.name.includes('shulker_box'))) {
                  this.log(`Going to known farm chest at ${knownChest.position} for seeds.`);
                  this.setMovementTarget(bot, block, 'CHECK_STORAGE');
                  return true;
@@ -1158,40 +1158,47 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             return true;
         }
 
-        // 2. Search for containers (Check near bot AND near farm center)
+        // 2. Search for containers
         const farmAnchor = this.getNearestPOI(bot, 'farm_center');
-        const pointsToCheck = [bot.entity.position];
-        if (farmAnchor) pointsToCheck.push(farmAnchor.position);
+        const searchPoint = farmAnchor ? farmAnchor.position : bot.entity.position;
+        
+        let foundButIgnored = 0;
 
-        for (const point of pointsToCheck) {
-            const storage = bot.findBlock({
-                matching: block => {
-                    if (!block || !block.position) return false;
-                    if (!['chest', 'barrel', 'trapped_chest'].includes(block.name)) return false;
-                    
-                    const posStr = block.position.toString();
-                    // Check hard failures (pathing/broken)
-                    if (this.failedBlocks.has(posStr)) {
-                         const failedAt = this.failedBlocks.get(posStr)!;
-                         if (Date.now() - failedAt < this.RETRY_COOLDOWN) return false;
-                    }
-                    // Check soft failures (empty/checked recently)
-                    if (this.containerCooldowns.has(posStr)) {
-                         const checkedAt = this.containerCooldowns.get(posStr)!;
-                         if (Date.now() - checkedAt < this.CONTAINER_COOLDOWN) return false;
-                    }
-                    return true;
-                },
-                maxDistance: 32,
-                point: point
-            });
-            
-            if (storage) {
-                const locationName = point === bot.entity.position ? 'bot' : 'farm center';
-                this.log(`Found ${storage.name} at ${storage.position} (near ${locationName}). Checking for seeds...`);
-                this.setMovementTarget(bot, storage, 'CHECK_STORAGE');
+        const storage = bot.findBlock({
+            matching: block => {
+                if (!block || !block.position) return false;
+                const isContainer = ['chest', 'barrel', 'trapped_chest'].includes(block.name) || block.name.includes('shulker_box');
+                if (!isContainer) return false;
+
+                const posStr = block.position.toString();
+                // Check hard failures (pathing/broken)
+                if (this.failedBlocks.has(posStr)) {
+                     const failedAt = this.failedBlocks.get(posStr)!;
+                     if (Date.now() - failedAt < this.RETRY_COOLDOWN) {
+                         foundButIgnored++;
+                         return false;
+                     }
+                }
+                // Check soft failures (empty/checked recently)
+                if (this.containerCooldowns.has(posStr)) {
+                     const checkedAt = this.containerCooldowns.get(posStr)!;
+                     if (Date.now() - checkedAt < this.CONTAINER_COOLDOWN) {
+                         foundButIgnored++;
+                         return false;
+                     }
+                }
                 return true;
-            }
+            },
+            maxDistance: 64, // Increased search range
+            point: searchPoint
+        });
+        
+        if (storage) {
+            this.log(`Found ${storage.name} at ${storage.position}. Checking for seeds...`);
+            this.setMovementTarget(bot, storage, 'CHECK_STORAGE');
+            return true;
+        } else if (foundButIgnored > 0) {
+            this.log(`Debug: Found but ignored ${foundButIgnored} containers (cooldown/failed).`);
         }
 
         return false;
