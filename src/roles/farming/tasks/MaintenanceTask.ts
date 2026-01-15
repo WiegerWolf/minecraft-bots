@@ -21,7 +21,7 @@ export class MaintenanceTask implements Task {
                         if (!b || !b.position) return false;
                         return b.name.includes('_log') && !role.failedBlocks.has(b.position.toString());
                     },
-                    maxDistance: 64
+                    maxDistance: 64 // Increased range
                 });
                 
                 if (tree) {
@@ -29,12 +29,11 @@ export class MaintenanceTask implements Task {
                         priority: 50,
                         description: 'Gathering wood for tools',
                         target: tree,
-                        range: 2.5,
+                        range: 2.5, // Closer range
                         task: this
                     };
                 } else {
-                    // DEBUG: If we need wood but can't find it
-                    // role.log("Need wood, but no logs found within 64 blocks.");
+                    // role.log("Need wood for tools, but no logs found nearby.");
                 }
             }
             
@@ -48,6 +47,7 @@ export class MaintenanceTask implements Task {
             }
         }
 
+        // 2. NEED CHEST?
         if (bot.inventory.emptySlotCount() < 3) {
             const nearbyChest = role.getNearestPOI(bot, 'farm_chest');
             if (!nearbyChest) {
@@ -86,6 +86,7 @@ export class MaintenanceTask implements Task {
     }
 
     async perform(bot: Bot, role: FarmingRole, target?: any): Promise<void> {
+        // Case: Gathering Wood
         if (target && target.name && target.name.includes('_log')) {
             if (target.position) {
                 await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
@@ -94,6 +95,7 @@ export class MaintenanceTask implements Task {
             return;
         }
 
+        // Case: Placing Chest
         if (target && this.count(bot.inventory.items(), i => i.name === 'chest') > 0) {
             const chest = bot.inventory.items().find(i => i.name === 'chest');
             if (chest) {
@@ -104,6 +106,7 @@ export class MaintenanceTask implements Task {
             }
         }
 
+        // Case: Crafting (No target passed)
         if (this.count(bot.inventory.items(), i => i.name.endsWith('_planks')) < 2) {
              const logItem = bot.inventory.items().find(i => i.name.includes('_log'));
              if (logItem) {

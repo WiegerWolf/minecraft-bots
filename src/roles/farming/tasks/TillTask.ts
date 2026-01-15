@@ -21,14 +21,10 @@ export class TillTask implements Task {
         const water = bot.findBlock({
             point,
             maxDistance: 32,
-            matching: b => !!b && (b.name === 'water' || b.name === 'flowing_water') // Robust water check
+            matching: b => !!b && (b.name === 'water' || b.name === 'flowing_water')
         });
 
-        if (!water) {
-            // Uncomment to debug if bot has tools but sees no water
-            // role.log("Have tools/seeds, but no water found nearby.");
-            return null;
-        }
+        if (!water) return null;
 
         // 3. Find a tillable block near that water
         const candidates: { block: any, score: number }[] = [];
@@ -65,7 +61,7 @@ export class TillTask implements Task {
                 priority: 5,
                 description: `Tilling ground at ${best.block.position}`,
                 target: best.block,
-                range: 3.5, // Tilling has decent reach
+                range: 3.5,
                 task: this
             };
         }

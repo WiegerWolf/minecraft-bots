@@ -46,7 +46,8 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         const defaultMove = new Movements(bot);
         defaultMove.canDig = false; 
         defaultMove.allow1by1towers = false;
-        defaultMove.canSwim = true; // FIX: Allow swimming
+        // FIX: Use liquidCost instead of canSwim to allow water traversal
+        defaultMove.liquidCost = 1; 
         bot.pathfinder.setMovements(defaultMove);
         
         this.currentProposal = null;
@@ -142,13 +143,14 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         } else {
             // Idle handling
             this.idleTicks++;
-            if (this.idleTicks % 20 === 0) { // Every ~10 seconds
+            if (this.idleTicks % 40 === 0) { // Every ~20 seconds
                 this.printDebugInventory(bot);
             }
-            if (this.idleTicks > 60) { // ~30 seconds of pure idle
+            if (this.idleTicks > 120) { // ~60 seconds of pure idle
                 this.log("🚶 Wandering to find resources...");
                 this.idleTicks = 0;
                 
+                // Wander randomly
                 const x = bot.entity.position.x + (Math.random() * 40 - 20);
                 const z = bot.entity.position.z + (Math.random() * 40 - 20);
                 bot.pathfinder.setGoal(new GoalXZ(x, z));

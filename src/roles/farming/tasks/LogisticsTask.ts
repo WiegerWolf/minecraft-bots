@@ -41,6 +41,7 @@ export class LogisticsTask implements Task {
                 };
             }
             
+            // Scavenge grass
             const grass = bot.findBlock({
                 matching: b => {
                     if (!b || !b.position) return false;
