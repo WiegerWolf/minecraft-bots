@@ -18,8 +18,11 @@ export class MaintenanceTask implements Task {
             // Case A: Gather wood
             if (planks < 2 && logs === 0) {
                 const tree = bot.findBlock({
-                    // Combine checks into matching for safety
-                    matching: b => !!b && b.name.includes('_log') && !role.failedBlocks.has(b.position.toString()),
+                    // FIX: Robust check for block AND position
+                    matching: (b) => {
+                        if (!b || !b.position) return false;
+                        return b.name.includes('_log') && !role.failedBlocks.has(b.position.toString());
+                    },
                     maxDistance: 32
                 });
                 
@@ -28,7 +31,7 @@ export class MaintenanceTask implements Task {
                         priority: 50,
                         description: 'Gathering wood for tools',
                         target: tree,
-                        range: 2.5, // FIX: Get closer (default is 3.5) to avoid reach errors
+                        range: 2.5, // FIX: Closer range to prevent reach errors during digging
                         task: this
                     };
                 }
@@ -60,6 +63,8 @@ export class MaintenanceTask implements Task {
                         matching: (b) => {
                             if (!b || !b.position) return false;
                             if (b.name === 'farmland' || b.name === 'water') return false;
+                            
+                            // Check blacklist
                             if (role.failedBlocks.has(b.position.toString())) return false;
 
                             const above = bot.blockAt(b.position.offset(0,1,0));
@@ -86,7 +91,9 @@ export class MaintenanceTask implements Task {
         // Case: Gathering Wood
         if (target && target.name && target.name.includes('_log')) {
             // Force look at block center to ensure raycast hits
-            await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
+            if (target.position) {
+                await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
+            }
             await bot.dig(target);
             return;
         }
