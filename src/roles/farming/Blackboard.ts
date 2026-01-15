@@ -108,10 +108,10 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 
-    // Find farmland
+    // Find farmland - only hydrated blocks with adequate light
     bb.nearbyFarmland = bot.findBlocks({
         point: searchCenter,
-        maxDistance: SEARCH_RADIUS,
+        maxDistance: 16, // Reduced from 32 - focus on nearby farmland
         count: 50,
         matching: b => {
             // FIX: Add comprehensive null checks
@@ -121,7 +121,14 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
             const above = bot.blockAt(b.position.offset(0, 1, 0));
             return above !== null && above.name === 'air';
         }
-    }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
+    }).map(p => bot.blockAt(p)).filter((b): b is Block => {
+        if (!b) return false;
+        // Only include farmland within 4 blocks of water (hydration range)
+        if (!isWithinHydrationRange(b.position, bb.nearbyWater)) return false;
+        // Only include farmland with adequate light for crop growth
+        if (!hasAdequateLight(bot, b.position)) return false;
+        return true;
+    });
 
     // Find mature crops
     bb.nearbyMatureCrops = bot.findBlocks({
@@ -231,4 +238,23 @@ function countTillableAround(bot: Bot, center: Vec3): number {
         }
     }
     return count;
+}
+
+// Check if position is within 4 blocks of any water (Minecraft hydration range)
+function isWithinHydrationRange(pos: Vec3, waterBlocks: Block[]): boolean {
+    for (const water of waterBlocks) {
+        const dx = Math.abs(pos.x - water.position.x);
+        const dz = Math.abs(pos.z - water.position.z);
+        const dy = Math.abs(pos.y - water.position.y);
+        if (dx <= 4 && dz <= 4 && dy <= 1) return true;
+    }
+    return false;
+}
+
+// Check if block above has sufficient light (crops need ≥9)
+function hasAdequateLight(bot: Bot, farmlandPos: Vec3): boolean {
+    const above = bot.blockAt(farmlandPos.offset(0, 1, 0));
+    if (!above) return false;
+    const light = Math.max(above.skyLight ?? 0, above.light ?? 0);
+    return light >= 9;
 }

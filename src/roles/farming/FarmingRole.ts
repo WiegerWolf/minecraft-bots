@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { Role } from '../Role';
 import { Movements } from 'mineflayer-pathfinder';
 import { createBlackboard, updateBlackboard, type FarmingBlackboard } from './Blackboard';
-import { createFarmingBehaviorTree, type BehaviorNode } from './BehaviorTree';
+import { createFarmingBehaviorTree, type BehaviorNode } from './behaviors';
 
 export class FarmingRole implements Role {
     name = 'farming';
@@ -31,16 +31,14 @@ export class FarmingRole implements Role {
         this.blackboard = createBlackboard();
 
         if (options?.center) {
-            // FIX: Validate the provided center has sane Y-level
+            // Validate the provided center is actually water
             const centerPos = options.center;
-            // In Minecraft 1.18+, valid Y range is -64 to 320
-            // In older versions, it's 0 to 256
-            // Let's use conservative range: -60 to 300
-            if (centerPos.y >= -60 && centerPos.y <= 300) {
+            const block = bot.blockAt(centerPos);
+            if (block && (block.name === 'water' || block.name === 'flowing_water')) {
                 this.blackboard.farmCenter = centerPos.clone ? centerPos.clone() : centerPos;
-                console.log(`[Farming] Initial farm center set to ${this.blackboard.farmCenter}`);
+                console.log(`[Farming] Initial farm center set to water at ${this.blackboard.farmCenter}`);
             } else {
-                console.log(`[Farming] ⚠️ Ignoring invalid farm center at Y=${centerPos.y} (out of range)`);
+                console.log(`[Farming] ⚠️ Provided center is not water, will discover naturally`);
                 // Don't set farm center - let bot discover it naturally
             }
         }
