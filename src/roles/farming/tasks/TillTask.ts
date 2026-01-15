@@ -18,13 +18,18 @@ export class TillTask implements Task {
         const farmAnchor = role.getNearestPOI(bot, 'farm_center');
         const point = farmAnchor ? farmAnchor.position : bot.entity.position;
 
+        // Search near the farm center, not just the bot
         const water = bot.findBlock({
             point,
             maxDistance: 32,
             matching: b => !!b && (b.name === 'water' || b.name === 'flowing_water')
         });
 
-        if (!water) return null;
+        if (!water) {
+             // Only warn occasionally to avoid spam
+             if (Math.random() < 0.05) role.log("⚠️ Need water to till soil, but none found near farm center.");
+             return null;
+        }
 
         // 3. Find a tillable block near that water
         const candidates: { block: any, score: number }[] = [];
@@ -42,8 +47,12 @@ export class TillTask implements Task {
                             if (role.failedBlocks.has(pos.toString())) continue;
 
                             let score = 10;
+                            // Prioritize blocks next to existing farmland
                             if (this.hasNeighboringFarmland(bot, pos)) score += 20;
-                            
+                            // Prioritize blocks closer to the water
+                            const dist = pos.distanceTo(water.position);
+                            score -= dist;
+
                             candidates.push({ block, score });
                         }
                     }

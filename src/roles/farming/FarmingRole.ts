@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import type { Role } from '../Role';
+import type { Role } from '../../Role';
 import { goals, Movements } from 'mineflayer-pathfinder';
 import { CraftingMixin } from '../mixins/CraftingMixin';
 import { KnowledgeMixin } from '../mixins/KnowledgeMixin';
@@ -39,16 +39,13 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         ];
     }
 
-    start(bot: Bot) {
+    start(bot: Bot, options?: { center?: any }) {
         this.active = true;
         this.bot = bot;
         
         const defaultMove = new Movements(bot);
         defaultMove.canDig = false; 
         defaultMove.allow1by1towers = false;
-        
-        // FIX: 'liquidCost' exists in JS but is missing from the TypeScript definition file.
-        // We cast to 'any' to suppress the error so the bot can swim.
         (defaultMove as any).liquidCost = 1; 
         
         bot.pathfinder.setMovements(defaultMove);
@@ -59,10 +56,19 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         this.idleTicks = 0;
         
         this.log('🚜 Modular Farming Role started.');
-        bot.chat('🚜 Farming started (Modular).');
         
-        const existingFarm = bot.findBlock({ matching: b => b.name === 'farmland', maxDistance: 32 });
-        if (existingFarm) this.rememberPOI('farm_center', existingFarm.position);
+        // Set farm center
+        if (options?.center) {
+            this.rememberPOI('farm_center', options.center);
+            this.log(`📍 Farm center set to ${options.center}`);
+        } else {
+            const existingFarm = bot.findBlock({ matching: b => b.name === 'farmland', maxDistance: 32 });
+            if (existingFarm) {
+                this.rememberPOI('farm_center', existingFarm.position);
+            } else {
+                this.rememberPOI('farm_center', bot.entity.position);
+            }
+        }
     }
 
     stop(bot: Bot) {
@@ -76,7 +82,19 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     async update(bot: Bot) {
         if (!this.active) return;
 
-        // 1. Moving/Executing
+        // 0. Enforce Proximity to Farm Center
+        // If we are wandering too far and have no critical work, move back.
+        const centerPOI = this.getNearestPOI(bot, 'farm_center');
+        if (centerPOI && !this.currentProposal) {
+            const dist = bot.entity.position.distanceTo(centerPOI.position);
+            if (dist > 40) {
+                this.log("🏃 Returning to farm center...");
+                bot.pathfinder.setGoal(new GoalNear(centerPOI.position.x, centerPOI.position.y, centerPOI.position.z, 2));
+                return;
+            }
+        }
+
+        // 1. Moving/Executing Current Proposal
         if (this.currentProposal && this.currentProposal.target) {
             const dist = bot.entity.position.distanceTo(this.currentProposal.target.position);
             const reach = this.currentProposal.range || 3.5;
@@ -146,19 +164,23 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         } else {
             // Idle handling
             this.idleTicks++;
-            if (this.idleTicks % 40 === 0) { // Every ~20 seconds
+            const isInventoryEmpty = bot.inventory.items().length === 0;
+            const wanderThreshold = isInventoryEmpty ? 10 : 120; // Wander fast if empty (5s vs 60s)
+
+            if (this.idleTicks % 40 === 0) {
                 this.printDebugInventory(bot);
             }
-            if (this.idleTicks > 120) { // ~60 seconds of pure idle
-                this.log("🚶 Wandering to find resources...");
+            
+            if (this.idleTicks > wanderThreshold) {
+                this.log(isInventoryEmpty ? "🏃 Searching for resources..." : "🚶 Wandering...");
                 this.idleTicks = 0;
                 
                 // Wander randomly
                 const x = bot.entity.position.x + (Math.random() * 40 - 20);
                 const z = bot.entity.position.z + (Math.random() * 40 - 20);
-                bot.pathfinder.setGoal(new GoalXZ(x, z));
-                this.movementStartTime = Date.now();
+                bot.pathfinder.setGoal(new GoalNear(x, bot.entity.position.y, z, 1));
                 
+                // Set a dummy proposal so we don't spam new goals while moving
                 this.currentProposal = {
                     priority: 1,
                     description: "Wandering",
@@ -170,6 +192,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                         perform: async () => { this.log("Finished wandering."); }
                     }
                 };
+                this.movementStartTime = Date.now();
             }
         }
     }
@@ -182,7 +205,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     public blacklistBlock(pos: any) {
         if (pos && pos.toString) {
             const key = pos.toString();
-            this.log(`⛔ Blacklisting position: ${key}`);
+            // this.log(`⛔ Blacklisting position: ${key}`);
             this.failedBlocks.set(key, Date.now());
         }
     }

@@ -30,14 +30,14 @@ const roles: Record<string, Role> = {
 };
 let currentRole: Role | null = null;
 
-function setRole(roleName: string | null) {
+function setRole(roleName: string | null, options?: any) {
     if (currentRole) {
         currentRole.stop(bot);
     }
 
     if (roleName && roles[roleName]) {
         currentRole = roles[roleName];
-        currentRole.start(bot);
+        currentRole.start(bot, options);
     } else {
         currentRole = null;
     }
@@ -65,7 +65,7 @@ bot.on('spawn', () => {
                 console.log('🤷 No players found nearby to run to.');
             }
         }, 2000);
-
+        
         // Periodically update the current role
         setInterval(() => {
             if (currentRole) {
@@ -105,9 +105,18 @@ bot.on('chat', (username: string, message: string) => {
         const subCommand = args[1]?.toLowerCase();
         if (subCommand === 'stop') {
             setRole(null);
+            bot.chat("Farming stopped.");
         } else {
-            // Default to start if no subcommand or 'start'
-            setRole('farming');
+            const player = bot.players[username];
+            const position = player?.entity?.position;
+            
+            if (position) {
+                bot.chat(`Starting farm at your position, ${username}!`);
+                setRole('farming', { center: position });
+            } else {
+                bot.chat("I can't see you, so I'll start farming here.");
+                setRole('farming');
+            }
         }
     }
 });
