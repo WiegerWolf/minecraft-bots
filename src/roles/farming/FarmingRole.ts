@@ -102,6 +102,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             const dist = bot.entity.position.distanceTo(this.currentProposal.target.position);
             const reach = this.currentProposal.range || 3.5;
 
+            // Timeout check
             if (Date.now() - this.movementStartTime > this.MOVEMENT_TIMEOUT) {
                 this.log(`⚠️ Movement timed out for ${this.currentProposal.description}`);
                 this.blacklistBlock(this.currentProposal.target.position);
@@ -110,6 +111,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 return;
             }
 
+            // Arrived check
             if (dist <= reach) {
                 bot.pathfinder.setGoal(null);
                 bot.clearControlStates();
@@ -118,6 +120,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                     await this.currentProposal.task.perform(bot, this, this.currentProposal.target);
                 } catch (error) {
                     this.log(`❌ Error executing ${this.currentProposal.description}:`, error);
+                    // If action failed, blacklist to prevent loop
                     if (this.currentProposal.target?.position) {
                         this.blacklistBlock(this.currentProposal.target.position);
                     }
@@ -168,18 +171,19 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             // Idle handling
             this.idleTicks++;
             const isInventoryEmpty = bot.inventory.items().length === 0;
-            const wanderThreshold = isInventoryEmpty ? 20 : 120;
+            const wanderThreshold = isInventoryEmpty ? 20 : 120; // 1s if empty, 6s if not
 
             if (this.idleTicks >= wanderThreshold) {
                 if (isInventoryEmpty) {
                     this.log("⚠️ I am empty handed and can't find resources!");
-                    this.forceResourceCheck(bot);
+                    // Force a re-scan of surroundings debug logic if needed
+                    // this.forceResourceCheck(bot);
                 }
                 
                 this.log(isInventoryEmpty ? "🏃 Searching/Wandering..." : "🚶 Wandering...");
                 this.idleTicks = 0;
                 
-                const range = 64; 
+                const range = 32; 
                 const x = bot.entity.position.x + (Math.random() * range - (range/2));
                 const z = bot.entity.position.z + (Math.random() * range - (range/2));
                 bot.pathfinder.setGoal(new GoalNear(x, bot.entity.position.y, z, 1));
@@ -234,17 +238,14 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         if (!pos) return;
         
         let key: string;
-        // Check if it's a Vec3-like object or a plain object with coordinates
-        if (pos.x !== undefined && pos.y !== undefined && pos.z !== undefined) {
-            // Reconstruct Vec3 string manually to ensure consistency
-            key = `(${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)})`;
-            
-            // Or use standard Vec3 logic if it's a Vec3 instance, but floor it for safety
-            if (pos instanceof Vec3) {
-                key = pos.floored().toString();
-            }
+        
+        // Ensure consistent string representation for Vec3 (integers)
+        if (pos.floored && typeof pos.floored === 'function') {
+             key = pos.floored().toString();
+        } else if (pos.x !== undefined && pos.y !== undefined && pos.z !== undefined) {
+             key = `(${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)})`;
         } else {
-            key = pos.toString();
+            key = String(pos);
         }
 
         // this.log(`⛔ Blacklisting position: ${key}`);

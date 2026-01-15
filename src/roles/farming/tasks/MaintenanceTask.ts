@@ -13,31 +13,24 @@ export class MaintenanceTask implements Task {
         
         const hasHoe = inventory.some(i => i.name.includes('hoe'));
         const planks = this.count(inventory, i => i.name.endsWith('_planks'));
-        const logs = this.count(inventory, i => i.name.includes('_log'));
+        const logs = this.count(inventory, i => i.name.includes('_log') || i.name === 'log' || i.name === 'log2');
 
+        // Logic: If we have no hoe, we need wood.
         if (!hasHoe) {
-            // Case A: Gather wood
+            // Case A: Gather wood (No planks, no logs)
             if (planks < 2 && logs === 0) {
-                // Debugging failure
-                if (bot.inventory.emptySlotCount() > 30) {
-                    // role.log(`[Maintenance] Checking for logs... (Blacklist size: ${role.failedBlocks.size})`);
-                }
-
                 const tree = bot.findBlock({
                     matching: (b) => {
-                        // Basic validity
-                        if (!b || !b.position) return false;
-
-                        // Check name first (optimization)
-                        const isLog = b.name.includes('_log') || b.name === 'log' || b.name === 'log2';
+                        if (!b) return false;
+                        
+                        // Check name first
+                        const name = b.name;
+                        const isLog = name.includes('_log') || name === 'log' || name === 'log2';
                         if (!isLog) return false;
 
-                        // Check blacklist
-                        const key = b.position.toString();
-                        if (role.failedBlocks.has(key)) {
-                            // role.log(`[Maintenance] Ignoring blacklisted log at ${key}`);
-                            return false;
-                        }
+                        // Check blacklist using the standardized key
+                        const key = b.position.floored().toString();
+                        if (role.failedBlocks.has(key)) return false;
                         
                         return true; 
                     },
@@ -46,26 +39,32 @@ export class MaintenanceTask implements Task {
                 
                 if (tree) {
                     return {
-                        priority: 50,
+                        priority: 50, // High priority: We are stuck without tools
                         description: `Gathering wood from ${tree.name} at ${tree.position.floored()}`,
                         target: tree,
-                        range: 2.5,
+                        range: 3.0, // Standard reach
                         task: this
                     };
+                } else {
+                     // Only warn if we are truly stuck (empty inventory) to avoid spam
+                     if (bot.inventory.emptySlotCount() === bot.inventory.slots.length && Math.random() < 0.1) {
+                         role.log("[Maintenance] Needs wood but found none nearby.");
+                     }
                 }
             }
             
-            // Case B: Craft
-            if (logs > 0 || (planks >= 2)) {
+            // Case B: Craft Hoe
+            if (logs > 0 || planks >= 2) {
                 return {
-                    priority: 50,
+                    priority: 55, // Higher than gathering
                     description: 'Crafting Hoe',
                     task: this
                 };
             }
         }
 
-        // 2. NEED CHEST?
+        // 2. Need Chest? (Storage logic)
+        // If inventory is nearly full and we have no nearby chest
         if (bot.inventory.emptySlotCount() < 3) {
             const nearbyChest = role.getNearestPOI(bot, 'farm_chest');
             if (!nearbyChest) {
@@ -81,7 +80,8 @@ export class MaintenanceTask implements Task {
                         matching: (b) => {
                             if (!b || !b.position) return false;
                             if (b.name === 'farmland' || b.name === 'water') return false;
-                            if (role.failedBlocks.has(b.position.toString())) return false;
+                            const key = b.position.floored().toString();
+                            if (role.failedBlocks.has(key)) return false;
 
                             const above = bot.blockAt(b.position.offset(0,1,0));
                             return !!(above && above.name === 'air');
@@ -90,7 +90,7 @@ export class MaintenanceTask implements Task {
 
                     if (spot) {
                         return {
-                            priority: 95,
+                            priority: 95, // Very high, inventory is full
                             description: 'Placing new storage chest',
                             target: spot,
                             task: this
@@ -104,17 +104,16 @@ export class MaintenanceTask implements Task {
     }
 
     async perform(bot: Bot, role: FarmingRole, target?: any): Promise<void> {
-        // Case: Gathering Wood
+        // Case: Gathering Wood (Target is a block)
         if (target && (target.name.includes('log') || target.name === 'log' || target.name === 'log2')) {
-            if (target.position) {
-                await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
-            }
+            role.log(`Digging ${target.name}...`);
+            await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
             await bot.dig(target);
             
-            // Pickup logic
+            // Wait briefly for item pickup before finishing
             const dropPos = target.position;
-            await new Promise(r => setTimeout(r, 200));
             await bot.pathfinder.setGoal(new GoalNear(dropPos.x, dropPos.y, dropPos.z, 0.5));
+            await new Promise(r => setTimeout(r, 250)); 
             return;
         }
 
@@ -129,12 +128,14 @@ export class MaintenanceTask implements Task {
             }
         }
 
-        // Case: Crafting (No target passed)
+        // Case: Crafting (No target passed, just logic)
+        // 1. Convert logs to planks if needed
         if (this.count(bot.inventory.items(), i => i.name.endsWith('_planks')) < 2) {
              const logItem = bot.inventory.items().find(i => i.name.includes('_log') || i.name === 'log' || i.name === 'log2');
              if (logItem) {
                  let plankName = 'oak_planks';
                  const name = logItem.name;
+                 // Map logs to planks
                  if (name.includes('spruce')) plankName = 'spruce_planks';
                  else if (name.includes('birch')) plankName = 'birch_planks';
                  else if (name.includes('jungle')) plankName = 'jungle_planks';
@@ -142,15 +143,19 @@ export class MaintenanceTask implements Task {
                  else if (name.includes('dark_oak')) plankName = 'dark_oak_planks';
                  else if (name.includes('mangrove')) plankName = 'mangrove_planks';
                  else if (name.includes('cherry')) plankName = 'cherry_planks';
+                 else if (name.includes('crimson')) plankName = 'crimson_planks';
+                 else if (name.includes('warped')) plankName = 'warped_planks';
 
                  await role.tryCraft(bot, plankName);
              }
         }
         
+        // 2. Craft sticks if needed
         if (this.count(bot.inventory.items(), i => i.name === 'stick') < 2) {
             await role.tryCraft(bot, 'stick');
         }
 
+        // 3. Craft the hoe
         await role.tryCraft(bot, 'wooden_hoe');
     }
 
