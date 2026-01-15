@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import type { Role } from '../../Role';
+import type { Role } from '../Role';
 import { goals, Movements } from 'mineflayer-pathfinder';
 import { CraftingMixin } from '../mixins/CraftingMixin';
 import { KnowledgeMixin } from '../mixins/KnowledgeMixin';
@@ -32,7 +32,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
     constructor() {
         super();
         this.tasks = [
-            new PickupTask(),      // New: Prioritize picking up items
+            new PickupTask(),      
             new MaintenanceTask(),
             new LogisticsTask(),   
             new HarvestTask(),     
@@ -128,9 +128,9 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
         // 2. Find new work
         let bestProposal: WorkProposal | null = null;
 
-        for (const tasks of this.tasks) {
+        for (const task of this.tasks) {
             try {
-                const proposal = await tasks.findWork(bot, this);
+                const proposal = await task.findWork(bot, this);
                 if (!proposal) continue;
 
                 if (proposal.priority >= 100) {
@@ -142,7 +142,7 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                     bestProposal = proposal;
                 }
             } catch (err) {
-                console.error(`Error in task ${tasks.name}:`, err);
+                console.error(`Error in task ${task.name}:`, err);
             }
         }
 
@@ -165,22 +165,14 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
             // Idle handling
             this.idleTicks++;
             const isInventoryEmpty = bot.inventory.items().length === 0;
-            
-            if (this.idleTicks % 100 === 0) { // Every ~5 seconds
-                this.log("💤 Idle... Scanning surroundings:");
-                const nearby = bot.findBlock({ matching: (b) => b.name !== 'air', maxDistance: 5, count: 3 });
-                // @ts-ignore
-                if (nearby) this.log(`Found nearby: ${nearby.name} at ${nearby.position}`);
-                else this.log("No blocks found nearby? Am I in the void?");
+            const wanderThreshold = isInventoryEmpty ? 10 : 120; // 5s or 60s
 
+            if (this.idleTicks >= wanderThreshold) {
+                // DEBUG: Scan surroundings before wandering
                 if (isInventoryEmpty) {
-                    bot.chat("I need seeds or wood to start farming! I can't find any nearby.");
+                    this.scanSurroundings(bot);
                 }
-            }
 
-            const wanderThreshold = isInventoryEmpty ? 10 : 120;
-
-            if (this.idleTicks > wanderThreshold) {
                 this.log(isInventoryEmpty ? "🏃 Searching for resources..." : "🚶 Wandering...");
                 this.idleTicks = 0;
                 
@@ -202,6 +194,26 @@ export class FarmingRole extends CraftingMixin(KnowledgeMixin(class { })) implem
                 this.movementStartTime = Date.now();
             }
         }
+    }
+
+    private scanSurroundings(bot: Bot) {
+        this.log("🔍 DEBUG: Scanning nearby blocks (Radius 3):");
+        const counts: Record<string, number> = {};
+        const pos = bot.entity.position;
+        
+        for (let x = -3; x <= 3; x++) {
+            for (let y = -1; y <= 2; y++) {
+                for (let z = -3; z <= 3; z++) {
+                    const block = bot.blockAt(pos.offset(x, y, z));
+                    if (block && block.name !== 'air' && block.name !== 'cave_air') {
+                        counts[block.name] = (counts[block.name] || 0) + 1;
+                    }
+                }
+            }
+        }
+        
+        const summary = Object.entries(counts).map(([name, count]) => `${name} x${count}`).join(', ');
+        this.log(`found: [${summary || 'Nothing!'}]`);
     }
 
     private printDebugInventory(bot: Bot) {

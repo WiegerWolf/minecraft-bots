@@ -34,6 +34,12 @@ export class MaintenanceTask implements Task {
                         range: 2.5,
                         task: this
                     };
+                } else {
+                     // Debug log to help identify why it sees nothing
+                     // This only logs if we REALLY need wood (inventory empty-ish)
+                     if (bot.inventory.emptySlotCount() > 30) {
+                        // role.log("🔍 Need wood, but no logs found in 64 blocks.");
+                     }
                 }
             }
             

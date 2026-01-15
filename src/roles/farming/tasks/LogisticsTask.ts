@@ -42,12 +42,12 @@ export class LogisticsTask implements Task {
             }
             
             // Scavenge grass
+            const grassTypes = ['grass', 'tall_grass', 'short_grass', 'fern', 'dead_bush'];
             const grass = bot.findBlock({
                 matching: b => {
                     if (!b || !b.position) return false;
                     if (role.failedBlocks.has(b.position.toString())) return false;
-                    // Extended list for different versions
-                    return ['grass', 'tall_grass', 'short_grass', 'fern', 'dead_bush'].includes(b.name);
+                    return grassTypes.includes(b.name);
                 },
                 maxDistance: 64
             });
@@ -59,6 +59,8 @@ export class LogisticsTask implements Task {
                     range: 3.0,
                     task: this
                 };
+            } else {
+                 // role.log("🔍 No grass/ferns found nearby to harvest seeds.");
             }
         }
 
@@ -74,7 +76,6 @@ export class LogisticsTask implements Task {
             
             // Walk to the drop location to pick it up
             const dropPos = target.position;
-            // Wait a split second for item to spawn
             await new Promise(r => setTimeout(r, 200));
             await bot.pathfinder.setGoal(new GoalNear(dropPos.x, dropPos.y, dropPos.z, 0.5));
             return;
@@ -87,7 +88,6 @@ export class LogisticsTask implements Task {
             const items = bot.inventory.items();
             const crops = ['wheat', 'carrot', 'potato', 'beetroot', 'melon_slice', 'pumpkin'];
             
-            // Deposit crops
             for (const item of items) {
                 if (crops.includes(item.name) || item.name.includes('seeds')) {
                     if (item.name.includes('seeds') || ['carrot', 'potato', 'beetroot'].includes(item.name)) {
@@ -99,7 +99,6 @@ export class LogisticsTask implements Task {
                 }
             }
 
-            // Withdraw seeds
             const seedNames = ['wheat_seeds', 'beetroot_seeds', 'carrot', 'potato'];
             for (const name of seedNames) {
                 const current = bot.inventory.items().find(i => i.name === name);
@@ -110,7 +109,6 @@ export class LogisticsTask implements Task {
                     const chestItem = container.items().find(i => i.name === name);
                     if (chestItem) {
                         await container.withdraw(chestItem.type, null, Math.min(needed, chestItem.count));
-                        role.log(`Withdrew ${Math.min(needed, chestItem.count)} ${name}`);
                     }
                 }
             }
