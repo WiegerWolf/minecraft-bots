@@ -1,25 +1,29 @@
 import type { Bot } from 'mineflayer';
 import type { FarmingRole } from '../FarmingRole';
 import type { Task, WorkProposal } from './Task';
+import { goals } from 'mineflayer-pathfinder';
+
+const { GoalLookAtBlock } = goals;
 
 export class HarvestTask implements Task {
     name = 'harvest';
 
     async findWork(bot: Bot, role: FarmingRole): Promise<WorkProposal | null> {
-        // 1. Don't harvest if inventory is full (Logistics will handle deposit)
         if (bot.inventory.emptySlotCount() < 1) return null;
 
-        // 2. Find mature crops
-        const farmAnchor = role.getNearestPOI(bot, 'farm_center');
-        const point = farmAnchor ? farmAnchor.position : bot.entity.position;
+        // Use farm center if known, otherwise bot position
+        const farmAnchor = role.getNearestPOI(bot, 'farm_center')?.position || bot.entity.position;
 
         const block = bot.findBlock({
-            point,
+            point: farmAnchor,
             maxDistance: 32,
             matching: (b) => {
+                // FIX: Check if block and position exist before accessing them
                 if (!b || !b.position) return false;
-                // Filter out blacklisted blocks
+                
+                // Now safe to access properties
                 if (role.failedBlocks.has(b.position.toString())) return false;
+                
                 return this.isMature(b);
             }
         });
@@ -27,24 +31,32 @@ export class HarvestTask implements Task {
         if (block) {
             return {
                 priority: 10,
-                description: `Harvesting ${block.name}`,
+                description: `Harvesting ${block.name} at ${block.position}`,
                 target: block,
-                range: 2.5, // FIX: Reduce range
                 task: this
             };
         }
-
         return null;
     }
 
     async perform(bot: Bot, role: FarmingRole, target: any): Promise<void> {
         if (!target) return;
         
-        role.log(`Digging ${target.name}...`);
-        await bot.lookAt(target.position.offset(0.5, 0.5, 0.5));
-        await bot.dig(target);
-        
-        // Simple pickup logic (GoalNear usually handles this)
+        try {
+            // Move to the crop using GoalLookAtBlock (stops adjacent to block)
+            await bot.pathfinder.goto(new GoalLookAtBlock(target.position, bot.world));
+            
+            // Break it
+            await bot.dig(target);
+            
+            // Wait brief moment for drops
+            await new Promise(resolve => setTimeout(resolve, 250));
+        } catch (err) {
+            role.log(`Failed to harvest: ${err}`);
+            if (target && target.position) {
+                role.blacklistBlock(target.position);
+            }
+        }
     }
 
     private isMature(block: any): boolean {
@@ -58,6 +70,7 @@ export class HarvestTask implements Task {
             return parseInt(props.age) >= maxAge;
         }
         
+        // Fallback for metadata (older versions)
         return block.metadata >= 7;
     }
 }

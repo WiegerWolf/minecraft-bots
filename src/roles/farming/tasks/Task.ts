@@ -11,15 +11,6 @@ export interface WorkProposal {
 
 export interface Task {
     name: string;
-
-    /**
-     * Analyzes the environment and proposes work if needed.
-     */
     findWork(bot: Bot, role: FarmingRole): Promise<WorkProposal | null>;
-
-    /**
-     * Performs the actual action (e.g., digging, clicking).
-     * Movement is handled by the FarmingRole before this is called.
-     */
     perform(bot: Bot, role: FarmingRole, target?: any): Promise<void>;
 }
