@@ -10,6 +10,7 @@ export class FarmingRole implements Role {
     private bot: Bot | null = null;
     private blackboard: FarmingBlackboard;
     private behaviorTree: BehaviorNode;
+    private static processHandlersRegistered = false;
 
     constructor() {
         this.blackboard = createBlackboard();
@@ -32,10 +33,36 @@ export class FarmingRole implements Role {
             // Path stopped, this is normal
         });
 
-        // Suppress unhandled pathfinder errors
+        // Handle pathfinder goal_updated event which can throw
+        bot.on('goal_updated' as any, () => {
+            // Goal updated, this is normal when actions interrupt each other
+        });
+
+        // Suppress unhandled promise rejections (pathfinder often rejects promises)
+        process.on('unhandledRejection', (reason: any) => {
+            const message = reason?.message || String(reason);
+            if (message.includes('goal was changed') ||
+                message.includes('GoalChanged') ||
+                message.includes('No path to the goal') ||
+                message.includes('Path was stopped')) {
+                // Normal pathfinder interruptions, ignore
+                return;
+            }
+            console.error('[Farming] Unhandled rejection:', reason);
+        });
+
+        // Suppress unhandled exceptions
         process.on('uncaughtException', (err) => {
-            if (err.message?.includes('goal was changed') || err.name === 'GoalChanged') {
-                // Ignore goal changed errors - these are normal when actions interrupt each other
+            if (err.message?.includes('goal was changed') ||
+                err.name === 'GoalChanged' ||
+                err.message?.includes('No path to the goal') ||
+                err.message?.includes('Path was stopped')) {
+                // Ignore pathfinder errors - these are normal when actions interrupt each other
+                return;
+            }
+            // Ignore protocol errors from chat serialization (MC version issues)
+            if (err.message?.includes('RangeError') || err.message?.includes('out of bounds')) {
+                console.warn('[Farming] Protocol error (ignored):', err.message);
                 return;
             }
             console.error('[Farming] Uncaught exception:', err);
@@ -96,10 +123,22 @@ export class FarmingRole implements Role {
                 await new Promise(resolve => setTimeout(resolve, 100));
 
             } catch (error: unknown) {
-                // Ignore pathfinder goal changed errors - these happen when actions interrupt each other
-                if (error instanceof Error && (error.message.includes('goal was changed') || error.name === 'GoalChanged')) {
-                    // Normal interruption, continue immediately
-                    continue;
+                // Ignore common pathfinder errors - these happen when actions interrupt each other
+                if (error instanceof Error) {
+                    const msg = error.message || '';
+                    if (msg.includes('goal was changed') ||
+                        msg.includes('GoalChanged') ||
+                        msg.includes('No path to the goal') ||
+                        msg.includes('Path was stopped') ||
+                        error.name === 'GoalChanged') {
+                        // Normal interruption, continue immediately
+                        continue;
+                    }
+                    // Protocol errors from chat - log but continue
+                    if (msg.includes('RangeError') || msg.includes('out of bounds')) {
+                        console.warn('[Farming] Protocol error (continuing):', msg);
+                        continue;
+                    }
                 }
                 console.error('[Farming] Loop error:', error);
                 await new Promise(resolve => setTimeout(resolve, 1000));
