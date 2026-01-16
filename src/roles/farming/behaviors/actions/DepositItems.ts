@@ -11,8 +11,9 @@ export class DepositItems implements BehaviorNode {
     name = 'DepositItems';
 
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
-        // Deposit if inventory is full OR we have lots of produce OR lots of seeds
-        const shouldDeposit = bb.inventoryFull || bb.produceCount >= 32 || bb.seedCount >= 64;
+        // Deposit if inventory is full OR we have some produce OR lots of seeds
+        // Lower threshold (16) to deposit more frequently
+        const shouldDeposit = bb.inventoryFull || bb.produceCount >= 16 || bb.seedCount >= 64;
         if (!shouldDeposit) return 'failure';
 
         // Prefer farm chest, fall back to nearby chests
