@@ -23,13 +23,15 @@ export class FindFarmCenter implements BehaviorNode {
         if (bb.farmCenter) return 'failure';
 
         // Try to find water nearby via blackboard - must be under clear sky
+        // Use radius 0 - just check the water block itself, not surroundings
+        // Shorelines are fine even if there are trees/hills on one side!
         const suitableWater = bb.nearbyWater.filter(w =>
-            !isNearBadWater(bb, w.position) && hasClearSky(bot, w.position, 4)
+            !isNearBadWater(bb, w.position) && hasClearSky(bot, w.position, 0)
         );
 
-        // Record any cave water we found
+        // Record any cave water we found (only if the water itself is underground)
         for (const water of bb.nearbyWater) {
-            if (!hasClearSky(bot, water.position, 4)) {
+            if (!hasClearSky(bot, water.position, 0)) {
                 recordBadWater(bb, water.position);
             }
         }
@@ -56,6 +58,7 @@ export class FindFarmCenter implements BehaviorNode {
         });
 
         // Filter for water under clear sky (not in caves) and not near known bad water
+        // Be lenient - just check if the water itself has sky above, shorelines are fine!
         const suitablePositions: Vec3[] = [];
         let caveWaterCount = 0;
 
@@ -65,10 +68,11 @@ export class FindFarmCenter implements BehaviorNode {
             // Skip if near known bad water
             if (isNearBadWater(bb, vec)) continue;
 
-            if (hasClearSky(bot, vec, 4)) {
+            // Just check if this water block has clear sky - radius 0
+            if (hasClearSky(bot, vec, 0)) {
                 suitablePositions.push(pos);
             } else {
-                // Record this as bad water
+                // Record this as bad water (underground)
                 recordBadWater(bb, vec);
                 caveWaterCount++;
             }

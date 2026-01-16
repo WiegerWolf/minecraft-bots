@@ -309,20 +309,11 @@ export class GatherWood implements BehaviorNode {
 
             if (!surfaceBlock) continue;
 
-            // Check spacing from previously planted saplings
-            const tooClose = this.plantedSaplingPositions.some(
+            // Check spacing from saplings we just planted in this session
+            const tooCloseToPlanted = this.plantedSaplingPositions.some(
                 planted => planted.distanceTo(surfacePos) < SAPLING_SPACING
             );
-            if (tooClose) continue;
-
-            // Also check for existing saplings/trees nearby
-            const nearbyTree = bot.findBlocks({
-                point: surfacePos,
-                maxDistance: SAPLING_SPACING - 1,
-                count: 1,
-                matching: b => b.name.includes('sapling') || b.name.includes('log')
-            });
-            if (nearbyTree.length > 0) continue;
+            if (tooCloseToPlanted) continue;
 
             // Check surface - air is best, but we can clear vegetation
             if (surfaceBlock.name === 'air') {

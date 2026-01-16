@@ -259,10 +259,12 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     // ═══════════════════════════════════════════════
     if (!bb.farmCenter && bb.nearbyWater.length > 0) {
         // Find water with best farming potential - must be under clear sky (not in caves!)
+        // Use radius 0 - just check the water block itself. Shorelines with trees nearby are OK!
         const candidates = bb.nearbyWater
             .filter(w => w.position.y > pos.y - 10 && w.position.y < pos.y + 10) // Sane Y level!
-            .filter(w => hasClearSky(bot, w.position, 4)); // Must have open sky above farm area
+            .filter(w => hasClearSky(bot, w.position, 0)); // Just check water block isn't underground
 
+        // Sort by tillable ground, but any amount is OK for early game
         const best = candidates.sort((a, b) => {
             const scoreA = countTillableAround(bot, a.position);
             const scoreB = countTillableAround(bot, b.position);
@@ -270,8 +272,9 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         })[0];
 
         if (best) {
+            const tillable = countTillableAround(bot, best.position);
             bb.farmCenter = best.position.clone();
-            console.log(`[Blackboard] Established farm center at ${bb.farmCenter}`);
+            console.log(`[Blackboard] Established farm center at ${bb.farmCenter} (${tillable} tillable blocks nearby)`);
         } else if (bb.nearbyWater.length > 0) {
             console.log(`[Blackboard] Found ${bb.nearbyWater.length} water sources but none under clear sky`);
         }
@@ -303,19 +306,32 @@ function isMatureCrop(block: Block): boolean {
 
 function countTillableAround(bot: Bot, center: Vec3): number {
     let count = 0;
-    for (let x = -4; x <= 4; x++) {
-        for (let z = -4; z <= 4; z++) {
-            const block = bot.blockAt(center.offset(x, 0, z));
-            // FIX: Add null checks
-            if (!block || !block.name || !block.position) continue;
+    // Check in hydration range (4 blocks) plus a bit more for irregular shapes
+    for (let x = -5; x <= 5; x++) {
+        for (let z = -5; z <= 5; z++) {
+            // Check same level and one above (for sloped terrain)
+            for (let y = 0; y <= 1; y++) {
+                const block = bot.blockAt(center.offset(x, y, z));
+                if (!block || !block.name || !block.position) continue;
 
-            if (['grass_block', 'dirt'].includes(block.name)) {
-                const above = bot.blockAt(block.position.offset(0, 1, 0));
-                if (above && above.name === 'air') count++;
+                // Dirt and grass are ideal
+                if (['grass_block', 'dirt', 'coarse_dirt', 'rooted_dirt', 'podzol'].includes(block.name)) {
+                    const above = bot.blockAt(block.position.offset(0, 1, 0));
+                    if (above && (above.name === 'air' || above.name.includes('grass') || above.name.includes('fern'))) {
+                        count++;
+                    }
+                }
+                // Sand and gravel can be replaced with dirt - count as half
+                else if (['sand', 'gravel', 'clay'].includes(block.name)) {
+                    const above = bot.blockAt(block.position.offset(0, 1, 0));
+                    if (above && above.name === 'air') {
+                        count += 0.5;
+                    }
+                }
             }
         }
     }
-    return count;
+    return Math.floor(count);
 }
 
 // Check if position is within 4 blocks of any water (Minecraft hydration range)
