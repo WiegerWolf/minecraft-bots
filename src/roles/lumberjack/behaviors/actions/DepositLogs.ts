@@ -1,7 +1,6 @@
 import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { villageManager } from '../../../../shared/VillageState';
 import { goals } from 'mineflayer-pathfinder';
 import { LOG_NAMES, SAPLING_NAMES } from '../../../shared/TreeHarvest';
 
@@ -32,11 +31,9 @@ export class DepositLogs implements BehaviorNode {
             if (bb.nearbyChests.length > 0) {
                 chestPos = bb.nearbyChests[0]!.position;
                 // Register it as shared chest
-                try {
-                    await villageManager.setSharedChest(chestPos);
+                if (bb.villageChat) {
+                    bb.villageChat.announceSharedChest(chestPos);
                     bb.sharedChest = chestPos;
-                } catch (error) {
-                    console.warn('[Lumberjack] Failed to register shared chest:', error);
                 }
             } else {
                 return 'failure'; // No chest available
