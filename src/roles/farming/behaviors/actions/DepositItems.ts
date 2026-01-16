@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
+import { Vec3 } from 'vec3';
 import { sleep } from './utils';
 
 const { GoalLookAtBlock } = goals;
@@ -15,8 +16,8 @@ export class DepositItems implements BehaviorNode {
         if (!shouldDeposit) return 'failure';
 
         // Prefer farm chest, fall back to nearby chests
-        let chestPos = bb.farmChest;
-        if (!chestPos && bb.nearbyChests.length > 0) {
+        let chestPos: Vec3 | null = bb.farmChest;
+        if (!chestPos && bb.nearbyChests.length > 0 && bb.nearbyChests[0]) {
             chestPos = bb.nearbyChests[0].position;
         }
         if (!chestPos) return 'failure';

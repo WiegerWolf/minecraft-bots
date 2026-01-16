@@ -55,8 +55,9 @@ export class SetupFarmChest implements BehaviorNode {
             matching: b => b?.name === 'chest'
         });
 
-        if (chests.length > 0) {
-            const block = bot.blockAt(chests[0]);
+        const firstChest = chests[0];
+        if (firstChest) {
+            const block = bot.blockAt(firstChest);
             if (block) return { position: block.position };
         }
         return null;
@@ -130,7 +131,10 @@ export class SetupFarmChest implements BehaviorNode {
                 if (!logItem) return 'failure';
 
                 const plankName = logItem.name.replace('_log', '_planks');
-                const recipe = bot.recipesFor(bot.registry.itemsByName[plankName]?.id)[0];
+                const plankId = bot.registry.itemsByName[plankName]?.id;
+                if (!plankId) return 'failure';
+
+                const recipe = bot.recipesFor(plankId, null, 1, null)[0];
                 if (recipe) {
                     await bot.craft(recipe, 2);  // 2 logs = 8 planks
                     return 'success';  // Will craft chest next tick
@@ -151,12 +155,13 @@ export class SetupFarmChest implements BehaviorNode {
         bb.lastAction = 'craft_chest';
 
         // Find or place a crafting table
-        let craftingTable = bot.findBlocks({
+        const craftingTables = bot.findBlocks({
             point: bot.entity.position,
             maxDistance: 32,
             count: 1,
             matching: b => b?.name === 'crafting_table'
-        })[0];
+        });
+        const craftingTable = craftingTables[0];
 
         if (!craftingTable) {
             // Need to place a crafting table first
@@ -167,7 +172,10 @@ export class SetupFarmChest implements BehaviorNode {
                     const plankItem = bot.inventory.items().find(i => i.name.endsWith('_planks'));
                     if (!plankItem) return 'failure';
 
-                    const tableRecipe = bot.recipesFor(bot.registry.itemsByName['crafting_table']?.id)[0];
+                    const tableId = bot.registry.itemsByName['crafting_table']?.id;
+                    if (!tableId) return 'failure';
+
+                    const tableRecipe = bot.recipesFor(tableId, null, 1, null)[0];
                     if (tableRecipe) {
                         await bot.craft(tableRecipe, 1);
                     }
@@ -186,7 +194,10 @@ export class SetupFarmChest implements BehaviorNode {
 
             await bot.pathfinder.goto(new GoalLookAtBlock(craftingTable, bot.world));
 
-            const chestRecipe = bot.recipesFor(bot.registry.itemsByName['chest']?.id, null, 1, tableBlock)[0];
+            const chestId = bot.registry.itemsByName['chest']?.id;
+            if (!chestId) return 'failure';
+
+            const chestRecipe = bot.recipesFor(chestId, null, 1, tableBlock)[0];
             if (!chestRecipe) {
                 console.log(`[BT] No chest recipe found at crafting table`);
                 return 'failure';
