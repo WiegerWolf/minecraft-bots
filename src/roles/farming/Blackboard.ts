@@ -8,6 +8,12 @@ export interface ExplorationMemory {
     reason?: string;  // Why this location was recorded (e.g., 'visited', 'bad_water')
 }
 
+export interface TreeHarvestState {
+    basePos: Vec3;
+    logType: string;
+    phase: 'chopping' | 'clearing_leaves' | 'replanting' | 'done';
+}
+
 export interface FarmingBlackboard {
     // Perception data (refreshed each tick)
     nearbyWater: Block[];
@@ -36,6 +42,9 @@ export interface FarmingBlackboard {
     // Exploration memory (persists across ticks)
     exploredPositions: ExplorationMemory[];  // Recently visited positions
     badWaterPositions: ExplorationMemory[];  // Cave water locations to avoid
+
+    // Tree harvesting state (persists across ticks)
+    currentTreeHarvest: TreeHarvestState | null;
 
     // Computed booleans for easy decision making
     canTill: boolean;
@@ -71,6 +80,8 @@ export function createBlackboard(): FarmingBlackboard {
 
         exploredPositions: [],
         badWaterPositions: [],
+
+        currentTreeHarvest: null,
 
         canTill: false,
         canPlant: false,

@@ -45,33 +45,40 @@ import {
 /**
  * Creates the farming behavior tree with the following priority order:
  * 1. Pick up nearby items (always do this first)
- * 2. Deposit produce to farm chest if inventory full or lots of produce
- * 3. Get tools if needed (craft hoe)
- * 4. Find farm center if we don't have one
- * 5. Clear farm area (remove trees, level terrain)
- * 6. Setup farm chest if we have resources and no chest yet
- * 7. Repair holes in the farm field
- * 8. Harvest mature crops (also gives seeds!)
- * 9. Plant seeds on empty farmland
- * 10. Till ground to create new farmland
- * 11. Get seeds by breaking grass (only if no mature crops to harvest)
- * 12. Wait at farm if crops growing (have farm center)
- * 13. Explore as last resort
+ * 2. Finish harvesting a tree if we started one (clear leaves, replant)
+ * 3. Deposit produce to farm chest if inventory full or lots of produce
+ * 4. Get tools if needed (craft hoe)
+ * 5. Find farm center if we don't have one
+ * 6. Clear farm area (remove trees, level terrain)
+ * 7. Setup farm chest if we have resources and no chest yet
+ * 8. Repair holes in the farm field
+ * 9. Harvest mature crops (also gives seeds!)
+ * 10. Plant seeds on empty farmland
+ * 11. Till ground to create new farmland
+ * 12. Get seeds by breaking grass (only if no mature crops to harvest)
+ * 13. Wait at farm if crops growing (have farm center)
+ * 14. Explore as last resort
  */
 export function createFarmingBehaviorTree(): BehaviorNode {
     return new Selector('Root', [
         // Priority 1: Pick up nearby items (always do this first)
         new PickupItems(),
 
-        // Priority 2: Deposit produce to farm chest
+        // Priority 2: Finish harvesting a tree we started (leaves, replant)
+        new Sequence('FinishTreeHarvest', [
+            new Condition('HasActiveTreeHarvest', bb => bb.currentTreeHarvest !== null),
+            new GatherWood(),  // Will continue the harvest
+        ]),
+
+        // Priority 3: Deposit produce to farm chest
         new DepositItems(),
 
-        // Priority 3: Get tools if needed
+        // Priority 4: Get tools if needed
         new Sequence('GetTools', [
             new Condition('NeedsHoe', bb => !bb.hasHoe),
             new Selector('ObtainHoe', [
                 new CraftHoe(),
-                new GatherWood(),
+                new GatherWood(true),  // startNewTreeOnly mode
             ])
         ]),
 

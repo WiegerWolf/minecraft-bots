@@ -30,27 +30,44 @@ const SAPLING_MAP: Record<string, string> = {
     'cherry_log': 'cherry_sapling',
 };
 
-interface TreeHarvestState {
-    basePos: Vec3;
-    logType: string;
-    phase: 'chopping' | 'clearing_leaves' | 'replanting' | 'done';
-}
-
+/**
+ * GatherWood behavior - harvests trees sustainably.
+ * Can be used in two modes:
+ * 1. startNewTreeOnly=false (default): Continues existing harvest OR starts new if needed
+ * 2. startNewTreeOnly=true: Only starts new trees, ignores existing harvest
+ */
 export class GatherWood implements BehaviorNode {
     name = 'GatherWood';
-    private currentTree: TreeHarvestState | null = null;
+    private startNewTreeOnly: boolean;
+
+    constructor(startNewTreeOnly: boolean = false) {
+        this.startNewTreeOnly = startNewTreeOnly;
+    }
 
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
-        if (bb.hasHoe) return 'failure';
-        if (bb.plankCount >= 4) return 'failure';
-        if (bb.logCount > 0 && !this.currentTree) return 'failure';
+        // If we're only supposed to start new trees (called from GetTools sequence)
+        if (this.startNewTreeOnly) {
+            if (bb.currentTreeHarvest) return 'failure'; // Let FinishTreeHarvest handle it
+            if (bb.hasHoe) return 'failure';
+            if (bb.plankCount >= 4) return 'failure';
+            if (bb.logCount > 0) return 'failure';
 
-        bb.lastAction = 'gather_wood';
+            bb.lastAction = 'gather_wood';
+            return this.findAndStartTree(bot, bb);
+        }
 
-        // Continue harvesting current tree if we have one
-        if (this.currentTree) {
+        // Default mode: finish existing harvest first
+        if (bb.currentTreeHarvest) {
+            bb.lastAction = 'gather_wood';
             return this.continueHarvest(bot, bb);
         }
+
+        // Only start a new tree if we need wood
+        if (bb.hasHoe) return 'failure';
+        if (bb.plankCount >= 4) return 'failure';
+        if (bb.logCount > 0) return 'failure';
+
+        bb.lastAction = 'gather_wood';
 
         // Find a new tree to harvest
         return this.findAndStartTree(bot, bb);
@@ -89,8 +106,8 @@ export class GatherWood implements BehaviorNode {
 
         if (!baseLog) return 'failure';
 
-        // Start harvesting this tree
-        this.currentTree = {
+        // Start harvesting this tree (store in blackboard so it persists)
+        bb.currentTreeHarvest = {
             basePos: baseLog.position.clone(),
             logType: baseLog.name,
             phase: 'chopping'
@@ -102,30 +119,30 @@ export class GatherWood implements BehaviorNode {
     }
 
     private async continueHarvest(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
-        if (!this.currentTree) return 'failure';
+        if (!bb.currentTreeHarvest) return 'failure';
 
-        switch (this.currentTree.phase) {
+        switch (bb.currentTreeHarvest.phase) {
             case 'chopping':
-                return this.chopLogs(bot);
+                return this.chopLogs(bot, bb);
             case 'clearing_leaves':
-                return this.clearLeaves(bot);
+                return this.clearLeaves(bot, bb);
             case 'replanting':
                 return this.replantSapling(bot, bb);
             case 'done':
-                this.currentTree = null;
+                bb.currentTreeHarvest = null;
                 return 'failure'; // Allow other behaviors to run
         }
     }
 
-    private async chopLogs(bot: Bot): Promise<BehaviorStatus> {
-        if (!this.currentTree) return 'failure';
+    private async chopLogs(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
+        if (!bb.currentTreeHarvest) return 'failure';
 
         // Find remaining logs in a column above the base
-        const baseX = Math.floor(this.currentTree.basePos.x);
-        const baseZ = Math.floor(this.currentTree.basePos.z);
+        const baseX = Math.floor(bb.currentTreeHarvest.basePos.x);
+        const baseZ = Math.floor(bb.currentTreeHarvest.basePos.z);
 
         for (let dy = 0; dy < 20; dy++) {
-            const y = Math.floor(this.currentTree.basePos.y) + dy;
+            const y = Math.floor(bb.currentTreeHarvest.basePos.y) + dy;
             const block = bot.blockAt(new Vec3(baseX, y, baseZ));
 
             if (block && LOG_NAMES.includes(block.name)) {
@@ -163,15 +180,15 @@ export class GatherWood implements BehaviorNode {
 
         // No more logs in column, move to clearing leaves
         console.log(`[BT] Tree trunk cleared, removing leaves...`);
-        this.currentTree.phase = 'clearing_leaves';
+        bb.currentTreeHarvest.phase = 'clearing_leaves';
         return 'success';
     }
 
-    private async clearLeaves(bot: Bot): Promise<BehaviorStatus> {
-        if (!this.currentTree) return 'failure';
+    private async clearLeaves(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
+        if (!bb.currentTreeHarvest) return 'failure';
 
         // Find leaves near where the tree was
-        const searchCenter = this.currentTree.basePos.offset(0, 3, 0);
+        const searchCenter = bb.currentTreeHarvest.basePos.offset(0, 3, 0);
 
         const leaves = bot.findBlocks({
             point: searchCenter,
@@ -188,19 +205,19 @@ export class GatherWood implements BehaviorNode {
         if (reachableLeaves.length === 0) {
             // No more reachable leaves, move to replanting
             console.log(`[BT] Leaves cleared, checking for sapling to replant...`);
-            this.currentTree.phase = 'replanting';
+            bb.currentTreeHarvest.phase = 'replanting';
             return 'success';
         }
 
         const leafPos = reachableLeaves[0];
         if (!leafPos) {
-            this.currentTree.phase = 'replanting';
+            bb.currentTreeHarvest.phase = 'replanting';
             return 'success';
         }
 
         const leafBlock = bot.blockAt(leafPos);
         if (!leafBlock) {
-            this.currentTree.phase = 'replanting';
+            bb.currentTreeHarvest.phase = 'replanting';
             return 'success';
         }
 
@@ -224,17 +241,17 @@ export class GatherWood implements BehaviorNode {
                 }
             }
             // Move on after a few failures
-            this.currentTree.phase = 'replanting';
+            bb.currentTreeHarvest.phase = 'replanting';
             return 'success';
         }
     }
 
     private async replantSapling(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
-        if (!this.currentTree) return 'failure';
+        if (!bb.currentTreeHarvest) return 'failure';
 
-        const saplingName = SAPLING_MAP[this.currentTree.logType];
+        const saplingName = SAPLING_MAP[bb.currentTreeHarvest.logType];
         if (!saplingName) {
-            this.currentTree.phase = 'done';
+            bb.currentTreeHarvest.phase = 'done';
             return 'success';
         }
 
@@ -242,12 +259,12 @@ export class GatherWood implements BehaviorNode {
         const sapling = bot.inventory.items().find(i => i.name === saplingName);
         if (!sapling) {
             console.log(`[BT] No ${saplingName} to replant`);
-            this.currentTree.phase = 'done';
+            bb.currentTreeHarvest.phase = 'done';
             return 'success';
         }
 
         // Find a suitable spot near the original tree base
-        const basePos = this.currentTree.basePos;
+        const basePos = bb.currentTreeHarvest.basePos;
         let plantSpot: Vec3 | null = null;
 
         // Check the original position first, then nearby spots
@@ -272,7 +289,7 @@ export class GatherWood implements BehaviorNode {
 
         if (!plantSpot) {
             console.log(`[BT] No suitable spot to replant sapling`);
-            this.currentTree.phase = 'done';
+            bb.currentTreeHarvest.phase = 'done';
             return 'success';
         }
 
@@ -293,7 +310,7 @@ export class GatherWood implements BehaviorNode {
             console.log(`[BT] Failed to replant sapling: ${err}`);
         }
 
-        this.currentTree.phase = 'done';
+        bb.currentTreeHarvest.phase = 'done';
         return 'success';
     }
 }
