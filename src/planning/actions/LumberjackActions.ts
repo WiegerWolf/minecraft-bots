@@ -125,24 +125,58 @@ export class DepositLogsAction extends BaseGOAPAction {
 
 /**
  * GOAP Action: Craft a wooden axe
+ * The implementation handles crafting planks/sticks internally.
+ * Minimum requirement: 2 logs (will be converted to planks) or 5+ planks.
  */
 export class CraftAxeAction extends BaseGOAPAction {
   name = 'CraftAxe';
   private impl = new CraftAxe();
 
+  // Basic check - detailed material check done in checkPreconditions override
   preconditions = [
     booleanPrecondition('has.axe', false, 'no axe yet'),
-    booleanPrecondition('derived.canCraftAxe', true, 'has materials for axe'),
+    // Need at least 2 logs or 5 planks (for axe head + sticks + potentially crafting table)
+    // This allows the planner to chain ChopTree → CraftAxe
+    numericPrecondition('inv.logs', v => v >= 2, 'has logs for planks'),
   ];
 
   effects = [
     setEffect('has.axe', true, 'crafted axe'),
-    incrementEffect('inv.planks', -3, 'used planks'),
-    incrementEffect('inv.sticks', -2, 'used sticks'),
+    incrementEffect('inv.logs', -2, 'used logs for planks'),
   ];
 
   override getCost(ws: WorldState): number {
     return 2.0;
+  }
+
+  override async execute(bot: Bot, bb: LumberjackBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
+ * GOAP Action: Craft a wooden axe when we already have planks
+ * This variant is for when we already have enough planks/sticks.
+ */
+export class CraftAxeFromPlanksAction extends BaseGOAPAction {
+  name = 'CraftAxeFromPlanks';
+  private impl = new CraftAxe();
+
+  preconditions = [
+    booleanPrecondition('has.axe', false, 'no axe yet'),
+    // Need 5 planks (3 for axe head + 2 for sticks, or already have sticks)
+    numericPrecondition('inv.planks', v => v >= 5, 'has enough planks'),
+  ];
+
+  effects = [
+    setEffect('has.axe', true, 'crafted axe'),
+    incrementEffect('inv.planks', -5, 'used planks for axe + sticks'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Lower cost since we already have materials ready
+    return 1.5;
   }
 
   override async execute(bot: Bot, bb: LumberjackBlackboard, ws: WorldState): Promise<ActionResult> {
@@ -297,6 +331,7 @@ export function createLumberjackActions(): BaseGOAPAction[] {
     new FinishTreeHarvestAction(),
     new DepositLogsAction(),
     new CraftAxeAction(),
+    new CraftAxeFromPlanksAction(), // Variant when we have planks ready
     new FulfillRequestsAction(),
     new ProcessWoodAction(),
     new CraftChestAction(),

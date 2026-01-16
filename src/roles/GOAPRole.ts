@@ -54,6 +54,9 @@ export abstract class GOAPRole implements Role {
   protected tickInterval: NodeJS.Timeout | null = null;
   protected currentWorldState: WorldState | null = null;
 
+  // Failed goal cooldowns: goal name -> timestamp when cooldown expires
+  private failedGoalCooldowns: Map<string, number> = new Map();
+
   // Actions and goals to use (set by subclass)
   protected abstract getActions(): GOAPAction[];
   protected abstract getGoals(): Goal[];
@@ -168,8 +171,37 @@ export abstract class GOAPRole implements Role {
   private async planNextGoal(): Promise<void> {
     if (!this.currentWorldState || !this.arbiter || !this.planner || !this.executor) return;
 
-    // Select the best goal
-    const goalResult = this.arbiter.selectGoal(this.currentWorldState);
+    // Clean up expired cooldowns
+    const now = Date.now();
+    for (const [goalName, expiry] of this.failedGoalCooldowns) {
+      if (now >= expiry) {
+        this.failedGoalCooldowns.delete(goalName);
+      }
+    }
+
+    // Select the best goal (may need multiple attempts if top goals are on cooldown)
+    let goalResult = this.arbiter.selectGoal(this.currentWorldState);
+    let attempts = 0;
+    const maxAttempts = 5;
+
+    while (goalResult && attempts < maxAttempts) {
+      const { goal } = goalResult;
+
+      // Check if this goal is on cooldown
+      const cooldownExpiry = this.failedGoalCooldowns.get(goal.name);
+      if (cooldownExpiry && now < cooldownExpiry) {
+        // Goal is on cooldown, temporarily exclude it and try next best
+        if (this.config.debug) {
+          console.log(`[GOAP] Goal ${goal.name} is on cooldown for ${((cooldownExpiry - now) / 1000).toFixed(1)}s`);
+        }
+        this.arbiter.clearCurrentGoal();
+        goalResult = this.arbiter.selectGoal(this.currentWorldState);
+        attempts++;
+        continue;
+      }
+
+      break;
+    }
 
     if (!goalResult) {
       if (this.config.debug) {
@@ -192,10 +224,15 @@ export abstract class GOAPRole implements Role {
 
     if (!planResult.success) {
       console.log(`[GOAP] Failed to plan for goal: ${goal.name}`);
+      // Put goal on cooldown (5 seconds) before trying again
+      this.failedGoalCooldowns.set(goal.name, now + 5000);
       // Clear current goal so we can try another
       this.arbiter.clearCurrentGoal();
       return;
     }
+
+    // Planning succeeded, clear any cooldown for this goal
+    this.failedGoalCooldowns.delete(goal.name);
 
     // Load plan into executor
     if (this.config.debug) {

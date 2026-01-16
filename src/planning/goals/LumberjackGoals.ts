@@ -70,7 +70,7 @@ export class CompleteTreeHarvestGoal extends BaseGoal {
 
 /**
  * Goal: Obtain an axe for efficient tree chopping.
- * High priority when no axe available.
+ * High priority when no axe available and materials exist.
  */
 export class ObtainAxeGoal extends BaseGoal {
   name = 'ObtainAxe';
@@ -86,8 +86,27 @@ export class ObtainAxeGoal extends BaseGoal {
 
     if (hasAxe) return 0;
 
-    // Higher priority if we can craft one now
-    return canCraft ? 80 : 75;
+    // Can craft right now - high priority
+    if (canCraft) return 80;
+
+    // Check if we have any path to getting materials
+    const logCount = ws.getNumber('inv.logs');
+    const plankCount = ws.getNumber('inv.planks');
+    const treeCount = ws.getNumber('nearby.trees');
+
+    // If we have logs, we can process them to planks
+    // Need at least 2 logs to get 8 planks (enough to make sticks + axe head)
+    if (logCount >= 2 || plankCount >= 3) {
+      return 70; // Can get materials soon
+    }
+
+    // If we have some logs/planks and trees nearby, still viable
+    if ((logCount >= 1 || plankCount >= 1) && treeCount > 0) {
+      return 60;
+    }
+
+    // No materials and no trees - can't craft, return 0 to let other goals (like Patrol) run
+    return 0;
   }
 }
 
