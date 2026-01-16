@@ -50,18 +50,18 @@ export function createLumberjackBehaviorTree(): BehaviorNode {
         // Priority 1: Pick up nearby items (always do this first)
         new PickupItems(),
 
-        // Priority 2: Finish harvesting a tree we started (leaves, replant)
-        new Sequence('FinishTreeHarvest', [
-            new Condition('HasActiveTreeHarvest', bb => bb.currentTreeHarvest !== null),
-            new FinishTreeHarvest(),
-        ]),
-
-        // Priority 3: Fulfill requests from other bots (only if we have shared chest and materials)
+        // Priority 2: Fulfill requests from other bots (only if we have shared chest and materials)
         new Sequence('FulfillPendingRequests', [
             new Condition('HasPendingRequests', bb => bb.hasPendingRequests),
             new Condition('HasChestAccess', bb => bb.sharedChest !== null || bb.nearbyChests.length > 0),
             new Condition('HasSomeMaterials', bb => bb.logCount > 0 || bb.plankCount > 0 || bb.stickCount > 0),
             new FulfillRequests(),
+        ]),
+
+        // Priority 3: Finish harvesting a tree we started (leaves, replant)
+        new Sequence('FinishTreeHarvest', [
+            new Condition('HasActiveTreeHarvest', bb => bb.currentTreeHarvest !== null),
+            new FinishTreeHarvest(),
         ]),
 
         // Priority 4: Craft and place crafting table at village center if needed
