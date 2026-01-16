@@ -26,6 +26,7 @@ import {
     FulfillRequests,
     DepositLogs,
     CraftAxe,
+    CraftChest,
     ProcessWood,
     PatrolForest
 } from './actions';
@@ -60,7 +61,15 @@ export function createLumberjackBehaviorTree(): BehaviorNode {
             new FulfillRequests(),
         ]),
 
-        // Priority 4: Deposit items if inventory getting full and we have a chest
+        // Priority 4: Craft chest if needed and we have materials
+        new Sequence('CraftChestIfNeeded', [
+            new Condition('NeedsToDeposit', bb => bb.needsToDeposit),
+            new Condition('NoChestAvailable', bb => bb.sharedChest === null && bb.nearbyChests.length === 0),
+            new Condition('HasMaterialsForChest', bb => bb.plankCount >= 8 || bb.logCount >= 2),
+            new CraftChest(),
+        ]),
+
+        // Priority 5: Deposit items if inventory getting full and we have a chest
         new Sequence('DepositWhenFull', [
             new Condition('NeedsToDeposit', bb => bb.needsToDeposit),
             new Condition('HasChest', bb => bb.sharedChest !== null || bb.nearbyChests.length > 0),

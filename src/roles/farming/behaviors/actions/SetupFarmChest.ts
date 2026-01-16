@@ -194,11 +194,11 @@ export class SetupFarmChest implements BehaviorNode {
             count: 1,
             matching: b => b?.name === 'crafting_table'
         });
-        const craftingTable = craftingTables[0];
+        let craftingTable = craftingTables[0];
 
         if (!craftingTable) {
             // Need to place a crafting table first
-            const tableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
+            let tableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
             if (!tableItem) {
                 // Craft a crafting table (4 planks)
                 try {
@@ -211,13 +211,44 @@ export class SetupFarmChest implements BehaviorNode {
                     const tableRecipe = bot.recipesFor(tableId, null, 1, null)[0];
                     if (tableRecipe) {
                         await bot.craft(tableRecipe, 1);
+                        tableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
                     }
                 } catch (err) {
                     console.log(`[BT] Failed to craft crafting table: ${err}`);
                     return 'failure';
                 }
             }
-            return 'success';  // Will place table next tick
+
+            if (tableItem) {
+                // Place the crafting table
+                const pos = bot.entity.position.floored();
+                for (const offset of [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)]) {
+                    const placePos = pos.plus(offset);
+                    const groundBlock = bot.blockAt(placePos.offset(0, -1, 0));
+                    const targetBlock = bot.blockAt(placePos);
+
+                    if (groundBlock && groundBlock.boundingBox === 'block' && targetBlock && targetBlock.name === 'air') {
+                        try {
+                            await bot.equip(tableItem, 'hand');
+                            await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
+                            await sleep(200);
+                            const placedTable = bot.blockAt(placePos);
+                            if (placedTable && placedTable.name === 'crafting_table') {
+                                console.log(`[BT] Placed crafting table at ${placePos}`);
+                                craftingTable = placePos;
+                                break;
+                            }
+                        } catch (err) {
+                            console.log(`[BT] Failed to place crafting table: ${err}`);
+                        }
+                    }
+                }
+            }
+
+            if (!craftingTable) {
+                console.log(`[BT] No crafting table available and failed to place one`);
+                return 'failure';
+            }
         }
 
         // Use crafting table to make chest
