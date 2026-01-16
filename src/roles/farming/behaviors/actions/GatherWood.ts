@@ -272,11 +272,6 @@ export class GatherWood implements BehaviorNode {
             return 'success';
         }
 
-        // Find a suitable spot near the original tree base
-        const basePos = bb.currentTreeHarvest.basePos;
-        let plantSpot: Vec3 | null = null;
-        let needToClear: Block | null = null;
-
         // Blocks that can be cleared to make room for sapling
         const clearableVegetation = [
             'short_grass', 'grass', 'tall_grass', 'fern', 'large_fern',
@@ -286,42 +281,37 @@ export class GatherWood implements BehaviorNode {
             'dead_bush', 'sweet_berry_bush'
         ];
 
-        // Check the original position first, then nearby spots in expanding rings
-        const offsets: [number, number][] = [
-            [0, 0], [1, 0], [-1, 0], [0, 1], [0, -1],
-            [1, 1], [-1, 1], [1, -1], [-1, -1],
-            [2, 0], [-2, 0], [0, 2], [0, -2],
-            [2, 1], [2, -1], [-2, 1], [-2, -1],
-            [1, 2], [-1, 2], [1, -2], [-1, -2]
-        ];
+        // Find ANY grass_block nearby - don't be picky, just plant somewhere reasonable
+        const grassBlocks = bot.findBlocks({
+            point: bot.entity.position,
+            maxDistance: 16,
+            count: 20,
+            matching: b => b.name === 'grass_block' || b.name === 'dirt' || b.name === 'podzol'
+        });
 
-        for (const [dx, dz] of offsets) {
-            const checkPos = basePos.offset(dx, 0, dz);
-            const groundBlock = bot.blockAt(checkPos.offset(0, -1, 0));
-            const surfaceBlock = bot.blockAt(checkPos);
+        let plantSpot: Vec3 | null = null;
+        let needToClear: Block | null = null;
 
-            if (!groundBlock || !surfaceBlock) continue;
+        for (const groundPos of grassBlocks) {
+            const surfacePos = groundPos.offset(0, 1, 0);
+            const surfaceBlock = bot.blockAt(surfacePos);
 
-            // Check if ground is suitable for planting
-            if (!['dirt', 'grass_block', 'podzol', 'mycelium', 'coarse_dirt', 'rooted_dirt'].includes(groundBlock.name)) {
-                continue;
-            }
+            if (!surfaceBlock) continue;
 
             // Check surface - air is best, but we can clear vegetation
             if (surfaceBlock.name === 'air') {
-                plantSpot = checkPos;
+                plantSpot = surfacePos;
                 break;
             } else if (clearableVegetation.includes(surfaceBlock.name)) {
-                // Found a spot with vegetation we can clear
                 if (!plantSpot) {
-                    plantSpot = checkPos;
+                    plantSpot = surfacePos;
                     needToClear = surfaceBlock;
                 }
             }
         }
 
         if (!plantSpot) {
-            console.log(`[BT] No suitable spot to replant sapling`);
+            console.log(`[BT] No suitable spot to replant sapling within 16 blocks`);
             bb.currentTreeHarvest.phase = 'done';
             return 'success';
         }
