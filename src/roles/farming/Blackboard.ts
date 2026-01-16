@@ -121,12 +121,14 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     // ═══════════════════════════════════════════════
     const searchCenter = bb.farmCenter || pos;
     const SEARCH_RADIUS = 32;
+    // Search further for water when we don't have a farm yet
+    const WATER_SEARCH_RADIUS = bb.farmCenter ? SEARCH_RADIUS : 80;
 
     // Find water sources
     bb.nearbyWater = bot.findBlocks({
         point: searchCenter,
-        maxDistance: SEARCH_RADIUS,
-        count: 10,
+        maxDistance: WATER_SEARCH_RADIUS,
+        count: 20,
         matching: b => {
             // FIX: Add null check for unloaded chunks
             if (!b || !b.position) return false;

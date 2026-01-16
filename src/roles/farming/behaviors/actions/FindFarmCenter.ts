@@ -44,10 +44,11 @@ export class FindFarmCenter implements BehaviorNode {
         }
 
         // No water in perception range, search more actively
+        // Search up to 128 blocks (8 chunks) - like a player scanning the horizon
         const waterBlocks = bot.findBlocks({
             point: bot.entity.position,
-            maxDistance: 64,
-            count: 20, // Find multiple candidates to filter
+            maxDistance: 128,
+            count: 50, // Find many candidates to filter
             matching: b => {
                 if (!b || !b.name) return false;
                 return b.name === 'water' || b.name === 'flowing_water';
@@ -74,16 +75,32 @@ export class FindFarmCenter implements BehaviorNode {
         }
 
         if (suitablePositions.length > 0) {
-            const waterPos = suitablePositions[0];
-            if (waterPos) {
-                console.log(`[BT] Found surface water at ${waterPos}, moving to establish farm`);
+            // Sort by distance and prefer lower elevations (near sea level)
+            const SEA_LEVEL = 63;
+            const sortedPositions = suitablePositions
+                .map(pos => ({
+                    pos,
+                    dist: bot.entity.position.distanceTo(pos),
+                    heightScore: Math.abs(pos.y - SEA_LEVEL)
+                }))
+                .sort((a, b) => {
+                    // Prefer positions near sea level, then closer ones
+                    const heightDiff = a.heightScore - b.heightScore;
+                    if (Math.abs(heightDiff) > 10) return heightDiff;
+                    return a.dist - b.dist;
+                });
+
+            const best = sortedPositions[0];
+            if (best) {
+                const dist = Math.round(best.dist);
+                console.log(`[BT] Found surface water at ${best.pos} (${dist} blocks away, Y=${best.pos.y}), moving to establish farm`);
                 bb.lastAction = 'find_farm';
 
                 try {
-                    await bot.pathfinder.goto(new GoalNear(waterPos.x, waterPos.y, waterPos.z, 4));
+                    await bot.pathfinder.goto(new GoalNear(best.pos.x, best.pos.y, best.pos.z, 4));
 
                     // Set farm center directly
-                    bb.farmCenter = new Vec3(waterPos.x, waterPos.y, waterPos.z);
+                    bb.farmCenter = new Vec3(best.pos.x, best.pos.y, best.pos.z);
                     console.log(`[BT] Established farm center at ${bb.farmCenter}`);
 
                     return 'success';
@@ -95,9 +112,9 @@ export class FindFarmCenter implements BehaviorNode {
 
         if (waterBlocks.length > 0) {
             const badWaterMem = bb.badWaterPositions.length;
-            console.log(`[BT] Found ${waterBlocks.length} water sources, ${caveWaterCount} in caves (${badWaterMem} total bad locations remembered)`);
+            console.log(`[BT] Found ${waterBlocks.length} water sources in 128-block range, ${caveWaterCount} in caves (${badWaterMem} bad locations remembered)`);
         } else {
-            console.log(`[BT] No water found in range`);
+            console.log(`[BT] No water found within 128 blocks`);
         }
         return 'failure';
     }

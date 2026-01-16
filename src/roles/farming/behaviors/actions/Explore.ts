@@ -37,8 +37,11 @@ export class Explore implements BehaviorNode {
         // Generate candidate positions in a circle around the bot
         const currentPos = bot.entity.position;
         const candidates: ExplorationCandidate[] = [];
-        const distances = [24, 36, 48];  // Try different distances
-        const directions = 8;
+        const distances = [32, 48, 64, 80];  // Explore further to find water
+        const directions = 12;  // More directions for better coverage
+
+        // Sea level in Minecraft is around Y=62-64
+        const SEA_LEVEL = 63;
 
         for (const dist of distances) {
             for (let i = 0; i < directions; i++) {
@@ -57,6 +60,17 @@ export class Explore implements BehaviorNode {
 
                 // Add small randomness to break ties
                 score += Math.random() * 10;
+
+                // STRONGLY prefer lower elevations when looking for water
+                // Water is most common near sea level
+                if (!bb.farmCenter) {
+                    const heightAboveSeaLevel = surfaceY - SEA_LEVEL;
+                    if (heightAboveSeaLevel > 20) {
+                        score -= heightAboveSeaLevel * 2;  // Heavy penalty for mountains
+                    } else if (heightAboveSeaLevel < 10) {
+                        score += 20;  // Bonus for being near sea level
+                    }
+                }
 
                 // Prefer staying near farm center if we have one (for seed gathering)
                 if (bb.farmCenter) {
