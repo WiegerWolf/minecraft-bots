@@ -102,6 +102,12 @@ export class SetupFarmChest implements BehaviorNode {
 
                 bb.farmChest = chestPos;
                 console.log(`[BT] Farm chest placed at ${bb.farmChest}`);
+
+                // Announce to village chat that we have a shared chest
+                if (bb.villageChat) {
+                    bb.villageChat.announceSharedChest(chestPos);
+                }
+
                 return 'success';
             } catch (err) {
                 console.log(`[BT] Failed to place chest: ${err}`);
