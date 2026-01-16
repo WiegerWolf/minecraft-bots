@@ -571,3 +571,95 @@ export function getExplorationScore(bb: FarmingBlackboard, pos: Vec3): number {
 
     return score;
 }
+
+// ═══════════════════════════════════════════════
+// FACT EXTRACTION HELPERS (for GOAP planning)
+// ═══════════════════════════════════════════════
+
+/**
+ * Get the urgency level for harvesting (0-100).
+ * Higher means more urgent.
+ */
+export function getHarvestUrgency(bb: FarmingBlackboard): number {
+    const cropCount = bb.nearbyMatureCrops.length;
+    if (cropCount === 0) return 0;
+    if (bb.inventoryFull) return 0; // Can't harvest if full
+
+    // Base urgency on crop count
+    return Math.min(100, 40 + cropCount * 3);
+}
+
+/**
+ * Get the urgency level for collecting drops (0-100).
+ * Very high urgency due to despawn risk.
+ */
+export function getDropCollectionUrgency(bb: FarmingBlackboard): number {
+    const dropCount = bb.nearbyDrops.length;
+    if (dropCount === 0) return 0;
+
+    // High base urgency + scale with count
+    return Math.min(100, 90 + dropCount * 2);
+}
+
+/**
+ * Get the urgency level for depositing produce (0-100).
+ */
+export function getDepositUrgency(bb: FarmingBlackboard): number {
+    if (bb.produceCount === 0) return 0;
+    if (!bb.sharedChest && bb.nearbyChests.length === 0) return 0; // No storage available
+
+    if (bb.inventoryFull) return 90;
+    if (bb.produceCount > 32) return 70;
+    if (bb.produceCount > 16) return 40;
+    return 20;
+}
+
+/**
+ * Get the urgency level for planting seeds (0-100).
+ */
+export function getPlantUrgency(bb: FarmingBlackboard): number {
+    if (!bb.canPlant) return 0;
+    const emptyFarmland = bb.nearbyFarmland.length;
+    if (emptyFarmland === 0) return 0;
+
+    // More empty farmland = more urgent to plant
+    return Math.min(60, 30 + emptyFarmland * 2);
+}
+
+/**
+ * Get the urgency level for obtaining tools (0-100).
+ */
+export function getToolUrgency(bb: FarmingBlackboard): number {
+    if (!bb.needsTools) return 0;
+
+    // Very high priority - can't farm without tools
+    return 80;
+}
+
+/**
+ * Get the urgency level for gathering seeds (0-100).
+ */
+export function getSeedGatheringUrgency(bb: FarmingBlackboard): number {
+    if (!bb.needsSeeds) return 0;
+    if (bb.nearbyGrass.length === 0) return 0;
+
+    // Moderate priority
+    return 50;
+}
+
+/**
+ * Check if the bot has materials to craft something.
+ */
+export function hasMaterialsForCrafting(bb: FarmingBlackboard, recipe: string): boolean {
+    switch (recipe) {
+        case 'wooden_hoe':
+            // Need 2 planks and 2 sticks (or enough to make sticks)
+            return bb.plankCount >= 2 && (bb.stickCount >= 2 || bb.plankCount >= 4);
+        case 'crafting_table':
+            return bb.plankCount >= 4;
+        case 'sticks':
+            return bb.plankCount >= 2;
+        default:
+            return false;
+    }
+}

@@ -18,7 +18,7 @@ export async function pathfinderGotoWithTimeout(
 
     const pathfindingPromise = bot.pathfinder.goto(goal);
 
-    return Promise.race([pathfindingPromise, timeoutPromise]);
+    return Promise.race([pathfindingPromise, timeoutPromise]) as Promise<void>;
 }
 
 /**

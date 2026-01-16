@@ -3,6 +3,7 @@ import { pathfinder, goals } from 'mineflayer-pathfinder';
 import { faker } from '@faker-js/faker';
 import { FarmingRole } from './roles/farming/FarmingRole';
 import { LumberjackRole } from './roles/lumberjack/LumberjackRole';
+import { GOAPFarmingRole } from './roles/GOAPFarmingRole';
 import type { Role } from './roles/Role';
 const { GoalNear } = goals;
 
@@ -27,6 +28,7 @@ bot.loadPlugin(pathfinder);
 const roles: Record<string, Role> = {
     farming: new FarmingRole(),
     lumberjack: new LumberjackRole(),
+    'goap-farming': new GOAPFarmingRole({ debug: true }), // GOAP-based farming with debug enabled
 };
 
 let currentRole: Role | null = null;
