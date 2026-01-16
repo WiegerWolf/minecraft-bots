@@ -357,16 +357,29 @@ export function hasClearSky(bot: Bot, pos: Vec3, checkRadius: number = 0): boole
     return true;
 }
 
+// Blocks that can be cleared by the bot, so they don't block farm selection
+const CLEARABLE_SKY_BLOCKS = [
+    // Tree parts (can be chopped)
+    'oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log',
+    'oak_leaves', 'birch_leaves', 'spruce_leaves', 'jungle_leaves', 'acacia_leaves', 'dark_oak_leaves', 'mangrove_leaves', 'cherry_leaves', 'azalea_leaves', 'flowering_azalea_leaves',
+    // Saplings
+    'oak_sapling', 'birch_sapling', 'spruce_sapling', 'jungle_sapling', 'acacia_sapling', 'dark_oak_sapling', 'mangrove_propagule', 'cherry_sapling',
+];
+
 function checkColumnClear(bot: Bot, x: number, z: number, startY: number, maxY: number): boolean {
     // Check upward for any solid blocks
     for (let y = startY; y < Math.min(maxY, startY + 64); y++) {
         const block = bot.blockAt(new Vec3(Math.floor(x), y, Math.floor(z)));
         if (!block) continue; // Unloaded chunk, assume clear
 
-        // Air, leaves, and transparent blocks are OK
+        // Air and transparent blocks are OK
         if (block.name === 'air' || block.name === 'cave_air' || block.name === 'void_air') continue;
-        if (block.name.includes('leaves')) continue;
         if (block.transparent) continue;
+
+        // Trees and clearable blocks are OK (bot can remove them)
+        if (block.name.includes('leaves')) continue;
+        if (block.name.includes('log')) continue;
+        if (CLEARABLE_SKY_BLOCKS.includes(block.name)) continue;
 
         // Found a solid block above - not clear sky
         return false;

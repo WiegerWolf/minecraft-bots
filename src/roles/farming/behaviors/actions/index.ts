@@ -11,3 +11,4 @@ export { FindFarmCenter } from './FindFarmCenter';
 export { WaitAtFarm } from './WaitAtFarm';
 export { RepairField } from './RepairField';
 export { SetupFarmChest } from './SetupFarmChest';
+export { ClearFarmArea } from './ClearFarmArea';
