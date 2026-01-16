@@ -14,7 +14,7 @@ export class ProcessWood implements BehaviorNode {
 
     async tick(bot: Bot, bb: LumberjackBlackboard): Promise<BehaviorStatus> {
         // Only process if we have excess logs (keep some for storage)
-        if (bb.logCount < 8) return 'failure';
+        if (bb.logCount < 4) return 'failure';
 
         bb.lastAction = 'process_wood';
 

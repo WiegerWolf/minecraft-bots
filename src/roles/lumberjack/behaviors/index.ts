@@ -55,7 +55,7 @@ export function createLumberjackBehaviorTree(): BehaviorNode {
         // Priority 3: Fulfill requests from other bots (only if we have shared chest and materials)
         new Sequence('FulfillPendingRequests', [
             new Condition('HasPendingRequests', bb => bb.hasPendingRequests),
-            new Condition('HasSharedChest', bb => bb.sharedChest !== null),
+            new Condition('HasChestAccess', bb => bb.sharedChest !== null || bb.nearbyChests.length > 0),
             new Condition('HasSomeMaterials', bb => bb.logCount > 0 || bb.plankCount > 0 || bb.stickCount > 0),
             new FulfillRequests(),
         ]),
