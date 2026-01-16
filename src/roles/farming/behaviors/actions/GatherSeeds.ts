@@ -17,9 +17,9 @@ export class GatherSeeds implements BehaviorNode {
 
         if (!grass) {
             // Try finding grass with expanded block names for different MC versions
+            // Note: seagrass and tall_seagrass are excluded because they don't drop seeds
             const grassNames = [
-                'short_grass', 'tall_grass', 'grass', 'fern', 'large_fern',
-                'seagrass', 'tall_seagrass' // Just in case
+                'short_grass', 'tall_grass', 'grass', 'fern', 'large_fern'
             ];
 
             const grassBlocks = bot.findBlocks({
