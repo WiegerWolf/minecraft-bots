@@ -47,12 +47,19 @@ export class GoalArbiter {
   /**
    * Select the best goal for the current world state.
    * Returns null if no valid goals exist.
+   * @param ws - Current world state
+   * @param skipGoals - Optional set of goal names to skip (e.g., goals on cooldown)
    */
-  selectGoal(ws: WorldState): GoalSelectionResult | null {
+  selectGoal(ws: WorldState, skipGoals?: Set<string>): GoalSelectionResult | null {
     // Score all valid goals
     const scoredGoals: Array<{ goal: Goal; utility: number }> = [];
 
     for (const goal of this.goals) {
+      // Skip goals in the skip list (e.g., on cooldown)
+      if (skipGoals && skipGoals.has(goal.name)) {
+        continue;
+      }
+
       // Skip invalid goals
       if (goal.isValid && !goal.isValid(ws)) {
         continue;

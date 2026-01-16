@@ -238,18 +238,19 @@ export class PatrolForestGoal extends BaseGoal {
   name = 'PatrolForest';
   description = 'Explore to find trees';
 
+  // Goal: find trees (have at least 1 tree nearby)
   conditions = [
-    // This goal is never "satisfied" - always available as fallback
+    numericGoalCondition('nearby.trees', v => v > 0, 'found trees'),
   ];
 
   getUtility(ws: WorldState): number {
     const treeCount = ws.getNumber('nearby.trees');
     const idleTicks = ws.getNumber('state.consecutiveIdleTicks');
 
-    // Higher utility if no trees nearby
+    // Higher utility if no trees nearby (need to find trees)
     if (treeCount === 0) return 25;
 
-    // Low base utility, increases if bot has been idle
+    // Low base utility when we have trees, increases if bot has been idle
     return 5 + Math.min(20, idleTicks / 10);
   }
 

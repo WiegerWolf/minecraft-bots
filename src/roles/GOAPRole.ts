@@ -171,37 +171,24 @@ export abstract class GOAPRole implements Role {
   private async planNextGoal(): Promise<void> {
     if (!this.currentWorldState || !this.arbiter || !this.planner || !this.executor) return;
 
-    // Clean up expired cooldowns
+    // Clean up expired cooldowns and build skip set
     const now = Date.now();
+    const goalsOnCooldown = new Set<string>();
     for (const [goalName, expiry] of this.failedGoalCooldowns) {
       if (now >= expiry) {
         this.failedGoalCooldowns.delete(goalName);
+      } else {
+        goalsOnCooldown.add(goalName);
       }
     }
 
-    // Select the best goal (may need multiple attempts if top goals are on cooldown)
-    let goalResult = this.arbiter.selectGoal(this.currentWorldState);
-    let attempts = 0;
-    const maxAttempts = 5;
-
-    while (goalResult && attempts < maxAttempts) {
-      const { goal } = goalResult;
-
-      // Check if this goal is on cooldown
-      const cooldownExpiry = this.failedGoalCooldowns.get(goal.name);
-      if (cooldownExpiry && now < cooldownExpiry) {
-        // Goal is on cooldown, temporarily exclude it and try next best
-        if (this.config.debug) {
-          console.log(`[GOAP] Goal ${goal.name} is on cooldown for ${((cooldownExpiry - now) / 1000).toFixed(1)}s`);
-        }
-        this.arbiter.clearCurrentGoal();
-        goalResult = this.arbiter.selectGoal(this.currentWorldState);
-        attempts++;
-        continue;
-      }
-
-      break;
+    // Log cooldowns if any
+    if (goalsOnCooldown.size > 0 && this.config.debug) {
+      console.log(`[GOAP] Goals on cooldown: ${Array.from(goalsOnCooldown).join(', ')}`);
     }
+
+    // Select the best goal, skipping any on cooldown
+    const goalResult = this.arbiter.selectGoal(this.currentWorldState, goalsOnCooldown);
 
     if (!goalResult) {
       if (this.config.debug) {

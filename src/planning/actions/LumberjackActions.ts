@@ -306,7 +306,8 @@ export class PatrolForestAction extends BaseGOAPAction {
   ];
 
   effects = [
-    // Exploration may find trees
+    // Exploration may find trees - optimistically assume we'll find some
+    setEffect('nearby.trees', 1, 'may find trees'),
     setEffect('state.consecutiveIdleTicks', 0, 'explored'),
   ];
 
