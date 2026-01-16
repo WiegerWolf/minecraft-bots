@@ -255,6 +255,9 @@ export class GatherWood implements BehaviorNode {
         }
     }
 
+    // Track where we've planted saplings to maintain spacing
+    private plantedSaplingPositions: Vec3[] = [];
+
     private async replantSapling(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
         if (!bb.currentTreeHarvest) return 'failure';
 
@@ -264,10 +267,16 @@ export class GatherWood implements BehaviorNode {
             return 'success';
         }
 
-        // Check if we have the right sapling
+        // Check if we have any saplings left to plant
         const sapling = bot.inventory.items().find(i => i.name === saplingName);
         if (!sapling) {
-            console.log(`[BT] No ${saplingName} to replant`);
+            const planted = this.plantedSaplingPositions.length;
+            if (planted > 0) {
+                console.log(`[BT] Finished planting ${planted} saplings`);
+                this.plantedSaplingPositions = [];
+            } else {
+                console.log(`[BT] No ${saplingName} to replant`);
+            }
             bb.currentTreeHarvest.phase = 'done';
             return 'success';
         }
@@ -281,11 +290,13 @@ export class GatherWood implements BehaviorNode {
             'dead_bush', 'sweet_berry_bush'
         ];
 
-        // Find ANY grass_block nearby - don't be picky, just plant somewhere reasonable
+        const SAPLING_SPACING = 5; // Blocks apart for trees to grow
+
+        // Find grass_blocks nearby
         const grassBlocks = bot.findBlocks({
             point: bot.entity.position,
-            maxDistance: 16,
-            count: 20,
+            maxDistance: 24,
+            count: 50,
             matching: b => b.name === 'grass_block' || b.name === 'dirt' || b.name === 'podzol'
         });
 
@@ -298,9 +309,25 @@ export class GatherWood implements BehaviorNode {
 
             if (!surfaceBlock) continue;
 
+            // Check spacing from previously planted saplings
+            const tooClose = this.plantedSaplingPositions.some(
+                planted => planted.distanceTo(surfacePos) < SAPLING_SPACING
+            );
+            if (tooClose) continue;
+
+            // Also check for existing saplings/trees nearby
+            const nearbyTree = bot.findBlocks({
+                point: surfacePos,
+                maxDistance: SAPLING_SPACING - 1,
+                count: 1,
+                matching: b => b.name.includes('sapling') || b.name.includes('log')
+            });
+            if (nearbyTree.length > 0) continue;
+
             // Check surface - air is best, but we can clear vegetation
             if (surfaceBlock.name === 'air') {
                 plantSpot = surfacePos;
+                needToClear = null;
                 break;
             } else if (clearableVegetation.includes(surfaceBlock.name)) {
                 if (!plantSpot) {
@@ -311,7 +338,13 @@ export class GatherWood implements BehaviorNode {
         }
 
         if (!plantSpot) {
-            console.log(`[BT] No suitable spot to replant sapling within 16 blocks`);
+            const planted = this.plantedSaplingPositions.length;
+            if (planted > 0) {
+                console.log(`[BT] Finished planting ${planted} saplings (no more suitable spots)`);
+            } else {
+                console.log(`[BT] No suitable spot to replant sapling`);
+            }
+            this.plantedSaplingPositions = [];
             bb.currentTreeHarvest.phase = 'done';
             return 'success';
         }
@@ -322,7 +355,6 @@ export class GatherWood implements BehaviorNode {
 
             // Clear vegetation if needed
             if (needToClear) {
-                console.log(`[BT] Clearing ${needToClear.name} for sapling`);
                 await bot.dig(needToClear);
                 await sleep(100);
             }
@@ -332,13 +364,14 @@ export class GatherWood implements BehaviorNode {
             const groundBlock = bot.blockAt(plantSpot.offset(0, -1, 0));
             if (groundBlock) {
                 await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
-                console.log(`[BT] Replanted ${saplingName} at ${plantSpot}!`);
+                this.plantedSaplingPositions.push(plantSpot.clone());
+                console.log(`[BT] Planted sapling ${this.plantedSaplingPositions.length} at ${plantSpot}`);
             }
         } catch (err) {
-            console.log(`[BT] Failed to replant sapling: ${err}`);
+            console.log(`[BT] Failed to plant sapling: ${err}`);
         }
 
-        bb.currentTreeHarvest.phase = 'done';
+        // Stay in replanting phase to plant more saplings
         return 'success';
     }
 }
