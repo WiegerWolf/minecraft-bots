@@ -62,8 +62,23 @@ export class RepairField implements BehaviorNode {
         bb.lastAction = 'repair';
 
         try {
-            // Move near the hole
-            await bot.pathfinder.goto(new GoalNear(hole.x, hole.y, hole.z, 3));
+            // Check if we're standing in or very close to the hole - need to move away first!
+            const botPos = bot.entity.position;
+            const inHole = Math.abs(botPos.x - hole.x) < 1 && Math.abs(botPos.z - hole.z) < 1 && Math.abs(botPos.y - hole.y) < 2;
+
+            if (inHole) {
+                // Move to farm center first to get out of the hole
+                const farmCenter = bb.farmCenter;
+                if (farmCenter) {
+                    console.log(`[BT] Moving out of hole first...`);
+                    await bot.pathfinder.goto(new GoalNear(farmCenter.x, farmCenter.y, farmCenter.z, 2));
+                    bot.pathfinder.stop();
+                    await sleep(200);
+                }
+            }
+
+            // Now move near the hole (but not in it)
+            await bot.pathfinder.goto(new GoalNear(hole.x, hole.y, hole.z, 2));
             bot.pathfinder.stop();
 
             // Find a block to place against (below the hole)
