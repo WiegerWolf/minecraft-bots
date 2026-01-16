@@ -3,6 +3,7 @@ import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { LOG_NAMES, SAPLING_NAMES } from '../../../shared/TreeHarvest';
+import { pathfinderGotoWithRetry } from './utils';
 
 const { GoalLookAtBlock } = goals;
 
@@ -51,7 +52,11 @@ export class DepositLogs implements BehaviorNode {
         console.log(`[Lumberjack] Depositing items to chest at ${chestPos}`);
 
         try {
-            await bot.pathfinder.goto(new GoalLookAtBlock(chest.position, bot.world, { reach: 4 }));
+            const success = await pathfinderGotoWithRetry(bot, new GoalLookAtBlock(chest.position, bot.world, { reach: 4 }));
+            if (!success) {
+                console.warn(`[Lumberjack] Failed to reach chest after retries`);
+                return 'failure';
+            }
 
             const chestWindow = await bot.openContainer(chest);
             await sleep(100);

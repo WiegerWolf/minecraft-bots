@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { pathfinderGotoWithRetry } from '../farming/behaviors/actions/utils';
 
 const { GoalNear, GoalLookAtBlock } = goals;
 
@@ -121,7 +122,11 @@ export async function chopLogs(bot: Bot, state: TreeHarvestState): Promise<TreeH
 
             try {
                 const goal = new GoalLookAtBlock(block.position, bot.world, { reach: 4 });
-                await bot.pathfinder.goto(goal);
+                const success = await pathfinderGotoWithRetry(bot, goal);
+                if (!success) {
+                    console.log(`[TreeHarvest] Failed to reach log after retries`);
+                    break;
+                }
                 await bot.dig(block);
                 await sleep(150);
                 return 'success';
@@ -198,7 +203,12 @@ export async function clearLeaves(bot: Bot, state: TreeHarvestState): Promise<Tr
 
     try {
         const goal = new GoalLookAtBlock(leafBlock.position, bot.world, { reach: 5 });
-        await bot.pathfinder.goto(goal);
+        const success = await pathfinderGotoWithRetry(bot, goal);
+        if (!success) {
+            console.log(`[TreeHarvest] Failed to reach leaf after retries`);
+            state.phase = 'replanting';
+            return 'success';
+        }
         await bot.dig(leafBlock);
         await sleep(100);
         return 'success';
@@ -295,7 +305,11 @@ export async function replantSapling(
 
     try {
         // Move close to the planting spot
-        await bot.pathfinder.goto(new GoalNear(plantSpot.x, plantSpot.y, plantSpot.z, 3));
+        const success = await pathfinderGotoWithRetry(bot, new GoalNear(plantSpot.x, plantSpot.y, plantSpot.z, 3));
+        if (!success) {
+            console.log(`[TreeHarvest] Failed to reach planting spot after retries`);
+            return { result: 'success', planted: false };
+        }
 
         // Clear vegetation if needed
         if (needToClear) {

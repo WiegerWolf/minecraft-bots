@@ -3,7 +3,7 @@ import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
-import { sleep } from './utils';
+import { sleep, pathfinderGotoWithRetry, isPathfinderTimeoutError } from './utils';
 
 const { GoalNear, GoalLookAtBlock } = goals;
 
@@ -106,7 +106,11 @@ export class SetupFarmChest implements BehaviorNode {
             bb.lastAction = 'place_chest';
 
             try {
-                await bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 3));
+                const success = await pathfinderGotoWithRetry(bot, new GoalNear(pos.x, pos.y, pos.z, 3));
+                if (!success) {
+                    console.log(`[BT] Failed to reach chest placement position after retries`);
+                    continue;
+                }
                 bot.pathfinder.stop();
 
                 const chestItem = bot.inventory.items().find(i => i.name === 'chest');
@@ -196,7 +200,11 @@ export class SetupFarmChest implements BehaviorNode {
         if (!block) return 'failure';
 
         try {
-            await bot.pathfinder.goto(new GoalLookAtBlock(logPos, bot.world));
+            const success = await pathfinderGotoWithRetry(bot, new GoalLookAtBlock(logPos, bot.world));
+            if (!success) {
+                console.log(`[BT] Failed to reach log for chest after retries`);
+                return 'failure';
+            }
             await bot.dig(block);
             await sleep(300);
             console.log(`[BT] Gathered log for chest`);
@@ -293,7 +301,11 @@ export class SetupFarmChest implements BehaviorNode {
             const tableBlock = bot.blockAt(craftingTable);
             if (!tableBlock) return 'failure';
 
-            await bot.pathfinder.goto(new GoalLookAtBlock(craftingTable, bot.world));
+            const success = await pathfinderGotoWithRetry(bot, new GoalLookAtBlock(craftingTable, bot.world));
+            if (!success) {
+                console.log(`[BT] Failed to reach crafting table for chest after retries`);
+                return 'failure';
+            }
 
             const chestId = bot.registry.itemsByName['chest']?.id;
             if (!chestId) return 'failure';

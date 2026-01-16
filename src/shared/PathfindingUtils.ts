@@ -1,24 +1,11 @@
-export function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * Check if an error is a pathfinder "goal changed" error.
- * This happens when a new goal interrupts an existing pathfinding operation.
- */
-export function isGoalChangedError(err: unknown): boolean {
-    if (err instanceof Error) {
-        return err.message.includes('goal was changed') || err.name === 'GoalChanged';
-    }
-    return false;
-}
+import type { Bot } from 'mineflayer';
 
 /**
  * Wrapper for bot.pathfinder.goto() that adds timeout functionality.
  * If pathfinding doesn't complete within the specified time, it will be canceled.
  */
 export async function pathfinderGotoWithTimeout(
-    bot: any,
+    bot: Bot,
     goal: any,
     timeoutMs: number = 5000 // Default 5 seconds
 ): Promise<void> {
@@ -37,7 +24,7 @@ export async function pathfinderGotoWithTimeout(
 /**
  * Attempts to clear a path by breaking nearby blocks that might be obstructing the bot.
  */
-export async function clearPath(bot: any): Promise<void> {
+export async function clearPath(bot: Bot): Promise<void> {
     // Check for blocks around the bot that might be obstructing movement
     const searchPositions = [
         { x: 0, y: 0, z: 1 },  // Front
@@ -70,6 +57,21 @@ export async function clearPath(bot: any): Promise<void> {
     }
 }
 
+export function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Check if an error is a pathfinder "goal changed" error.
+ * This happens when a new goal interrupts an existing pathfinding operation.
+ */
+export function isGoalChangedError(err: unknown): boolean {
+    if (err instanceof Error) {
+        return err.message.includes('goal was changed') || err.name === 'GoalChanged';
+    }
+    return false;
+}
+
 /**
  * Check if an error is a pathfinder timeout error.
  */
@@ -84,7 +86,7 @@ export function isPathfinderTimeoutError(err: unknown): boolean {
  * Wrapper for pathfinding with retry logic and path clearing on timeout.
  */
 export async function pathfinderGotoWithRetry(
-    bot: any,
+    bot: Bot,
     goal: any,
     maxRetries: number = 2,
     timeoutMs: number = 5000
