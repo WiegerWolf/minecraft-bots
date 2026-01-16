@@ -187,35 +187,44 @@ export class GatherWood implements BehaviorNode {
     private async clearLeaves(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
         if (!bb.currentTreeHarvest) return 'failure';
 
-        // Find leaves near where the tree was
-        const searchCenter = bb.currentTreeHarvest.basePos.offset(0, 3, 0);
+        // Find leaves near where the tree was - search higher up where the canopy was
+        const searchCenter = bb.currentTreeHarvest.basePos.offset(0, 5, 0);
 
         const leaves = bot.findBlocks({
             point: searchCenter,
-            maxDistance: 6,
-            count: 20,
+            maxDistance: 7,
+            count: 50,
             matching: b => LEAF_NAMES.includes(b.name)
         });
 
-        // Filter to leaves we can reach
-        const reachableLeaves = leaves.filter(pos => {
-            return pos.y <= bot.entity.position.y + 4;
-        });
+        // Sort by distance and height - prefer lower, closer leaves
+        const sortedLeaves = leaves
+            .map(pos => ({
+                pos,
+                dist: bot.entity.position.distanceTo(pos),
+                heightAbove: pos.y - bot.entity.position.y
+            }))
+            .filter(l => l.heightAbove <= 5) // Can reach up to 5 blocks above
+            .sort((a, b) => {
+                // Prefer closer leaves, then lower ones
+                if (Math.abs(a.dist - b.dist) > 2) return a.dist - b.dist;
+                return a.heightAbove - b.heightAbove;
+            });
 
-        if (reachableLeaves.length === 0) {
+        if (sortedLeaves.length === 0) {
             // No more reachable leaves, move to replanting
             console.log(`[BT] Leaves cleared, checking for sapling to replant...`);
             bb.currentTreeHarvest.phase = 'replanting';
             return 'success';
         }
 
-        const leafPos = reachableLeaves[0];
-        if (!leafPos) {
+        const leafData = sortedLeaves[0];
+        if (!leafData) {
             bb.currentTreeHarvest.phase = 'replanting';
             return 'success';
         }
 
-        const leafBlock = bot.blockAt(leafPos);
+        const leafBlock = bot.blockAt(leafData.pos);
         if (!leafBlock) {
             bb.currentTreeHarvest.phase = 'replanting';
             return 'success';
@@ -224,7 +233,7 @@ export class GatherWood implements BehaviorNode {
         console.log(`[BT] Breaking leaves at ${leafBlock.position}`);
 
         try {
-            const goal = new GoalLookAtBlock(leafBlock.position, bot.world, { reach: 4 });
+            const goal = new GoalLookAtBlock(leafBlock.position, bot.world, { reach: 5 });
             await bot.pathfinder.goto(goal);
             await bot.dig(leafBlock);
             await sleep(100);
@@ -232,7 +241,7 @@ export class GatherWood implements BehaviorNode {
         } catch {
             // Try from current position
             const dist = bot.entity.position.distanceTo(leafBlock.position);
-            if (dist < 5) {
+            if (dist < 6) {
                 try {
                     await bot.dig(leafBlock);
                     return 'success';
@@ -266,11 +275,24 @@ export class GatherWood implements BehaviorNode {
         // Find a suitable spot near the original tree base
         const basePos = bb.currentTreeHarvest.basePos;
         let plantSpot: Vec3 | null = null;
+        let needToClear: Block | null = null;
 
-        // Check the original position first, then nearby spots
+        // Blocks that can be cleared to make room for sapling
+        const clearableVegetation = [
+            'short_grass', 'grass', 'tall_grass', 'fern', 'large_fern',
+            'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet',
+            'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip',
+            'oxeye_daisy', 'cornflower', 'lily_of_the_valley', 'wither_rose',
+            'dead_bush', 'sweet_berry_bush'
+        ];
+
+        // Check the original position first, then nearby spots in expanding rings
         const offsets: [number, number][] = [
             [0, 0], [1, 0], [-1, 0], [0, 1], [0, -1],
-            [1, 1], [-1, 1], [1, -1], [-1, -1]
+            [1, 1], [-1, 1], [1, -1], [-1, -1],
+            [2, 0], [-2, 0], [0, 2], [0, -2],
+            [2, 1], [2, -1], [-2, 1], [-2, -1],
+            [1, 2], [-1, 2], [1, -2], [-1, -2]
         ];
 
         for (const [dx, dz] of offsets) {
@@ -278,12 +300,23 @@ export class GatherWood implements BehaviorNode {
             const groundBlock = bot.blockAt(checkPos.offset(0, -1, 0));
             const surfaceBlock = bot.blockAt(checkPos);
 
-            if (groundBlock &&
-                ['dirt', 'grass_block', 'podzol', 'mycelium', 'coarse_dirt', 'rooted_dirt'].includes(groundBlock.name) &&
-                surfaceBlock &&
-                surfaceBlock.name === 'air') {
+            if (!groundBlock || !surfaceBlock) continue;
+
+            // Check if ground is suitable for planting
+            if (!['dirt', 'grass_block', 'podzol', 'mycelium', 'coarse_dirt', 'rooted_dirt'].includes(groundBlock.name)) {
+                continue;
+            }
+
+            // Check surface - air is best, but we can clear vegetation
+            if (surfaceBlock.name === 'air') {
                 plantSpot = checkPos;
                 break;
+            } else if (clearableVegetation.includes(surfaceBlock.name)) {
+                // Found a spot with vegetation we can clear
+                if (!plantSpot) {
+                    plantSpot = checkPos;
+                    needToClear = surfaceBlock;
+                }
             }
         }
 
@@ -293,18 +326,23 @@ export class GatherWood implements BehaviorNode {
             return 'success';
         }
 
-        console.log(`[BT] Replanting ${saplingName} at ${plantSpot}`);
-
         try {
             // Move close to the planting spot
             await bot.pathfinder.goto(new GoalNear(plantSpot.x, plantSpot.y, plantSpot.z, 3));
+
+            // Clear vegetation if needed
+            if (needToClear) {
+                console.log(`[BT] Clearing ${needToClear.name} for sapling`);
+                await bot.dig(needToClear);
+                await sleep(100);
+            }
 
             // Equip and place the sapling
             await bot.equip(sapling, 'hand');
             const groundBlock = bot.blockAt(plantSpot.offset(0, -1, 0));
             if (groundBlock) {
                 await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
-                console.log(`[BT] Sapling replanted!`);
+                console.log(`[BT] Replanted ${saplingName} at ${plantSpot}!`);
             }
         } catch (err) {
             console.log(`[BT] Failed to replant sapling: ${err}`);
