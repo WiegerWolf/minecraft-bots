@@ -63,9 +63,8 @@ export function createLumberjackBehaviorTree(): BehaviorNode {
 
         // Priority 4: Craft chest if needed and we have materials
         new Sequence('CraftChestIfNeeded', [
-            new Condition('NeedsToDeposit', bb => bb.needsToDeposit),
-            new Condition('NoChestAvailable', bb => bb.sharedChest === null && bb.nearbyChests.length === 0),
             new Condition('HasMaterialsForChest', bb => bb.plankCount >= 8 || bb.logCount >= 2),
+            new Condition('NoChestAvailable', bb => bb.sharedChest === null && bb.nearbyChests.length === 0),
             new CraftChest(),
         ]),
 
@@ -89,9 +88,12 @@ export function createLumberjackBehaviorTree(): BehaviorNode {
             new ChopTree(),
         ]),
 
-        // Priority 7: Process wood if we have excess logs
-        new Sequence('ProcessExcessWood', [
-            new Condition('HasExcessLogs', bb => bb.logCount >= 8),
+        // Priority 7: Process wood if we need planks for chest or have excess logs
+        new Sequence('ProcessWoodForChest', [
+            new Condition('NeedToProcessWood', bb =>
+                (bb.plankCount < 8 && bb.logCount >= 2) || // Need planks for chest
+                bb.logCount >= 8 // Excess logs
+            ),
             new ProcessWood(),
         ]),
 

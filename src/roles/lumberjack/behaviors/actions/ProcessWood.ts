@@ -13,21 +13,40 @@ export class ProcessWood implements BehaviorNode {
     name = 'ProcessWood';
 
     async tick(bot: Bot, bb: LumberjackBlackboard): Promise<BehaviorStatus> {
-        // Only process if we have excess logs (keep some for storage)
-        if (bb.logCount < 4) return 'failure';
+        // Only process if we have logs to process
+        if (bb.logCount < 2) return 'failure';
 
         bb.lastAction = 'process_wood';
 
-        // Craft some logs into planks
-        const logsToProcess = Math.floor(bb.logCount / 2); // Process half the logs
+        // Calculate how many planks we need for a chest
+        const planksNeeded = Math.max(0, 8 - bb.plankCount);
+        const logsNeeded = Math.ceil(planksNeeded / 4);
 
+        // Process enough logs to get 8 planks if needed
         let planksCreated = 0;
-        for (let i = 0; i < logsToProcess; i++) {
-            const crafted = await this.craftPlanks(bot);
-            if (crafted) {
-                planksCreated += 4;
-            } else {
-                break;
+        if (planksNeeded > 0) {
+            for (let i = 0; i < logsNeeded && bb.logCount > 0; i++) {
+                const crafted = await this.craftPlanks(bot);
+                if (crafted) {
+                    planksCreated += 4;
+                    bb.logCount--;
+                    bb.plankCount += 4;
+                } else {
+                    break;
+                }
+            }
+        } else {
+            // If we have enough planks, process half the remaining logs
+            const logsToProcess = Math.floor(bb.logCount / 2);
+            for (let i = 0; i < logsToProcess; i++) {
+                const crafted = await this.craftPlanks(bot);
+                if (crafted) {
+                    planksCreated += 4;
+                    bb.logCount--;
+                    bb.plankCount += 4;
+                } else {
+                    break;
+                }
             }
         }
 
