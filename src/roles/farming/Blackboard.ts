@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
+import type { VillageChat } from '../../shared/VillageChat';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -46,6 +47,9 @@ export interface FarmingBlackboard {
     // Tree harvesting state (persists across ticks)
     currentTreeHarvest: TreeHarvestState | null;
 
+    // Village communication (set by role)
+    villageChat: VillageChat | null;
+
     // Computed booleans for easy decision making
     canTill: boolean;
     canPlant: boolean;
@@ -82,6 +86,8 @@ export function createBlackboard(): FarmingBlackboard {
         badWaterPositions: [],
 
         currentTreeHarvest: null,
+
+        villageChat: null,
 
         canTill: false,
         canPlant: false,

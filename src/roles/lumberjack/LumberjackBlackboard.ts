@@ -1,7 +1,7 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
-import { villageManager } from '../../shared/VillageState';
+import type { VillageChat } from '../../shared/VillageChat';
 import { LOG_NAMES, LEAF_NAMES, SAPLING_NAMES, type TreeHarvestState } from '../shared/TreeHarvest';
 
 export interface ExplorationMemory {
@@ -26,10 +26,13 @@ export interface LumberjackBlackboard {
     hasAxe: boolean;
     emptySlots: number;
 
-    // Strategic state (persists across ticks, loaded from VillageManager)
+    // Strategic state (persists across ticks)
     villageCenter: Vec3 | null;
     sharedChest: Vec3 | null;
     currentTreeHarvest: TreeHarvestState | null;
+
+    // Village communication (set by role)
+    villageChat: VillageChat | null;
 
     // Exploration memory
     exploredPositions: ExplorationMemory[];
@@ -64,6 +67,8 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         sharedChest: null,
         currentTreeHarvest: null,
 
+        villageChat: null,
+
         exploredPositions: [],
 
         inventoryFull: false,
@@ -93,17 +98,16 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     bb.saplingCount = inv.filter(i => SAPLING_NAMES.includes(i.name)).reduce((s, i) => s + i.count, 0);
 
     // ═══════════════════════════════════════════════
-    // VILLAGE STATE (from shared file)
+    // VILLAGE STATE (from chat)
     // ═══════════════════════════════════════════════
-    try {
-        bb.villageCenter = await villageManager.getVillageCenter();
-        bb.sharedChest = await villageManager.getSharedChest();
+    if (bb.villageChat) {
+        bb.villageCenter = bb.villageChat.getVillageCenter();
+        bb.sharedChest = bb.villageChat.getSharedChest();
 
         // Check for pending requests this bot can fulfill
-        const requests = await villageManager.getPendingRequests('lumberjack');
+        const canProvide = ['log', 'planks', 'stick'];
+        const requests = bb.villageChat.getRequestsToFulfill(canProvide);
         bb.hasPendingRequests = requests.length > 0;
-    } catch (error) {
-        console.warn('[Lumberjack] Failed to read village state:', error);
     }
 
     // ═══════════════════════════════════════════════

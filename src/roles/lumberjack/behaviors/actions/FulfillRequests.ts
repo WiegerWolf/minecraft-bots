@@ -1,35 +1,31 @@
 import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { villageManager } from '../../../../shared/VillageState';
 import { goals } from 'mineflayer-pathfinder';
 
-const { GoalNear, GoalLookAtBlock } = goals;
+const { GoalLookAtBlock } = goals;
 
 function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
- * FulfillRequests - Check for pending requests from other bots and fulfill them
+ * FulfillRequests - Check for pending requests from other bots via chat and fulfill them
  */
 export class FulfillRequests implements BehaviorNode {
     name = 'FulfillRequests';
 
     async tick(bot: Bot, bb: LumberjackBlackboard): Promise<BehaviorStatus> {
+        if (!bb.villageChat) return 'failure';
+
         // Get pending requests this bot can fulfill
-        let requests;
-        try {
-            requests = await villageManager.getPendingRequests('lumberjack');
-        } catch (error) {
-            console.warn('[Lumberjack] Failed to get requests:', error);
-            return 'failure';
-        }
+        const canProvide = ['log', 'planks', 'stick'];
+        const requests = bb.villageChat.getRequestsToFulfill(canProvide);
 
         if (requests.length === 0) return 'failure';
 
         const request = requests[0]!; // Oldest first
-        console.log(`[Lumberjack] Processing request: ${request.from} needs ${request.quantity}x ${request.item}`);
+        console.log(`[Lumberjack] Fulfilling request: ${request.from} needs ${request.quantity}x ${request.item}`);
 
         // Map requested item to what we can provide
         const itemNeeded = this.normalizeItemName(request.item);
@@ -39,15 +35,22 @@ export class FulfillRequests implements BehaviorNode {
             // Try to craft it
             const crafted = await this.craftItem(bot, bb, itemNeeded, request.quantity);
             if (!crafted) {
-                console.log(`[Lumberjack] Cannot fulfill request for ${request.item} - need more materials`);
+                console.log(`[Lumberjack] Cannot fulfill request for ${request.item} yet - need more materials`);
                 return 'failure';
             }
         }
 
         // Find shared chest to deposit
         if (!bb.sharedChest) {
-            console.log(`[Lumberjack] No shared chest available for deposit`);
-            return 'failure';
+            // Try to find any nearby chest
+            if (bb.nearbyChests.length > 0) {
+                bb.sharedChest = bb.nearbyChests[0]!.position;
+                bb.villageChat.setSharedChest(bb.sharedChest);
+                bb.villageChat.announceSharedChest(bb.sharedChest);
+            } else {
+                console.log(`[Lumberjack] No chest available for deposit`);
+                return 'failure';
+            }
         }
 
         // Go to shared chest and deposit
@@ -55,7 +58,8 @@ export class FulfillRequests implements BehaviorNode {
         try {
             const chest = bot.blockAt(bb.sharedChest);
             if (!chest) {
-                console.log(`[Lumberjack] Cannot find shared chest at ${bb.sharedChest}`);
+                console.log(`[Lumberjack] Cannot find chest at ${bb.sharedChest}`);
+                bb.sharedChest = null;
                 return 'failure';
             }
 
@@ -65,7 +69,9 @@ export class FulfillRequests implements BehaviorNode {
             await sleep(100);
 
             // Deposit the requested items
-            const items = bot.inventory.items().filter(i => i.name.includes(itemNeeded) || itemNeeded.includes(i.name));
+            const items = bot.inventory.items().filter(i =>
+                i.name.includes(itemNeeded) || itemNeeded.includes(i.name)
+            );
             let deposited = 0;
             for (const item of items) {
                 if (deposited >= request.quantity) break;
@@ -81,8 +87,9 @@ export class FulfillRequests implements BehaviorNode {
             chestWindow.close();
 
             if (deposited >= request.quantity) {
-                await villageManager.fulfillRequest(request.id);
-                console.log(`[Lumberjack] Fulfilled request: ${request.quantity}x ${request.item} for ${request.from}`);
+                // Announce fulfillment via chat
+                bb.villageChat.announceFulfillment(request.item, deposited, request.from);
+                console.log(`[Lumberjack] Deposited ${deposited}x ${request.item} for ${request.from}`);
                 return 'success';
             } else {
                 console.log(`[Lumberjack] Only deposited ${deposited}/${request.quantity} ${request.item}`);
@@ -95,7 +102,6 @@ export class FulfillRequests implements BehaviorNode {
     }
 
     private normalizeItemName(item: string): string {
-        // Normalize common item names
         if (item.includes('stick')) return 'stick';
         if (item.includes('planks') || item.includes('plank')) return 'planks';
         if (item.includes('log')) return 'log';
@@ -110,8 +116,7 @@ export class FulfillRequests implements BehaviorNode {
 
     private async craftItem(bot: Bot, bb: LumberjackBlackboard, item: string, quantity: number): Promise<boolean> {
         if (item === 'stick') {
-            // Need planks to make sticks
-            // 2 planks = 4 sticks
+            // Need planks to make sticks (2 planks = 4 sticks)
             const planksNeeded = Math.ceil(quantity / 2);
             if (bb.plankCount < planksNeeded) {
                 // Try to make planks first
@@ -119,11 +124,9 @@ export class FulfillRequests implements BehaviorNode {
                 if (bb.logCount < logsNeeded) {
                     return false; // Not enough logs
                 }
-                // Craft planks
                 const crafted = await this.craftPlanks(bot, logsNeeded);
                 if (!crafted) return false;
             }
-            // Now craft sticks
             return this.craftSticks(bot, quantity);
         }
 
@@ -172,7 +175,6 @@ export class FulfillRequests implements BehaviorNode {
                 return false;
             }
 
-            // Each craft gives 4 sticks, needs 2 planks
             const craftCount = Math.ceil(quantity / 4);
             for (let i = 0; i < craftCount; i++) {
                 await bot.craft(recipe, 1);

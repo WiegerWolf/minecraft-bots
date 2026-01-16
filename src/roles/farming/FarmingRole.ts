@@ -3,7 +3,7 @@ import type { Role } from '../Role';
 import { Movements } from 'mineflayer-pathfinder';
 import { createBlackboard, updateBlackboard, type FarmingBlackboard } from './Blackboard';
 import { createFarmingBehaviorTree, type BehaviorNode } from './behaviors';
-import { villageManager } from '../../shared/VillageState';
+import { VillageChat } from '../../shared/VillageChat';
 
 export class FarmingRole implements Role {
     name = 'farming';
@@ -11,7 +11,7 @@ export class FarmingRole implements Role {
     private bot: Bot | null = null;
     private blackboard: FarmingBlackboard;
     private behaviorTree: BehaviorNode;
-    private static processHandlersRegistered = false;
+    private villageChat: VillageChat | null = null;
 
     constructor() {
         this.blackboard = createBlackboard();
@@ -72,6 +72,10 @@ export class FarmingRole implements Role {
         // Initialize blackboard
         this.blackboard = createBlackboard();
 
+        // Initialize chat-based village communication
+        this.villageChat = new VillageChat(bot);
+        this.blackboard.villageChat = this.villageChat;
+
         if (options?.center) {
             // Validate the provided center is actually water
             const centerPos = options.center;
@@ -80,48 +84,19 @@ export class FarmingRole implements Role {
                 this.blackboard.farmCenter = centerPos.clone ? centerPos.clone() : centerPos;
                 console.log(`[Farming] Initial farm center set to water at ${this.blackboard.farmCenter}`);
             } else {
-                console.log(`[Farming] ⚠️ Provided center is not water, will discover naturally`);
-                // Don't set farm center - let bot discover it naturally
+                console.log(`[Farming] Provided center is not water, will discover naturally`);
             }
         }
 
-        // Check for existing village center and register bot
-        this.initializeVillageIntegration(bot);
-
-        console.log('[Farming] 🚜 Behavior Tree Farming Role started.');
+        console.log('[Farming] Behavior Tree Farming Role started.');
         this.loop();
-    }
-
-    private async initializeVillageIntegration(bot: Bot) {
-        try {
-            // Check if village center already exists
-            const existingCenter = await villageManager.getVillageCenter();
-            if (existingCenter && !this.blackboard.farmCenter) {
-                this.blackboard.farmCenter = existingCenter;
-                console.log(`[Farming] Using existing village center at ${existingCenter}`);
-            }
-
-            // Register this bot with the village
-            await villageManager.updateBot(bot.username, {
-                role: 'farming',
-                position: {
-                    x: bot.entity.position.x,
-                    y: bot.entity.position.y,
-                    z: bot.entity.position.z
-                },
-                provides: ['wheat', 'wheat_seeds', 'carrot', 'potato', 'beetroot'],
-                needs: this.blackboard.needsTools ? ['stick', 'planks'] : []
-            });
-        } catch (error) {
-            console.warn('[Farming] Failed to initialize village integration:', error);
-        }
     }
 
     stop(bot: Bot) {
         this.active = false;
         this.bot = null;
         bot.pathfinder.stop();
-        console.log('[Farming] 🛑 Farming Role stopped.');
+        console.log('[Farming] Farming Role stopped.');
     }
 
     private async loop() {
@@ -132,10 +107,35 @@ export class FarmingRole implements Role {
                 // ═══════════════════════════════════════════════
                 updateBlackboard(this.bot, this.blackboard);
 
-                // Update village state and log status every 10 seconds
+                // Sync village chat state to blackboard
+                if (this.villageChat) {
+                    const chatCenter = this.villageChat.getVillageCenter();
+                    if (chatCenter && !this.blackboard.farmCenter) {
+                        this.blackboard.farmCenter = chatCenter;
+                        console.log(`[Farming] Learned village center from chat: ${chatCenter}`);
+                    }
+
+                    const sharedChest = this.villageChat.getSharedChest();
+                    if (sharedChest && !this.blackboard.farmChest) {
+                        this.blackboard.farmChest = sharedChest;
+                    }
+
+                    // Clean up old requests periodically
+                    this.villageChat.cleanupOldRequests();
+                }
+
+                // Log status every 10 seconds
                 if (Date.now() % 10000 < 150) {
                     this.logStatus();
-                    this.updateVillageState(this.bot);
+
+                    // Announce village center if we have one and haven't shared it
+                    if (this.blackboard.farmCenter && this.villageChat) {
+                        this.villageChat.announceVillageCenter(this.blackboard.farmCenter);
+                    }
+                    // Announce shared chest
+                    if (this.blackboard.farmChest && this.villageChat) {
+                        this.villageChat.announceSharedChest(this.blackboard.farmChest);
+                    }
                 }
 
                 // ═══════════════════════════════════════════════
@@ -176,40 +176,8 @@ export class FarmingRole implements Role {
         }
     }
 
-    private async updateVillageState(bot: Bot) {
-        try {
-            // Register village center if we discovered one
-            if (this.blackboard.farmCenter) {
-                await villageManager.setVillageCenter(this.blackboard.farmCenter);
-            }
-
-            // Register shared chest if we have one
-            if (this.blackboard.farmChest) {
-                await villageManager.setSharedChest(this.blackboard.farmChest);
-            }
-
-            // Update bot state
-            await villageManager.updateBot(bot.username, {
-                role: 'farming',
-                position: {
-                    x: bot.entity.position.x,
-                    y: bot.entity.position.y,
-                    z: bot.entity.position.z
-                },
-                provides: ['wheat', 'wheat_seeds', 'carrot', 'potato', 'beetroot'],
-                needs: this.blackboard.needsTools ? ['stick', 'planks'] : []
-            });
-
-            // Clean up stale requests
-            await villageManager.cancelStaleRequests();
-        } catch (error) {
-            // Ignore errors - village state is optional
-        }
-    }
-
     private logStatus() {
         const bb = this.blackboard;
         console.log(`[Farming Status] Hoe:${bb.hasHoe} Seeds:${bb.seedCount} Produce:${bb.produceCount} Farmland:${bb.nearbyFarmland.length} Crops:${bb.nearbyMatureCrops.length} Water:${bb.nearbyWater.length} Center:${bb.farmCenter || 'none'} Chest:${bb.farmChest || 'none'}`);
-        console.log(`[Farming Flags] canTill:${bb.canTill} canPlant:${bb.canPlant} canHarvest:${bb.canHarvest} needsSeeds:${bb.needsSeeds} needsTools:${bb.needsTools}`);
     }
 }

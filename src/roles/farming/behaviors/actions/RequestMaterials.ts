@@ -1,47 +1,48 @@
 import type { Bot } from 'mineflayer';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { villageManager } from '../../../../shared/VillageState';
 
 /**
- * RequestMaterials - Request sticks/planks from lumberjack when farmer needs tools
+ * RequestMaterials - Request sticks/planks from lumberjack via chat
  */
 export class RequestMaterials implements BehaviorNode {
     name = 'RequestMaterials';
+    private lastRequestTime = 0;
+    private REQUEST_COOLDOWN = 30000; // 30 seconds between requests
 
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
         // Only request if we need tools and don't have materials
         if (!bb.needsTools) return 'failure';
         if (bb.stickCount >= 2 && bb.plankCount >= 2) return 'failure';
+        if (!bb.villageChat) return 'failure';
+
+        // Rate limit requests
+        const now = Date.now();
+        if (now - this.lastRequestTime < this.REQUEST_COOLDOWN) {
+            // Already requested recently, just wait
+            bb.lastAction = 'waiting_for_materials';
+            return 'running';
+        }
+
+        // Check if we already have a pending request
+        if (bb.villageChat.hasPendingRequestFor('stick')) {
+            bb.lastAction = 'waiting_for_materials';
+            return 'running';
+        }
 
         bb.lastAction = 'request_materials';
+        this.lastRequestTime = now;
 
-        // Check if we already have an active request
-        try {
-            const hasRequest = await villageManager.hasUnfulfilledRequestFor(bot.username, 'stick');
-            if (hasRequest) {
-                console.log('[Farmer] Already have pending stick request, waiting...');
-                return 'running';
-            }
-        } catch (error) {
-            console.warn('[Farmer] Failed to check existing requests:', error);
+        // Request sticks if needed
+        if (bb.stickCount < 2) {
+            bb.villageChat.requestResource('stick', 4);
         }
 
-        // Submit request to lumberjack
-        try {
-            await villageManager.requestResource(bot.username, 'stick', 4);
-            console.log('[Farmer] Requested 4 sticks from lumberjack');
-
-            // Also request planks if needed
-            if (bb.plankCount < 2) {
-                await villageManager.requestResource(bot.username, 'planks', 4);
-                console.log('[Farmer] Requested 4 planks from lumberjack');
-            }
-
-            return 'running'; // Wait for fulfillment
-        } catch (error) {
-            console.warn('[Farmer] Failed to request materials:', error);
-            return 'failure';
+        // Request planks if needed
+        if (bb.plankCount < 2) {
+            bb.villageChat.requestResource('planks', 4);
         }
+
+        return 'running'; // Wait for fulfillment
     }
 }

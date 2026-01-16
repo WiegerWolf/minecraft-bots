@@ -3,7 +3,7 @@ import type { Role } from '../Role';
 import { Movements } from 'mineflayer-pathfinder';
 import { createLumberjackBlackboard, updateLumberjackBlackboard, type LumberjackBlackboard } from './LumberjackBlackboard';
 import { createLumberjackBehaviorTree, type BehaviorNode } from './behaviors';
-import { villageManager } from '../../shared/VillageState';
+import { VillageChat } from '../../shared/VillageChat';
 
 export class LumberjackRole implements Role {
     name = 'lumberjack';
@@ -11,6 +11,7 @@ export class LumberjackRole implements Role {
     private bot: Bot | null = null;
     private blackboard: LumberjackBlackboard;
     private behaviorTree: BehaviorNode;
+    private villageChat: VillageChat | null = null;
 
     constructor() {
         this.blackboard = createLumberjackBlackboard();
@@ -67,10 +68,11 @@ export class LumberjackRole implements Role {
         // Initialize blackboard
         this.blackboard = createLumberjackBlackboard();
 
-        // Register bot with village manager
-        this.registerWithVillage(bot);
+        // Initialize chat-based village communication
+        this.villageChat = new VillageChat(bot);
+        this.blackboard.villageChat = this.villageChat;
 
-        console.log('[Lumberjack] 🪓 Lumberjack Role started.');
+        console.log('[Lumberjack] Lumberjack Role started.');
         this.loop();
     }
 
@@ -78,24 +80,7 @@ export class LumberjackRole implements Role {
         this.active = false;
         this.bot = null;
         bot.pathfinder.stop();
-        console.log('[Lumberjack] 🛑 Lumberjack Role stopped.');
-    }
-
-    private async registerWithVillage(bot: Bot) {
-        try {
-            await villageManager.updateBot(bot.username, {
-                role: 'lumberjack',
-                position: {
-                    x: bot.entity.position.x,
-                    y: bot.entity.position.y,
-                    z: bot.entity.position.z
-                },
-                provides: ['oak_log', 'birch_log', 'spruce_log', 'oak_planks', 'birch_planks', 'spruce_planks', 'stick', 'oak_sapling'],
-                needs: []
-            });
-        } catch (error) {
-            console.warn('[Lumberjack] Failed to register with village:', error);
-        }
+        console.log('[Lumberjack] Lumberjack Role stopped.');
     }
 
     private async loop() {
@@ -106,9 +91,13 @@ export class LumberjackRole implements Role {
                 // ═══════════════════════════════════════════════
                 await updateLumberjackBlackboard(this.bot, this.blackboard);
 
-                // Update position in village state periodically
+                // Clean up old requests periodically
+                if (this.villageChat) {
+                    this.villageChat.cleanupOldRequests();
+                }
+
+                // Log status every 10 seconds
                 if (Date.now() % 10000 < 150) {
-                    this.registerWithVillage(this.bot);
                     this.logStatus();
                 }
 
@@ -149,7 +138,6 @@ export class LumberjackRole implements Role {
 
     private logStatus() {
         const bb = this.blackboard;
-        console.log(`[Lumberjack Status] Axe:${bb.hasAxe} Logs:${bb.logCount} Planks:${bb.plankCount} Sticks:${bb.stickCount} Trees:${bb.nearbyTrees.length} Village:${bb.villageCenter || 'none'}`);
-        console.log(`[Lumberjack Flags] canChop:${bb.canChop} needsDeposit:${bb.needsToDeposit} pendingRequests:${bb.hasPendingRequests}`);
+        console.log(`[Lumberjack Status] Axe:${bb.hasAxe} Logs:${bb.logCount} Planks:${bb.plankCount} Sticks:${bb.stickCount} Trees:${bb.nearbyTrees.length} Village:${bb.villageCenter || 'none'} Requests:${bb.hasPendingRequests}`);
     }
 }

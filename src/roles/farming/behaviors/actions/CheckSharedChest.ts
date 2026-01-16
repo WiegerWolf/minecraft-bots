@@ -1,7 +1,6 @@
 import type { Bot } from 'mineflayer';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { villageManager } from '../../../../shared/VillageState';
 import { goals } from 'mineflayer-pathfinder';
 
 const { GoalLookAtBlock } = goals;
@@ -21,14 +20,8 @@ export class CheckSharedChest implements BehaviorNode {
         if (!bb.needsTools) return 'failure';
         if (bb.stickCount >= 2 && bb.plankCount >= 2) return 'failure';
 
-        // Get shared chest location
-        let sharedChest;
-        try {
-            sharedChest = await villageManager.getSharedChest();
-        } catch (error) {
-            console.warn('[Farmer] Failed to get shared chest location:', error);
-            return 'failure';
-        }
+        // Get shared chest location from chat or nearby chests
+        let sharedChest = bb.villageChat?.getSharedChest();
 
         if (!sharedChest) {
             // Look for a chest near farm center
@@ -39,11 +32,10 @@ export class CheckSharedChest implements BehaviorNode {
                 );
                 const chest = sortedChests[0];
                 if (chest) {
-                    try {
-                        await villageManager.setSharedChest(chest.position);
-                        sharedChest = chest.position;
-                    } catch {
-                        // Ignore errors
+                    sharedChest = chest.position;
+                    if (bb.villageChat) {
+                        bb.villageChat.setSharedChest(chest.position);
+                        bb.villageChat.announceSharedChest(chest.position);
                     }
                 }
             }
