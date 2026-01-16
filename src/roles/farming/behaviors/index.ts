@@ -78,12 +78,11 @@ export function createFarmingBehaviorTree(): BehaviorNode {
             new FindFarmCenter(),
         ]),
 
-        // Priority 5: Setup farm chest (when we have wood and no chest, or find existing)
+        // Priority 5: Setup farm chest (after farm is established and no chest yet)
         new Sequence('SetupChest', [
             new Condition('NeedsChest', bb =>
                 bb.farmCenter !== null &&
-                bb.farmChest === null &&
-                (bb.logCount >= 2 || bb.plankCount >= 8 || bb.nearbyChests.length > 0)
+                bb.farmChest === null
             ),
             new SetupFarmChest(),
         ]),

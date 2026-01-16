@@ -145,9 +145,42 @@ export class SetupFarmChest implements BehaviorNode {
             return 'failure';
         }
 
-        // Need more logs - gather wood
+        // Need more logs - gather wood ourselves
         console.log(`[BT] Need 2 logs to craft chest, gathering wood...`);
-        return 'failure';  // Let GatherWood action run
+        bb.lastAction = 'gather_wood_for_chest';
+        return await this.gatherWoodForChest(bot);
+    }
+
+    private async gatherWoodForChest(bot: Bot): Promise<BehaviorStatus> {
+        // Find a tree/log nearby
+        const logs = bot.findBlocks({
+            point: bot.entity.position,
+            maxDistance: 32,
+            count: 10,
+            matching: b => b?.name?.includes('_log') ?? false
+        });
+
+        if (logs.length === 0) {
+            console.log(`[BT] No logs found nearby for chest`);
+            return 'failure';
+        }
+
+        const logPos = logs[0];
+        if (!logPos) return 'failure';
+
+        const block = bot.blockAt(logPos);
+        if (!block) return 'failure';
+
+        try {
+            await bot.pathfinder.goto(new GoalLookAtBlock(logPos, bot.world));
+            await bot.dig(block);
+            await sleep(300);
+            console.log(`[BT] Gathered log for chest`);
+            return 'success';
+        } catch (err) {
+            console.log(`[BT] Failed to gather wood: ${err}`);
+            return 'failure';
+        }
     }
 
     private async craftChestAtTable(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
