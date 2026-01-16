@@ -96,6 +96,16 @@ export async function chopLogs(bot: Bot, state: TreeHarvestState): Promise<TreeH
     const baseX = Math.floor(state.basePos.x);
     const baseZ = Math.floor(state.basePos.z);
 
+    // Equip axe if available
+    const axe = bot.inventory.items().find(i => i.name.includes('axe'));
+    if (axe) {
+        try {
+            await bot.equip(axe, 'hand');
+        } catch (err) {
+            console.log(`[TreeHarvest] Failed to equip axe: ${err}`);
+        }
+    }
+
     for (let dy = 0; dy < 20; dy++) {
         const y = Math.floor(state.basePos.y) + dy;
         const block = bot.blockAt(new Vec3(baseX, y, baseZ));
