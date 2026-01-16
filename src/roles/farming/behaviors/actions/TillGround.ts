@@ -53,7 +53,12 @@ export class TillGround implements BehaviorNode {
         bb.lastAction = 'till';
 
         try {
-            await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 2));
+            // Check if we are already close enough to till
+            if (bot.entity.position.distanceTo(target.position) > 4.5) {
+                await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 4));
+            } else {
+                console.log(`[BT] Already within reach of ${target.position}, skipping movement`);
+            }
             bot.pathfinder.stop();
 
             await bot.equip(hoe, 'hand');

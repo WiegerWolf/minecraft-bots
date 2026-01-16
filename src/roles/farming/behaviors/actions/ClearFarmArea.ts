@@ -64,9 +64,13 @@ export class ClearFarmArea implements BehaviorNode {
         console.log(`[BT] Clearing ${blockType} at ${blockToClear.position} (${blockToClear.name})`);
 
         try {
-            // Move close enough to break
-            const goal = new GoalLookAtBlock(blockToClear.position, bot.world, { reach: 4 });
-            await bot.pathfinder.goto(goal);
+            // Move close enough to break if we can't already
+            if (!bot.canDigBlock(blockToClear)) {
+                const goal = new GoalLookAtBlock(blockToClear.position, bot.world, { reach: 4 });
+                await bot.pathfinder.goto(goal);
+            } else {
+                console.log(`[BT] Already within reach to clear ${blockToClear.position}, skipping movement`);
+            }
 
             // Break the block
             await bot.dig(blockToClear);
