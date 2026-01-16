@@ -23,6 +23,7 @@ export interface FarmingBlackboard {
 
     // Strategic state (persists across ticks)
     farmCenter: Vec3 | null;
+    farmChest: Vec3 | null;  // POI: chest for storing harvest
     lastAction: string;
     consecutiveIdleTicks: number;
 
@@ -54,6 +55,7 @@ export function createBlackboard(): FarmingBlackboard {
         stickCount: 0,
 
         farmCenter: null,
+        farmChest: null,
         lastAction: 'none',
         consecutiveIdleTicks: 0,
 

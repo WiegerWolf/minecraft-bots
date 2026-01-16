@@ -85,53 +85,63 @@ export class RepairField implements BehaviorNode {
     }
 
     private async gatherDirt(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
-        // Find dirt blocks OUTSIDE the farm area (at least 6 blocks from center)
+        // Find dirt/grass blocks OUTSIDE the farm area
         const farmCenter = bb.farmCenter!;
+        const botPos = bot.entity.position;
+
+        // Search around bot position for better results
         const dirtBlocks = bot.findBlocks({
-            point: farmCenter,
-            maxDistance: 32,
-            count: 20,
-            matching: b => {
-                if (!b || !b.name || !b.position) return false;
-                if (b.name !== 'dirt' && b.name !== 'grass_block') return false;
-
-                // Must be outside the farm area (more than 5 blocks from center)
-                const dx = Math.abs(b.position.x - farmCenter.x);
-                const dz = Math.abs(b.position.z - farmCenter.z);
-                if (dx <= 5 && dz <= 5) return false;
-
-                // Must have air above (accessible)
-                return true;
+            point: botPos,
+            maxDistance: 48,
+            count: 50,
+            matching: (block) => {
+                if (!block) return false;
+                return block.name === 'dirt' || block.name === 'grass_block';
             }
         });
 
-        if (dirtBlocks.length === 0) {
-            console.log(`[BT] No dirt found outside farm to gather`);
-            return 'failure';
-        }
-
-        // Find one with air above
+        // Filter to blocks outside farm area and with accessible top
+        let insideFarm = 0;
+        let noAccessible = 0;
         for (const pos of dirtBlocks) {
+            // Must be outside the farm area (more than 5 blocks from center in X or Z)
+            const dx = Math.abs(pos.x - farmCenter.x);
+            const dz = Math.abs(pos.z - farmCenter.z);
+            if (dx <= 5 && dz <= 5) {
+                insideFarm++;
+                continue;
+            }
+
+            // Must have air or short plants above (accessible)
             const above = bot.blockAt(pos.offset(0, 1, 0));
-            if (above && above.name === 'air') {
-                const block = bot.blockAt(pos);
-                if (!block) continue;
+            if (!above) {
+                noAccessible++;
+                continue;
+            }
+            const accessibleAbove = ['air', 'short_grass', 'tall_grass', 'grass', 'fern'].includes(above.name);
+            if (!accessibleAbove) {
+                noAccessible++;
+                continue;
+            }
 
-                console.log(`[BT] Gathering dirt from ${pos} to repair farm`);
-                bb.lastAction = 'gather_dirt';
+            const block = bot.blockAt(pos);
+            if (!block) continue;
 
-                try {
-                    await bot.pathfinder.goto(new GoalLookAtBlock(pos, bot.world));
-                    await bot.dig(block);
-                    await sleep(300);
-                    return 'success';
-                } catch (err) {
-                    console.log(`[BT] Failed to gather dirt: ${err}`);
-                    return 'failure';
-                }
+            console.log(`[BT] Gathering dirt from ${pos} to repair farm`);
+            bb.lastAction = 'gather_dirt';
+
+            try {
+                await bot.pathfinder.goto(new GoalLookAtBlock(pos, bot.world));
+                await bot.dig(block);
+                await sleep(300);
+                return 'success';
+            } catch (err) {
+                console.log(`[BT] Failed to gather dirt: ${err}`);
+                return 'failure';
             }
         }
 
+        console.log(`[BT] No accessible dirt found: ${dirtBlocks.length} total, ${insideFarm} inside farm, ${noAccessible} not accessible`);
         return 'failure';
     }
 }
