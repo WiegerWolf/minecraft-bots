@@ -19,7 +19,9 @@ export {
     WaitAtFarm,
     RepairField,
     SetupFarmChest,
-    ClearFarmArea
+    ClearFarmArea,
+    RequestMaterials,
+    CheckSharedChest
 } from './actions';
 
 // Import for tree building
@@ -39,16 +41,18 @@ import {
     WaitAtFarm,
     RepairField,
     SetupFarmChest,
-    ClearFarmArea
+    ClearFarmArea,
+    RequestMaterials,
+    CheckSharedChest
 } from './actions';
 
 /**
  * Creates the farming behavior tree with the following priority order:
  * 1. Pick up nearby items (always do this first)
- * 2. Finish harvesting a tree if we started one (clear leaves, replant)
+ * 2. Finish harvesting a tree if we started one (clear leaves, replant) - kept for clearing trees that block farm
  * 3. Deposit produce to farm chest if inventory full or lots of produce
- * 4. Get tools if needed (craft hoe)
- * 5. Find farm center if we don't have one
+ * 4. Find farm center if we don't have one (BEFORE tools - need to explore first!)
+ * 5. Get tools if needed (only after we have a farm center or can craft locally)
  * 6. Clear farm area (remove trees, level terrain)
  * 7. Setup farm chest if we have resources and no chest yet
  * 8. Repair holes in the farm field
@@ -65,6 +69,7 @@ export function createFarmingBehaviorTree(): BehaviorNode {
         new PickupItems(),
 
         // Priority 2: Finish harvesting a tree we started (leaves, replant)
+        // Keep this for clearing trees that block the farm
         new Sequence('FinishTreeHarvest', [
             new Condition('HasActiveTreeHarvest', bb => bb.currentTreeHarvest !== null),
             new GatherWood(),  // Will continue the harvest
@@ -73,28 +78,33 @@ export function createFarmingBehaviorTree(): BehaviorNode {
         // Priority 3: Deposit produce to farm chest
         new DepositItems(),
 
-        // Priority 4: Get tools if needed
-        new Sequence('GetTools', [
-            new Condition('NeedsHoe', bb => !bb.hasHoe),
-            new Selector('ObtainHoe', [
-                new CraftHoe(),
-                new GatherWood(true),  // startNewTreeOnly mode
-            ])
-        ]),
-
-        // Priority 4: Find farm center if we don't have one
+        // Priority 4: Find farm center if we don't have one (BEFORE tools!)
         new Sequence('EstablishFarm', [
             new Condition('NoFarmCenter', bb => !bb.farmCenter),
             new FindFarmCenter(),
         ]),
 
-        // Priority 5: Clear farm area (remove trees, level terrain around water)
-        new Sequence('ClearArea', [
+        // Priority 5: Get tools if needed - only after we have a farm center
+        new Sequence('GetTools', [
+            new Condition('NeedsHoe', bb => !bb.hasHoe),
             new Condition('HasFarmCenter', bb => bb.farmCenter !== null),
-            new ClearFarmArea(),
+            new Selector('ObtainHoe', [
+                // First, try to craft if we have materials
+                new Sequence('CraftIfPossible', [
+                    new Condition('HasMaterials', bb => bb.stickCount >= 2 && bb.plankCount >= 2),
+                    new CraftHoe(),
+                ]),
+                // Otherwise, check shared chest for materials
+                new CheckSharedChest(),
+                // If still no materials, request from lumberjack
+                new RequestMaterials(),
+            ])
         ]),
 
-        // Priority 6: Setup farm chest (after farm is established and no chest yet)
+        // Priority 6: Clear farm area (remove trees, level terrain around water)
+        new ClearFarmArea(),
+
+        // Priority 7: Setup farm chest (after farm is established and no chest yet)
         new Sequence('SetupChest', [
             new Condition('NeedsChest', bb =>
                 bb.farmCenter !== null &&
@@ -103,34 +113,34 @@ export function createFarmingBehaviorTree(): BehaviorNode {
             new SetupFarmChest(),
         ]),
 
-        // Priority 7: Repair holes in the farm (from accidental digging)
+        // Priority 8: Repair holes in the farm (from accidental digging)
         new Sequence('RepairFarm', [
             new Condition('HasFarmCenter', bb => bb.farmCenter !== null),
             new RepairField(),
         ]),
 
-        // Priority 8: Harvest mature crops (this also provides seeds!)
+        // Priority 9: Harvest mature crops (this also provides seeds!)
         new HarvestCrops(),
 
-        // Priority 9: Plant seeds on empty farmland
+        // Priority 10: Plant seeds on empty farmland
         new PlantSeeds(),
 
-        // Priority 10: Till ground to create new farmland
+        // Priority 11: Till ground to create new farmland
         new TillGround(),
 
-        // Priority 11: Get seeds by breaking grass (only if no mature crops available)
+        // Priority 12: Get seeds by breaking grass (only if no mature crops available)
         new Sequence('GetSeeds', [
             new Condition('NeedsSeedsAndNoCrops', bb => bb.needsSeeds && bb.nearbyMatureCrops.length === 0),
             new GatherSeeds(),
         ]),
 
-        // Priority 12: Wait at farm if we have one (crops are growing)
+        // Priority 13: Wait at farm if we have one (crops are growing)
         new Sequence('WaitForCrops', [
             new Condition('HasFarmCenter', bb => bb.farmCenter !== null),
             new WaitAtFarm(),
         ]),
 
-        // Priority 13: Explore as last resort (only if no farm center)
+        // Priority 14: Explore as last resort (only if no farm center)
         new Explore(),
     ]);
 }

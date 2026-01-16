@@ -2,16 +2,20 @@ import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
 import { pathfinder, goals } from 'mineflayer-pathfinder';
 import { faker } from '@faker-js/faker';
 import { FarmingRole } from './roles/farming/FarmingRole';
+import { LumberjackRole } from './roles/lumberjack/LumberjackRole';
 import type { Role } from './roles/Role';
 const { GoalNear } = goals;
-// Generate a random bot name
-const botName = faker.internet.username().slice(0, 16);
-console.log(`🎲 Generated random name: ${botName}`);
+
+// Read configuration from environment variables (set by manager)
+const BOT_ROLE = process.env.BOT_ROLE || 'farming';
+const BOT_NAME = process.env.BOT_NAME || faker.internet.username().slice(0, 16);
+
+console.log(`🎲 Bot name: ${BOT_NAME}, Role: ${BOT_ROLE}`);
 
 const config: BotOptions = {
     host: 'localhost',
     port: 25565,
-    username: botName,
+    username: BOT_NAME,
     version: undefined,
 };
 
@@ -19,9 +23,12 @@ const bot: Bot = mineflayer.createBot(config);
 
 bot.loadPlugin(pathfinder);
 
+// Register all available roles
 const roles: Record<string, Role> = {
-    farming: new FarmingRole()
+    farming: new FarmingRole(),
+    lumberjack: new LumberjackRole(),
 };
+
 let currentRole: Role | null = null;
 
 function setRole(roleName: string | null, options?: any) {
@@ -39,9 +46,11 @@ function setRole(roleName: string | null, options?: any) {
 
 bot.once('spawn', () => {
     console.log('✅ Bot has spawned!');
-    
-    bot.waitForTicks(20).then(() => {
-         bot.chat('Ready to work!');
+
+    // Auto-start the configured role after a short delay
+    bot.waitForTicks(40).then(() => {
+        console.log(`🤖 Auto-starting ${BOT_ROLE} role...`);
+        setRole(BOT_ROLE);
     });
 });
 
@@ -51,6 +60,7 @@ bot.on('chat', (username: string, message: string) => {
     const args = message.trim().split(/\s+/);
     const command = args[0]?.toLowerCase();
 
+    // Manual role control commands (useful for debugging)
     if (command === 'farm') {
         const sub = args[1]?.toLowerCase();
         if (sub === 'stop') {
@@ -63,6 +73,18 @@ bot.on('chat', (username: string, message: string) => {
             bot.chat("Starting farming logic.");
         }
     }
+
+    if (command === 'lumber' || command === 'lumberjack') {
+        const sub = args[1]?.toLowerCase();
+        if (sub === 'stop') {
+            setRole(null);
+            bot.chat("Stopped lumberjack.");
+        } else {
+            setRole('lumberjack');
+            bot.chat("Starting lumberjack logic.");
+        }
+    }
+
     if (command === 'come') {
         const player = bot.players[username];
         const position = player?.entity?.position;
@@ -70,6 +92,12 @@ bot.on('chat', (username: string, message: string) => {
             bot.pathfinder.goto(new GoalNear(position.x, position.y, position.z, 1));
             bot.chat("Coming to you!");
         }
+    }
+
+    if (command === 'stop') {
+        setRole(null);
+        bot.pathfinder.stop();
+        bot.chat("Stopped all activities.");
     }
 });
 
@@ -87,10 +115,9 @@ async function emergencyDropAndExit() {
     isDropping = true;
 
     console.log("🚨 Termination signal received. Initiating emergency inventory dump...");
-    bot.chat("Shutting down! Dropping inventory...");
 
     // 1. Stop all bot actions
-    setRole(null); 
+    setRole(null);
     bot.pathfinder.stop();
     bot.clearControlStates();
 
@@ -100,12 +127,12 @@ async function emergencyDropAndExit() {
         try {
             // Look down to drop at feet
             await bot.look(bot.entity.yaw, -Math.PI / 2, true);
-            
+
             for (const item of items) {
                 try {
                     await bot.tossStack(item);
-                } catch (e) { 
-                    console.error(`Failed to drop ${item.name}`); 
+                } catch (e) {
+                    console.error(`Failed to drop ${item.name}`);
                 }
             }
         } catch (e) {

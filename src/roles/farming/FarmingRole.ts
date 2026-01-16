@@ -3,6 +3,7 @@ import type { Role } from '../Role';
 import { Movements } from 'mineflayer-pathfinder';
 import { createBlackboard, updateBlackboard, type FarmingBlackboard } from './Blackboard';
 import { createFarmingBehaviorTree, type BehaviorNode } from './behaviors';
+import { villageManager } from '../../shared/VillageState';
 
 export class FarmingRole implements Role {
     name = 'farming';
@@ -84,8 +85,36 @@ export class FarmingRole implements Role {
             }
         }
 
+        // Check for existing village center and register bot
+        this.initializeVillageIntegration(bot);
+
         console.log('[Farming] 🚜 Behavior Tree Farming Role started.');
         this.loop();
+    }
+
+    private async initializeVillageIntegration(bot: Bot) {
+        try {
+            // Check if village center already exists
+            const existingCenter = await villageManager.getVillageCenter();
+            if (existingCenter && !this.blackboard.farmCenter) {
+                this.blackboard.farmCenter = existingCenter;
+                console.log(`[Farming] Using existing village center at ${existingCenter}`);
+            }
+
+            // Register this bot with the village
+            await villageManager.updateBot(bot.username, {
+                role: 'farming',
+                position: {
+                    x: bot.entity.position.x,
+                    y: bot.entity.position.y,
+                    z: bot.entity.position.z
+                },
+                provides: ['wheat', 'wheat_seeds', 'carrot', 'potato', 'beetroot'],
+                needs: this.blackboard.needsTools ? ['stick', 'planks'] : []
+            });
+        } catch (error) {
+            console.warn('[Farming] Failed to initialize village integration:', error);
+        }
     }
 
     stop(bot: Bot) {
@@ -103,9 +132,10 @@ export class FarmingRole implements Role {
                 // ═══════════════════════════════════════════════
                 updateBlackboard(this.bot, this.blackboard);
 
-                // Debug output every 10 seconds
+                // Update village state and log status every 10 seconds
                 if (Date.now() % 10000 < 150) {
                     this.logStatus();
+                    this.updateVillageState(this.bot);
                 }
 
                 // ═══════════════════════════════════════════════
@@ -143,6 +173,37 @@ export class FarmingRole implements Role {
                 console.error('[Farming] Loop error:', error);
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
+        }
+    }
+
+    private async updateVillageState(bot: Bot) {
+        try {
+            // Register village center if we discovered one
+            if (this.blackboard.farmCenter) {
+                await villageManager.setVillageCenter(this.blackboard.farmCenter);
+            }
+
+            // Register shared chest if we have one
+            if (this.blackboard.farmChest) {
+                await villageManager.setSharedChest(this.blackboard.farmChest);
+            }
+
+            // Update bot state
+            await villageManager.updateBot(bot.username, {
+                role: 'farming',
+                position: {
+                    x: bot.entity.position.x,
+                    y: bot.entity.position.y,
+                    z: bot.entity.position.z
+                },
+                provides: ['wheat', 'wheat_seeds', 'carrot', 'potato', 'beetroot'],
+                needs: this.blackboard.needsTools ? ['stick', 'planks'] : []
+            });
+
+            // Clean up stale requests
+            await villageManager.cancelStaleRequests();
+        } catch (error) {
+            // Ignore errors - village state is optional
         }
     }
 
