@@ -165,17 +165,28 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         }
     }
 
-    // Find mature crops
-    bb.nearbyMatureCrops = bot.findBlocks({
+    // Find mature crops - search for ALL crops first, then filter for mature ones
+    const cropNames = ['wheat', 'carrots', 'potatoes', 'beetroots'];
+    const allCrops = bot.findBlocks({
         point: searchCenter,
         maxDistance: SEARCH_RADIUS,
-        count: 20,
+        count: 100,
         matching: b => {
-            // FIX: Add null checks
-            if (!b || !b.position || !b.name) return false;
-            return isMatureCrop(b);
+            if (!b || !b.name) return false;
+            return cropNames.includes(b.name);
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
+
+    bb.nearbyMatureCrops = allCrops.filter(b => isMatureCrop(b));
+
+    // Debug: show crop maturity status
+    if (allCrops.length > 0 && bb.nearbyMatureCrops.length === 0) {
+        const sample = allCrops.slice(0, 3).map(b => {
+            const props = b.getProperties();
+            return `${b.name}:age${props.age ?? '?'}`;
+        }).join(', ');
+        console.log(`[Blackboard] Found ${allCrops.length} crops, ${bb.nearbyMatureCrops.length} mature: [${sample}]`);
+    }
 
     // Find grass (for seeds) - expanded list for different MC versions
     const grassNames = ['short_grass', 'tall_grass', 'grass', 'fern', 'large_fern'];
