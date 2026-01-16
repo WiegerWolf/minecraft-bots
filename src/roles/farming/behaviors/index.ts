@@ -16,7 +16,8 @@ export {
     GatherWood,
     Explore,
     FindFarmCenter,
-    WaitAtFarm
+    WaitAtFarm,
+    RepairField
 } from './actions';
 
 // Import for tree building
@@ -33,7 +34,8 @@ import {
     GatherWood,
     Explore,
     FindFarmCenter,
-    WaitAtFarm
+    WaitAtFarm,
+    RepairField
 } from './actions';
 
 /**
@@ -42,12 +44,13 @@ import {
  * 2. Deposit if inventory full
  * 3. Get tools if needed (craft hoe)
  * 4. Find farm center if we don't have one
- * 5. Harvest mature crops (also gives seeds!)
- * 6. Plant seeds on empty farmland
- * 7. Till ground to create new farmland
- * 8. Get seeds by breaking grass (only if no mature crops to harvest)
- * 9. Wait at farm if crops growing (have farm center)
- * 10. Explore as last resort
+ * 5. Repair holes in the farm field
+ * 6. Harvest mature crops (also gives seeds!)
+ * 7. Plant seeds on empty farmland
+ * 8. Till ground to create new farmland
+ * 9. Get seeds by breaking grass (only if no mature crops to harvest)
+ * 10. Wait at farm if crops growing (have farm center)
+ * 11. Explore as last resort
  */
 export function createFarmingBehaviorTree(): BehaviorNode {
     return new Selector('Root', [
@@ -72,28 +75,34 @@ export function createFarmingBehaviorTree(): BehaviorNode {
             new FindFarmCenter(),
         ]),
 
-        // Priority 5: Harvest mature crops (this also provides seeds!)
+        // Priority 5: Repair holes in the farm (from accidental digging)
+        new Sequence('RepairFarm', [
+            new Condition('HasFarmCenter', bb => bb.farmCenter !== null),
+            new RepairField(),
+        ]),
+
+        // Priority 6: Harvest mature crops (this also provides seeds!)
         new HarvestCrops(),
 
-        // Priority 6: Plant seeds on empty farmland
+        // Priority 7: Plant seeds on empty farmland
         new PlantSeeds(),
 
-        // Priority 7: Till ground to create new farmland
+        // Priority 8: Till ground to create new farmland
         new TillGround(),
 
-        // Priority 8: Get seeds by breaking grass (only if no mature crops available)
+        // Priority 9: Get seeds by breaking grass (only if no mature crops available)
         new Sequence('GetSeeds', [
             new Condition('NeedsSeedsAndNoCrops', bb => bb.needsSeeds && bb.nearbyMatureCrops.length === 0),
             new GatherSeeds(),
         ]),
 
-        // Priority 9: Wait at farm if we have one (crops are growing)
+        // Priority 10: Wait at farm if we have one (crops are growing)
         new Sequence('WaitForCrops', [
             new Condition('HasFarmCenter', bb => bb.farmCenter !== null),
             new WaitAtFarm(),
         ]),
 
-        // Priority 10: Explore as last resort (only if no farm center)
+        // Priority 11: Explore as last resort (only if no farm center)
         new Explore(),
     ]);
 }
