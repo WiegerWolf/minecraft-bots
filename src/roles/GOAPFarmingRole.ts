@@ -1,7 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Movements } from 'mineflayer-pathfinder';
 import { GOAPRole, type GOAPRoleConfig } from './GOAPRole';
-import { createBlackboard, type FarmingBlackboard } from './farming/Blackboard';
+import { createBlackboard, updateBlackboard, type FarmingBlackboard } from './farming/Blackboard';
 import { createFarmingActions } from '../planning/actions/FarmingActions';
 import { createFarmingGoals } from '../planning/goals/FarmingGoals';
 import { VillageChat } from '../shared/VillageChat';
@@ -34,6 +34,12 @@ export class GOAPFarmingRole extends GOAPRole {
 
   protected createBlackboard(): FarmingBlackboard {
     return createBlackboard();
+  }
+
+  protected updateBlackboard(): void {
+    if (this.bot && this.blackboard) {
+      updateBlackboard(this.bot, this.blackboard);
+    }
   }
 
   override start(bot: Bot, options?: any): void {

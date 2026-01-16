@@ -2,6 +2,7 @@ import { spawn, type Subprocess } from "bun";
 import { watch } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { faker } from '@faker-js/faker';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -9,9 +10,10 @@ const __dirname = dirname(__filename);
 const BOT_PATH = resolve(__dirname, "bot.ts");
 
 // Bot configurations - each entry spawns a separate bot with its own role
+// roleLabel must be short to fit within Minecraft's 16 character username limit
 const BOT_CONFIGS = [
-    { role: 'farming', namePrefix: 'Farmer' },
-    { role: 'lumberjack', namePrefix: 'Lumberjack' },
+    { role: 'goap-farming', roleLabel: 'Farmer' },
+    { role: 'goap-lumberjack', roleLabel: 'Lmbr' },
 ];
 
 // Track multiple bot processes
@@ -22,12 +24,23 @@ const retryTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
 const MAX_BACKOFF = 30000;
 const INITIAL_BACKOFF = 1000;
 
-function generateBotName(prefix: string): string {
-    const suffix = Math.random().toString(36).substring(2, 6);
-    return `${prefix}_${suffix}`;
+/**
+ * Generate a bot name using faker with the role label.
+ * Format: FirstName_RoleLabel (e.g., "Emma_Farmer", "Oscar_Lmbr")
+ * Must fit within Minecraft's 16 character username limit.
+ */
+function generateBotName(roleLabel: string): string {
+    // Calculate max length for first name (16 chars total - underscore - role label)
+    const maxFirstNameLen = 16 - roleLabel.length - 1;
+
+    // Get a first name and truncate if needed
+    let firstName = faker.person.firstName();
+    firstName = firstName.substring(0, maxFirstNameLen).replace(/[^a-zA-Z0-9]/g, '');
+
+    return `${firstName}_${roleLabel}`;
 }
 
-async function startBot(config: { role: string; namePrefix: string }, isRestart = false) {
+async function startBot(config: { role: string; roleLabel: string }, isRestart = false) {
     const configKey = config.role;
 
     // Clear any pending retry
@@ -40,7 +53,7 @@ async function startBot(config: { role: string; namePrefix: string }, isRestart 
     // Kill existing bot if restarting
     const existingProcess = botProcesses.get(configKey);
     if (existingProcess) {
-        console.log(`♻️ Restarting ${config.namePrefix} bot due to file change...`);
+        console.log(`♻️ Restarting ${config.roleLabel} bot due to file change...`);
         existingProcess.kill();
 
         if (existingProcess.exited) {
@@ -48,10 +61,10 @@ async function startBot(config: { role: string; namePrefix: string }, isRestart 
         }
         reconnectAttempts.set(configKey, 0);
     } else if (!isRestart) {
-        console.log(`🚀 Starting ${config.namePrefix} bot...`);
+        console.log(`🚀 Starting ${config.roleLabel} bot...`);
     }
 
-    const botName = generateBotName(config.namePrefix);
+    const botName = generateBotName(config.roleLabel);
 
     const botProcess = spawn(["bun", "run", BOT_PATH], {
         stdout: "pipe",
@@ -78,14 +91,14 @@ async function startBot(config: { role: string; namePrefix: string }, isRestart 
             const text = decoder.decode(value);
             // Prefix output with bot role for clarity
             const prefixedText = text.split('\n')
-                .map(line => line ? `[${config.namePrefix}] ${line}` : '')
+                .map(line => line ? `[${config.roleLabel}] ${line}` : '')
                 .join('\n');
             process.stdout.write(prefixedText);
 
             if (text.includes("✅ Bot has spawned!")) {
                 const attempts = reconnectAttempts.get(configKey) || 0;
                 if (attempts > 0) {
-                    console.log(`✨ ${config.namePrefix} bot reconnected successfully! Resetting backoff.`);
+                    console.log(`✨ ${config.roleLabel} bot reconnected successfully! Resetting backoff.`);
                 }
                 reconnectAttempts.set(configKey, 0);
             }
@@ -101,7 +114,7 @@ async function startBot(config: { role: string; namePrefix: string }, isRestart 
         if (exitCode !== 0 && exitCode !== null) {
             const attempts = reconnectAttempts.get(configKey) || 0;
             const delay = Math.min(INITIAL_BACKOFF * Math.pow(2, attempts), MAX_BACKOFF);
-            console.log(`⚠️ ${config.namePrefix} bot exited with code ${exitCode}. Reconnecting in ${delay / 1000}s...`);
+            console.log(`⚠️ ${config.roleLabel} bot exited with code ${exitCode}. Reconnecting in ${delay / 1000}s...`);
             reconnectAttempts.set(configKey, attempts + 1);
 
             const timeout = setTimeout(() => {
@@ -110,7 +123,7 @@ async function startBot(config: { role: string; namePrefix: string }, isRestart 
             }, delay);
             retryTimeouts.set(configKey, timeout);
         } else {
-            console.log(`✅ ${config.namePrefix} bot exited cleanly (or was killed for restart).`);
+            console.log(`✅ ${config.roleLabel} bot exited cleanly (or was killed for restart).`);
         }
     });
 }

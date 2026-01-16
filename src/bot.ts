@@ -4,6 +4,7 @@ import { faker } from '@faker-js/faker';
 import { FarmingRole } from './roles/farming/FarmingRole';
 import { LumberjackRole } from './roles/lumberjack/LumberjackRole';
 import { GOAPFarmingRole } from './roles/GOAPFarmingRole';
+import { GOAPLumberjackRole } from './roles/GOAPLumberjackRole';
 import type { Role } from './roles/Role';
 const { GoalNear } = goals;
 
@@ -28,7 +29,8 @@ bot.loadPlugin(pathfinder);
 const roles: Record<string, Role> = {
     farming: new FarmingRole(),
     lumberjack: new LumberjackRole(),
-    'goap-farming': new GOAPFarmingRole({ debug: true }), // GOAP-based farming with debug enabled
+    'goap-farming': new GOAPFarmingRole({ debug: true }),
+    'goap-lumberjack': new GOAPLumberjackRole({ debug: true }),
 };
 
 let currentRole: Role | null = null;

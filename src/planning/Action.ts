@@ -1,6 +1,5 @@
 import type { Bot } from 'mineflayer';
 import { WorldState, type FactValue } from './WorldState';
-import type { FarmingBlackboard } from '../roles/farming/Blackboard';
 
 /**
  * Result of executing an action.
@@ -72,7 +71,7 @@ export interface GOAPAction {
    * @param ws - Current world state (read-only, effects applied by planner)
    * @returns Promise resolving to action result
    */
-  execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult>;
+  execute(bot: Bot, bb: any, ws: WorldState): Promise<ActionResult>;
 
   /**
    * Optional: Cancel this action if it's currently running.
@@ -169,7 +168,7 @@ export abstract class BaseGOAPAction implements GOAPAction {
     return 1.0;
   }
 
-  abstract execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult>;
+  abstract execute(bot: Bot, bb: any, ws: WorldState): Promise<ActionResult>;
 
   /**
    * Check if all preconditions are satisfied.

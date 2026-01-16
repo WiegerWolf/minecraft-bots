@@ -1,9 +1,12 @@
 import { WorldState } from './WorldState';
 import type { FarmingBlackboard } from '../roles/farming/Blackboard';
+import type { LumberjackBlackboard } from '../roles/lumberjack/LumberjackBlackboard';
 import type { Bot } from 'mineflayer';
 
 /**
- * Converts a FarmingBlackboard to a WorldState for GOAP planning.
+ * Converts a Blackboard to a WorldState for GOAP planning.
+ *
+ * Supports both FarmingBlackboard and LumberjackBlackboard.
  *
  * Facts are organized into categories:
  * - inv.*: Inventory state (seeds, produce, tools, materials)
@@ -12,76 +15,56 @@ import type { Bot } from 'mineflayer';
  * - pos.*: Important positions (farmCenter, sharedChest, etc.)
  * - state.*: Bot state (lastAction, consecutiveIdleTicks, etc.)
  * - tree.*: Tree harvesting state
+ * - can.*: Computed ability flags
+ * - needs.*: Computed need flags
+ * - derived.*: Derived convenience facts
  */
 export class WorldStateBuilder {
   /**
+   * Type guard to check if blackboard is a FarmingBlackboard.
+   */
+  private static isFarmingBlackboard(bb: any): bb is FarmingBlackboard {
+    return 'hasHoe' in bb && 'seedCount' in bb;
+  }
+
+  /**
+   * Type guard to check if blackboard is a LumberjackBlackboard.
+   */
+  private static isLumberjackBlackboard(bb: any): bb is LumberjackBlackboard {
+    return 'hasAxe' in bb && 'nearbyTrees' in bb;
+  }
+
+  /**
    * Build a WorldState from the current Blackboard.
    */
-  static fromBlackboard(bot: Bot, bb: FarmingBlackboard): WorldState {
+  static fromBlackboard(bot: Bot, bb: FarmingBlackboard | LumberjackBlackboard): WorldState {
     const ws = new WorldState();
 
     // ═══════════════════════════════════════════════
-    // INVENTORY FACTS
+    // COMMON FACTS (shared between roles)
     // ═══════════════════════════════════════════════
-    ws.set('inv.seeds', bb.seedCount);
-    ws.set('inv.produce', bb.produceCount);
     ws.set('inv.logs', bb.logCount);
     ws.set('inv.planks', bb.plankCount);
     ws.set('inv.sticks', bb.stickCount);
     ws.set('inv.emptySlots', bb.emptySlots);
-
-    // ═══════════════════════════════════════════════
-    // EQUIPMENT / CAPABILITIES
-    // ═══════════════════════════════════════════════
-    ws.set('has.hoe', bb.hasHoe);
-    ws.set('has.sword', bb.hasSword);
-    ws.set('has.axe', this.hasAxe(bot));
-    ws.set('has.craftingTable', this.hasCraftingTable(bot));
-
-    // ═══════════════════════════════════════════════
-    // NEARBY RESOURCES (counts for fast checking)
-    // ═══════════════════════════════════════════════
-    ws.set('nearby.water', bb.nearbyWater.length);
-    ws.set('nearby.farmland', bb.nearbyFarmland.length);
-    ws.set('nearby.matureCrops', bb.nearbyMatureCrops.length);
-    ws.set('nearby.grass', bb.nearbyGrass.length);
+    ws.set('state.inventoryFull', bb.inventoryFull);
+    ws.set('state.lastAction', bb.lastAction);
+    ws.set('state.consecutiveIdleTicks', bb.consecutiveIdleTicks);
     ws.set('nearby.drops', bb.nearbyDrops.length);
     ws.set('nearby.chests', bb.nearbyChests.length);
     ws.set('nearby.craftingTables', bb.nearbyCraftingTables.length);
+    ws.set('has.craftingTable', this.hasCraftingTable(bot));
+    ws.set('pos.bot', bot.entity.position.clone());
 
-    // ═══════════════════════════════════════════════
-    // POSITIONS (POI - Points of Interest)
-    // ═══════════════════════════════════════════════
-    if (bb.farmCenter) {
-      ws.set('pos.farmCenter', bb.farmCenter.clone());
-    }
+    // Shared positions
     if (bb.sharedChest) {
       ws.set('pos.sharedChest', bb.sharedChest.clone());
     }
     if (bb.sharedCraftingTable) {
       ws.set('pos.sharedCraftingTable', bb.sharedCraftingTable.clone());
     }
-    ws.set('pos.bot', bot.entity.position.clone());
 
-    // ═══════════════════════════════════════════════
-    // STATE FLAGS
-    // ═══════════════════════════════════════════════
-    ws.set('state.inventoryFull', bb.inventoryFull);
-    ws.set('state.lastAction', bb.lastAction);
-    ws.set('state.consecutiveIdleTicks', bb.consecutiveIdleTicks);
-
-    // ═══════════════════════════════════════════════
-    // COMPUTED DECISIONS (from Blackboard)
-    // ═══════════════════════════════════════════════
-    ws.set('can.till', bb.canTill);
-    ws.set('can.plant', bb.canPlant);
-    ws.set('can.harvest', bb.canHarvest);
-    ws.set('needs.tools', bb.needsTools);
-    ws.set('needs.seeds', bb.needsSeeds);
-
-    // ═══════════════════════════════════════════════
-    // TREE HARVESTING STATE
-    // ═══════════════════════════════════════════════
+    // Tree harvesting state (used by both roles)
     if (bb.currentTreeHarvest) {
       ws.set('tree.active', true);
       ws.set('tree.phase', bb.currentTreeHarvest.phase);
@@ -92,15 +75,87 @@ export class WorldStateBuilder {
     }
 
     // ═══════════════════════════════════════════════
-    // DERIVED FACTS (for convenience in planning)
+    // ROLE-SPECIFIC FACTS
     // ═══════════════════════════════════════════════
+    if (this.isFarmingBlackboard(bb)) {
+      this.addFarmingFacts(bot, ws, bb);
+    } else if (this.isLumberjackBlackboard(bb)) {
+      this.addLumberjackFacts(bot, ws, bb);
+    }
+
+    return ws;
+  }
+
+  /**
+   * Add farming-specific facts to the world state.
+   */
+  private static addFarmingFacts(bot: Bot, ws: WorldState, bb: FarmingBlackboard): void {
+    // Inventory
+    ws.set('inv.seeds', bb.seedCount);
+    ws.set('inv.produce', bb.produceCount);
+
+    // Equipment
+    ws.set('has.hoe', bb.hasHoe);
+    ws.set('has.sword', bb.hasSword);
+    ws.set('has.axe', this.hasAxe(bot));
+
+    // Nearby resources
+    ws.set('nearby.water', bb.nearbyWater.length);
+    ws.set('nearby.farmland', bb.nearbyFarmland.length);
+    ws.set('nearby.matureCrops', bb.nearbyMatureCrops.length);
+    ws.set('nearby.grass', bb.nearbyGrass.length);
+
+    // Positions
+    if (bb.farmCenter) {
+      ws.set('pos.farmCenter', bb.farmCenter.clone());
+    }
+
+    // Computed decisions
+    ws.set('can.till', bb.canTill);
+    ws.set('can.plant', bb.canPlant);
+    ws.set('can.harvest', bb.canHarvest);
+    ws.set('needs.tools', bb.needsTools);
+    ws.set('needs.seeds', bb.needsSeeds);
+
+    // Derived facts
     ws.set('derived.hasProduceToDeposit', bb.produceCount > 20 || bb.inventoryFull);
     ws.set('derived.canCraftHoe', this.canCraftHoe(bb));
     ws.set('derived.needsWood', bb.logCount === 0 && bb.plankCount < 4);
     ws.set('derived.hasFarmEstablished', bb.farmCenter !== null);
     ws.set('derived.hasStorageAccess', bb.sharedChest !== null || bb.nearbyChests.length > 0);
+  }
 
-    return ws;
+  /**
+   * Add lumberjack-specific facts to the world state.
+   */
+  private static addLumberjackFacts(bot: Bot, ws: WorldState, bb: LumberjackBlackboard): void {
+    // Inventory
+    ws.set('inv.saplings', bb.saplingCount);
+
+    // Equipment
+    ws.set('has.axe', bb.hasAxe);
+
+    // Nearby resources
+    ws.set('nearby.trees', bb.nearbyTrees.length);
+    ws.set('nearby.logs', bb.nearbyLogs.length);
+    ws.set('nearby.leaves', bb.nearbyLeaves.length);
+
+    // Positions
+    if (bb.villageCenter) {
+      ws.set('pos.villageCenter', bb.villageCenter.clone());
+    }
+
+    // Computed decisions
+    ws.set('can.chop', bb.canChop);
+    ws.set('needs.toDeposit', bb.needsToDeposit);
+    ws.set('has.pendingRequests', bb.hasPendingRequests);
+
+    // Derived facts
+    ws.set('derived.canCraftAxe', this.canCraftAxe(bb));
+    ws.set('derived.hasStorageAccess', bb.sharedChest !== null || bb.nearbyChests.length > 0);
+    ws.set('derived.hasVillage', bb.villageCenter !== null);
+    ws.set('derived.needsCraftingTable', bb.nearbyCraftingTables.length === 0 && !bb.sharedCraftingTable);
+    ws.set('derived.needsChest', bb.nearbyChests.length === 0 && !bb.sharedChest);
   }
 
   /**
@@ -125,6 +180,17 @@ export class WorldStateBuilder {
     const hasPlanks = bb.plankCount >= 2;
     const hasSticks = bb.stickCount >= 2;
     const canMakeSticks = bb.plankCount >= 4; // 2 planks for sticks + 2 for hoe head
+    return hasPlanks && (hasSticks || canMakeSticks);
+  }
+
+  /**
+   * Check if bot can craft a wooden axe (has materials).
+   */
+  private static canCraftAxe(bb: LumberjackBlackboard): boolean {
+    // Need 3 planks and 2 sticks (or enough planks to make sticks)
+    const hasPlanks = bb.plankCount >= 3;
+    const hasSticks = bb.stickCount >= 2;
+    const canMakeSticks = bb.plankCount >= 5; // 2 planks for sticks + 3 for axe head
     return hasPlanks && (hasSticks || canMakeSticks);
   }
 

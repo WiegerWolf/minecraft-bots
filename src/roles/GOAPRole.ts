@@ -1,7 +1,5 @@
 import type { Bot } from 'mineflayer';
 import type { Role } from './Role';
-import type { FarmingBlackboard } from './farming/Blackboard';
-import { updateBlackboard } from './farming/Blackboard';
 import { WorldState } from '../planning/WorldState';
 import { WorldStateBuilder } from '../planning/WorldStateBuilder';
 import { GOAPPlanner } from '../planning/GOAPPlanner';
@@ -43,7 +41,7 @@ export abstract class GOAPRole implements Role {
   abstract name: string;
 
   protected bot: Bot | null = null;
-  protected blackboard: FarmingBlackboard | null = null;
+  protected blackboard: any = null;
   protected config: Required<GOAPRoleConfig>;
 
   // Planning components
@@ -126,17 +124,23 @@ export abstract class GOAPRole implements Role {
   /**
    * Create the blackboard for this role (override if needed).
    */
-  protected abstract createBlackboard(): FarmingBlackboard;
+  protected abstract createBlackboard(): any;
+
+  /**
+   * Update the blackboard with current world state.
+   * Must be implemented by subclasses.
+   */
+  protected abstract updateBlackboard(): void | Promise<void>;
 
   /**
    * Main planning loop tick.
    */
-  private async tick(): Promise<void> {
+  protected async tick(): Promise<void> {
     if (!this.running || !this.bot || !this.blackboard) return;
 
     try {
       // PHASE 1: PERCEIVE
-      updateBlackboard(this.bot, this.blackboard);
+      await this.updateBlackboard();
       this.currentWorldState = WorldStateBuilder.fromBlackboard(this.bot, this.blackboard);
 
       // PHASE 2: DECIDE (if no plan is executing)
