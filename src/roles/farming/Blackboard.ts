@@ -2,6 +2,12 @@ import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
 
+export interface ExplorationMemory {
+    position: Vec3;
+    timestamp: number;
+    reason?: string;  // Why this location was recorded (e.g., 'visited', 'bad_water')
+}
+
 export interface FarmingBlackboard {
     // Perception data (refreshed each tick)
     nearbyWater: Block[];
@@ -26,6 +32,10 @@ export interface FarmingBlackboard {
     farmChest: Vec3 | null;  // POI: chest for storing harvest
     lastAction: string;
     consecutiveIdleTicks: number;
+
+    // Exploration memory (persists across ticks)
+    exploredPositions: ExplorationMemory[];  // Recently visited positions
+    badWaterPositions: ExplorationMemory[];  // Cave water locations to avoid
 
     // Computed booleans for easy decision making
     canTill: boolean;
@@ -58,6 +68,9 @@ export function createBlackboard(): FarmingBlackboard {
         farmChest: null,
         lastAction: 'none',
         consecutiveIdleTicks: 0,
+
+        exploredPositions: [],
+        badWaterPositions: [],
 
         canTill: false,
         canPlant: false,
@@ -232,18 +245,22 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     // FARM CENTER MANAGEMENT
     // ═══════════════════════════════════════════════
     if (!bb.farmCenter && bb.nearbyWater.length > 0) {
-        // Find water with best farming potential
-        const best = bb.nearbyWater
+        // Find water with best farming potential - must be under clear sky (not in caves!)
+        const candidates = bb.nearbyWater
             .filter(w => w.position.y > pos.y - 10 && w.position.y < pos.y + 10) // Sane Y level!
-            .sort((a, b) => {
-                const scoreA = countTillableAround(bot, a.position);
-                const scoreB = countTillableAround(bot, b.position);
-                return scoreB - scoreA;
-            })[0];
+            .filter(w => hasClearSky(bot, w.position, 4)); // Must have open sky above farm area
+
+        const best = candidates.sort((a, b) => {
+            const scoreA = countTillableAround(bot, a.position);
+            const scoreB = countTillableAround(bot, b.position);
+            return scoreB - scoreA;
+        })[0];
 
         if (best) {
             bb.farmCenter = best.position.clone();
             console.log(`[Blackboard] Established farm center at ${bb.farmCenter}`);
+        } else if (bb.nearbyWater.length > 0) {
+            console.log(`[Blackboard] Found ${bb.nearbyWater.length} water sources but none under clear sky`);
         }
     }
 
@@ -307,6 +324,56 @@ function isWithinHydrationRangeOfPoint(pos: Vec3, waterPos: Vec3): boolean {
     return dx <= 4 && dz <= 4 && dy <= 1;
 }
 
+/**
+ * Check if a position has clear sky above it (no solid blocks).
+ * Used to ensure farm locations are not in caves.
+ * @param bot - The bot instance
+ * @param pos - Position to check
+ * @param checkRadius - If > 0, also checks surrounding positions at this radius
+ * @returns true if sky is clear above
+ */
+export function hasClearSky(bot: Bot, pos: Vec3, checkRadius: number = 0): boolean {
+    const worldHeight = 320; // Max world height in modern MC
+    const startY = Math.floor(pos.y) + 1;
+
+    // Check the main position
+    if (!checkColumnClear(bot, pos.x, pos.z, startY, worldHeight)) {
+        return false;
+    }
+
+    // If radius specified, check surrounding positions too
+    if (checkRadius > 0) {
+        const offsets: [number, number][] = [
+            [checkRadius, 0], [-checkRadius, 0],
+            [0, checkRadius], [0, -checkRadius]
+        ];
+        for (const [dx, dz] of offsets) {
+            if (!checkColumnClear(bot, pos.x + dx, pos.z + dz, startY, worldHeight)) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+function checkColumnClear(bot: Bot, x: number, z: number, startY: number, maxY: number): boolean {
+    // Check upward for any solid blocks
+    for (let y = startY; y < Math.min(maxY, startY + 64); y++) {
+        const block = bot.blockAt(new Vec3(Math.floor(x), y, Math.floor(z)));
+        if (!block) continue; // Unloaded chunk, assume clear
+
+        // Air, leaves, and transparent blocks are OK
+        if (block.name === 'air' || block.name === 'cave_air' || block.name === 'void_air') continue;
+        if (block.name.includes('leaves')) continue;
+        if (block.transparent) continue;
+
+        // Found a solid block above - not clear sky
+        return false;
+    }
+    return true;
+}
+
 // Check if block above has sufficient light (crops need ≥9)
 // Note: Light values may not be reliable in mineflayer, so we're lenient
 function hasAdequateLight(bot: Bot, farmlandPos: Vec3): boolean {
@@ -325,4 +392,111 @@ function hasAdequateLight(bot: Bot, farmlandPos: Vec3): boolean {
     // Fall back to light level check if available
     const light = Math.max(above.skyLight ?? 15, above.light ?? 0);
     return light >= 9;
+}
+
+// ═══════════════════════════════════════════════
+// EXPLORATION MEMORY HELPERS
+// ═══════════════════════════════════════════════
+
+const EXPLORATION_HISTORY_SIZE = 30;
+const EXPLORATION_MEMORY_TTL = 5 * 60 * 1000; // 5 minutes
+const BAD_WATER_MEMORY_TTL = 10 * 60 * 1000;  // 10 minutes for bad water
+
+/**
+ * Record a position as explored
+ */
+export function recordExploredPosition(bb: FarmingBlackboard, pos: Vec3, reason: string = 'visited'): void {
+    // Clean up old entries first
+    cleanupExplorationMemory(bb);
+
+    bb.exploredPositions.push({
+        position: pos.clone(),
+        timestamp: Date.now(),
+        reason
+    });
+
+    // Keep history bounded
+    if (bb.exploredPositions.length > EXPLORATION_HISTORY_SIZE) {
+        bb.exploredPositions.shift();
+    }
+}
+
+/**
+ * Record a bad water location (cave water) to avoid
+ */
+export function recordBadWater(bb: FarmingBlackboard, pos: Vec3): void {
+    // Don't add duplicates
+    const isDuplicate = bb.badWaterPositions.some(
+        bw => bw.position.distanceTo(pos) < 16
+    );
+    if (isDuplicate) return;
+
+    bb.badWaterPositions.push({
+        position: pos.clone(),
+        timestamp: Date.now(),
+        reason: 'cave_water'
+    });
+
+    // Keep bounded
+    if (bb.badWaterPositions.length > 20) {
+        bb.badWaterPositions.shift();
+    }
+}
+
+/**
+ * Clean up expired exploration memory
+ */
+export function cleanupExplorationMemory(bb: FarmingBlackboard): void {
+    const now = Date.now();
+
+    bb.exploredPositions = bb.exploredPositions.filter(
+        e => now - e.timestamp < EXPLORATION_MEMORY_TTL
+    );
+
+    bb.badWaterPositions = bb.badWaterPositions.filter(
+        e => now - e.timestamp < BAD_WATER_MEMORY_TTL
+    );
+}
+
+/**
+ * Check if a position is near any recently explored position
+ */
+export function isNearExplored(bb: FarmingBlackboard, pos: Vec3, radius: number = 16): boolean {
+    return bb.exploredPositions.some(
+        e => e.position.distanceTo(pos) < radius
+    );
+}
+
+/**
+ * Check if a position is near bad water (cave water)
+ */
+export function isNearBadWater(bb: FarmingBlackboard, pos: Vec3, radius: number = 32): boolean {
+    return bb.badWaterPositions.some(
+        e => e.position.distanceTo(pos) < radius
+    );
+}
+
+/**
+ * Calculate exploration score for a position - higher is better (more novel)
+ */
+export function getExplorationScore(bb: FarmingBlackboard, pos: Vec3): number {
+    let score = 100;
+
+    // Penalize proximity to explored positions
+    for (const explored of bb.exploredPositions) {
+        const dist = explored.position.distanceTo(pos);
+        if (dist < 32) {
+            score -= (32 - dist) * 2;  // Closer = worse
+        }
+    }
+
+    // Heavy penalty for proximity to bad water
+    for (const badWater of bb.badWaterPositions) {
+        const dist = badWater.position.distanceTo(pos);
+        if (dist < 48) {
+            score -= (48 - dist) * 3;  // Strong penalty
+        }
+    }
+
+    return score;
 }
