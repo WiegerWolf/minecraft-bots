@@ -132,13 +132,21 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 
-    // Find tree bases (logs with dirt/grass below)
+    // Find tree bases (logs with valid ground below)
+    // Valid ground includes: dirt variants, mangrove roots, mud, or other logs (for tall trees)
+    const VALID_TREE_BASE = [
+        'dirt', 'grass_block', 'podzol', 'mycelium', 'coarse_dirt', 'rooted_dirt',
+        'mangrove_roots', 'muddy_mangrove_roots', 'mud', // Mangrove swamp blocks
+    ];
     bb.nearbyTrees = bb.nearbyLogs.filter(log => {
-        // Skip logs too high
-        if (log.position.y > bot.entity.position.y + 3) return false;
+        // Skip logs too high above bot
+        if (log.position.y > bot.entity.position.y + 5) return false;
 
         const below = bot.blockAt(log.position.offset(0, -1, 0));
-        return below && ['dirt', 'grass_block', 'podzol', 'mycelium', 'coarse_dirt', 'rooted_dirt'].includes(below.name);
+        if (!below) return false;
+
+        // Valid if on ground blocks, roots, mud, or another log (part of tree trunk)
+        return VALID_TREE_BASE.includes(below.name) || LOG_NAMES.includes(below.name);
     });
 
     // Find leaves (for clearing)

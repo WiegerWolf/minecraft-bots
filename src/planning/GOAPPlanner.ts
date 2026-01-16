@@ -241,8 +241,9 @@ export class GOAPPlanner {
     const importantFacts = [
       'has.hoe', 'has.sword', 'has.axe', 'has.craftingTable',
       'inv.seeds', 'inv.produce', 'inv.logs', 'inv.planks', 'inv.sticks',
-      'nearby.matureCrops', 'nearby.farmland', 'nearby.drops',
+      'nearby.matureCrops', 'nearby.farmland', 'nearby.drops', 'nearby.trees',
       'tree.active', 'derived.hasFarmEstablished',
+      'state.consecutiveIdleTicks',
     ];
 
     const keyParts: string[] = [];
