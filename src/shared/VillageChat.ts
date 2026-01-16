@@ -23,6 +23,7 @@ export interface ResourceRequest {
 export interface VillageChatState {
     villageCenter: Vec3 | null;
     sharedChest: Vec3 | null;
+    sharedCraftingTable: Vec3 | null;
     pendingRequests: ResourceRequest[];
 }
 
@@ -30,6 +31,7 @@ export class VillageChat {
     private state: VillageChatState = {
         villageCenter: null,
         sharedChest: null,
+        sharedCraftingTable: null,
         pendingRequests: []
     };
 
@@ -65,6 +67,16 @@ export class VillageChat {
                     const pos = new Vec3(parseInt(match[1]!), parseInt(match[2]!), parseInt(match[3]!));
                     this.state.sharedChest = pos;
                     console.log(`[VillageChat] Learned shared chest from ${username}: ${pos}`);
+                }
+            }
+
+            // Parse shared crafting table messages
+            if (message.startsWith('[CRAFTING] shared ')) {
+                const match = message.match(/\[CRAFTING\] shared (-?\d+) (-?\d+) (-?\d+)/);
+                if (match) {
+                    const pos = new Vec3(parseInt(match[1]!), parseInt(match[2]!), parseInt(match[3]!));
+                    this.state.sharedCraftingTable = pos;
+                    console.log(`[VillageChat] Learned shared crafting table from ${username}: ${pos}`);
                 }
             }
 
@@ -128,6 +140,13 @@ export class VillageChat {
     announceSharedChest(pos: Vec3) {
         this.state.sharedChest = pos;
         const msg = `[CHEST] shared ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}`;
+        this.bot.chat(msg);
+    }
+
+    // Announce shared crafting table
+    announceSharedCraftingTable(pos: Vec3) {
+        this.state.sharedCraftingTable = pos;
+        const msg = `[CRAFTING] shared ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}`;
         this.bot.chat(msg);
     }
 
@@ -202,6 +221,14 @@ export class VillageChat {
 
     setSharedChest(pos: Vec3) {
         this.state.sharedChest = pos;
+    }
+
+    getSharedCraftingTable(): Vec3 | null {
+        return this.state.sharedCraftingTable;
+    }
+
+    setSharedCraftingTable(pos: Vec3) {
+        this.state.sharedCraftingTable = pos;
     }
 
     getPendingRequests(): ResourceRequest[] {

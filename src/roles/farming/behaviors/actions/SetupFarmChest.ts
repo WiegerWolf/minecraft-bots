@@ -16,6 +16,18 @@ export class SetupFarmChest implements BehaviorNode {
     name = 'SetupFarmChest';
 
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
+        // If we have a shared chest from village chat, use that
+        if (bb.sharedChest) {
+            const block = bot.blockAt(bb.sharedChest);
+            if (block && block.name === 'chest') {
+                // Also set as farmChest for compatibility
+                bb.farmChest = bb.sharedChest;
+                return 'failure';  // Already have a shared chest, let other actions run
+            }
+            // Shared chest no longer exists
+            bb.sharedChest = null;
+        }
+
         // Already have a farm chest
         if (bb.farmChest) {
             // Verify it still exists
@@ -33,6 +45,11 @@ export class SetupFarmChest implements BehaviorNode {
         const existingChest = this.findNearbyChest(bot, bb.farmCenter);
         if (existingChest) {
             bb.farmChest = existingChest.position.clone();
+            // Announce as shared chest
+            if (bb.villageChat) {
+                bb.villageChat.announceSharedChest(bb.farmChest);
+                bb.sharedChest = bb.farmChest;
+            }
             console.log(`[BT] Found existing farm chest at ${bb.farmChest}`);
             return 'success';
         }
@@ -106,6 +123,7 @@ export class SetupFarmChest implements BehaviorNode {
                 // Announce to village chat that we have a shared chest
                 if (bb.villageChat) {
                     bb.villageChat.announceSharedChest(chestPos);
+                    bb.sharedChest = chestPos;
                 }
 
                 return 'success';
@@ -194,13 +212,26 @@ export class SetupFarmChest implements BehaviorNode {
         bb.lastAction = 'craft_chest';
 
         // Find or place a crafting table
-        const craftingTables = bot.findBlocks({
-            point: bot.entity.position,
-            maxDistance: 32,
-            count: 1,
-            matching: b => b?.name === 'crafting_table'
-        });
-        let craftingTable = craftingTables[0];
+        let craftingTable: any = null;
+
+        // Try shared crafting table first
+        if (bb.sharedCraftingTable) {
+            const tableBlock = bot.blockAt(bb.sharedCraftingTable);
+            if (tableBlock && tableBlock.name === 'crafting_table') {
+                craftingTable = bb.sharedCraftingTable;
+            }
+        }
+
+        // If no shared crafting table, look for nearby one
+        if (!craftingTable) {
+            const craftingTables = bot.findBlocks({
+                point: bot.entity.position,
+                maxDistance: 32,
+                count: 1,
+                matching: b => b?.name === 'crafting_table'
+            });
+            craftingTable = craftingTables[0];
+        }
 
         if (!craftingTable) {
             // Need to place a crafting table first

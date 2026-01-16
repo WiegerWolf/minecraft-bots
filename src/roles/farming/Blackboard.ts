@@ -23,6 +23,7 @@ export interface FarmingBlackboard {
     nearbyGrass: Block[];
     nearbyDrops: any[];
     nearbyChests: Block[];
+    nearbyCraftingTables: Block[];
 
     // Inventory summary
     hasHoe: boolean;
@@ -36,7 +37,9 @@ export interface FarmingBlackboard {
 
     // Strategic state (persists across ticks)
     farmCenter: Vec3 | null;
-    farmChest: Vec3 | null;  // POI: chest for storing harvest
+    farmChest: Vec3 | null;  // POI: chest for storing harvest (deprecated, use sharedChest)
+    sharedChest: Vec3 | null;  // Village shared chest (for all bots)
+    sharedCraftingTable: Vec3 | null;  // Village shared crafting table (for all bots)
     lastAction: string;
     consecutiveIdleTicks: number;
 
@@ -67,6 +70,7 @@ export function createBlackboard(): FarmingBlackboard {
         nearbyGrass: [],
         nearbyDrops: [],
         nearbyChests: [],
+        nearbyCraftingTables: [],
 
         hasHoe: false,
         hasSword: false,
@@ -79,6 +83,8 @@ export function createBlackboard(): FarmingBlackboard {
 
         farmCenter: null,
         farmChest: null,
+        sharedChest: null,
+        sharedCraftingTable: null,
         lastAction: 'none',
         consecutiveIdleTicks: 0,
 
@@ -250,6 +256,23 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
             return ['chest', 'barrel'].includes(b.name);
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
+
+    // Find crafting tables
+    bb.nearbyCraftingTables = bot.findBlocks({
+        point: pos,
+        maxDistance: 32,
+        count: 3,
+        matching: b => {
+            if (!b || !b.position || !b.name) return false;
+            return b.name === 'crafting_table';
+        }
+    }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
+
+    // Get shared village state from chat
+    if (bb.villageChat) {
+        bb.sharedChest = bb.villageChat.getSharedChest();
+        bb.sharedCraftingTable = bb.villageChat.getSharedCraftingTable();
+    }
 
     // ═══════════════════════════════════════════════
     // COMPUTED DECISIONS

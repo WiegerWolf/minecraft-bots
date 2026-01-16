@@ -17,6 +17,7 @@ export interface LumberjackBlackboard {
     nearbyLeaves: Block[];      // Leaf blocks
     nearbyDrops: any[];         // Dropped items
     nearbyChests: Block[];      // Chest blocks
+    nearbyCraftingTables: Block[]; // Crafting table blocks
 
     // Inventory summary
     logCount: number;
@@ -29,6 +30,7 @@ export interface LumberjackBlackboard {
     // Strategic state (persists across ticks)
     villageCenter: Vec3 | null;
     sharedChest: Vec3 | null;
+    sharedCraftingTable: Vec3 | null;
     currentTreeHarvest: TreeHarvestState | null;
 
     // Village communication (set by role)
@@ -55,6 +57,7 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         nearbyLeaves: [],
         nearbyDrops: [],
         nearbyChests: [],
+        nearbyCraftingTables: [],
 
         logCount: 0,
         plankCount: 0,
@@ -65,6 +68,7 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
 
         villageCenter: null,
         sharedChest: null,
+        sharedCraftingTable: null,
         currentTreeHarvest: null,
 
         villageChat: null,
@@ -103,6 +107,7 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     if (bb.villageChat) {
         bb.villageCenter = bb.villageChat.getVillageCenter();
         bb.sharedChest = bb.villageChat.getSharedChest();
+        bb.sharedCraftingTable = bb.villageChat.getSharedCraftingTable();
 
         // Check for pending requests this bot can fulfill
         const canProvide = ['log', 'planks', 'stick'];
@@ -160,6 +165,17 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
         matching: b => {
             if (!b || !b.name) return false;
             return ['chest', 'barrel'].includes(b.name);
+        }
+    }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
+
+    // Find crafting tables
+    bb.nearbyCraftingTables = bot.findBlocks({
+        point: pos,
+        maxDistance: 32,
+        count: 3,
+        matching: b => {
+            if (!b || !b.name) return false;
+            return b.name === 'crafting_table';
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 

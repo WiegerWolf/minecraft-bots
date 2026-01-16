@@ -27,6 +27,7 @@ import {
     DepositLogs,
     CraftAxe,
     CraftChest,
+    CraftAndPlaceCraftingTable,
     ProcessWood,
     PatrolForest
 } from './actions';
@@ -36,11 +37,13 @@ import {
  * 1. Pick up nearby items (logs, saplings)
  * 2. Finish harvesting a tree if we started one (clear leaves, replant)
  * 3. Fulfill requests from other bots (only if we have materials and shared chest)
- * 4. Deposit logs/planks/sticks if inventory getting full
- * 5. Craft axe if no axe and have materials
- * 6. Chop tree - find and chop trees (works with or without village center)
- * 7. Process wood - craft planks/sticks if excess logs
- * 8. Patrol forest - explore for more trees
+ * 4. Craft and place crafting table at village center if needed
+ * 5. Craft chest at village center if needed
+ * 6. Deposit logs/planks/sticks if inventory getting full
+ * 7. Craft axe if no axe and have materials
+ * 8. Chop tree - find and chop trees (works with or without village center)
+ * 9. Process wood - craft planks/sticks if excess logs
+ * 10. Patrol forest - explore for more trees
  */
 export function createLumberjackBehaviorTree(): BehaviorNode {
     return new Selector('Root', [
@@ -61,43 +64,53 @@ export function createLumberjackBehaviorTree(): BehaviorNode {
             new FulfillRequests(),
         ]),
 
-        // Priority 4: Craft chest if needed and we have materials
+        // Priority 4: Craft and place crafting table at village center if needed
+        new Sequence('CraftAndPlaceCraftingTable', [
+            new Condition('HasVillageCenter', bb => bb.villageCenter !== null),
+            new Condition('HasMaterialsForCraftingTable', bb => bb.plankCount >= 4 || bb.logCount >= 1),
+            new Condition('NoCraftingTableAvailable', bb => bb.sharedCraftingTable === null && bb.nearbyCraftingTables.length === 0),
+            new CraftAndPlaceCraftingTable(),
+        ]),
+
+        // Priority 5: Craft chest if needed and we have materials
         new Sequence('CraftChestIfNeeded', [
+            new Condition('HasVillageCenter', bb => bb.villageCenter !== null),
             new Condition('HasMaterialsForChest', bb => bb.plankCount >= 8 || bb.logCount >= 2),
             new Condition('NoChestAvailable', bb => bb.sharedChest === null && bb.nearbyChests.length === 0),
             new CraftChest(),
         ]),
 
-        // Priority 5: Deposit items if inventory getting full and we have a chest
+        // Priority 6: Deposit items if inventory getting full and we have a chest
         new Sequence('DepositWhenFull', [
             new Condition('NeedsToDeposit', bb => bb.needsToDeposit),
             new Condition('HasChest', bb => bb.sharedChest !== null || bb.nearbyChests.length > 0),
             new DepositLogs(),
         ]),
 
-        // Priority 5: Craft axe if needed
+        // Priority 7: Craft axe if needed
         new Sequence('GetAxe', [
             new Condition('NoAxe', bb => !bb.hasAxe),
             new Condition('HasMaterialsForAxe', bb => bb.logCount > 0 || bb.plankCount >= 3),
             new CraftAxe(),
         ]),
 
-        // Priority 6: Chop trees (works anywhere - doesn't require village center)
+        // Priority 8: Chop trees (works anywhere - doesn't require village center)
         new Sequence('ChopTrees', [
             new Condition('NotFullInventory', bb => !bb.inventoryFull),
             new ChopTree(),
         ]),
 
-        // Priority 7: Process wood if we need planks for chest or have excess logs
+        // Priority 9: Process wood if we need planks for chest/crafting table or have excess logs
         new Sequence('ProcessWoodForChest', [
             new Condition('NeedToProcessWood', bb =>
                 (bb.plankCount < 8 && bb.logCount >= 2) || // Need planks for chest
+                (bb.plankCount < 4 && bb.logCount >= 1) || // Need planks for crafting table
                 bb.logCount >= 8 // Excess logs
             ),
             new ProcessWood(),
         ]),
 
-        // Priority 8: Patrol forest for more trees
+        // Priority 10: Patrol forest for more trees
         new PatrolForest(),
     ]);
 }
