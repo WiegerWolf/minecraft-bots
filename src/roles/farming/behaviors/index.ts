@@ -15,7 +15,8 @@ export {
     CraftHoe,
     GatherWood,
     Explore,
-    FindFarmCenter
+    FindFarmCenter,
+    WaitAtFarm
 } from './actions';
 
 // Import for tree building
@@ -31,7 +32,8 @@ import {
     CraftHoe,
     GatherWood,
     Explore,
-    FindFarmCenter
+    FindFarmCenter,
+    WaitAtFarm
 } from './actions';
 
 /**
@@ -42,7 +44,8 @@ import {
  * 4. Find farm center if we don't have one
  * 5. Main farming loop (harvest, plant, till)
  * 6. Get seeds if needed
- * 7. Explore as last resort
+ * 7. Wait at farm if crops growing (have farm center)
+ * 8. Explore as last resort
  */
 export function createFarmingBehaviorTree(): BehaviorNode {
     return new Selector('Root', [
@@ -80,7 +83,13 @@ export function createFarmingBehaviorTree(): BehaviorNode {
             new TillGround(),
         ]),
 
-        // Priority 7: Explore as last resort
+        // Priority 7: Wait at farm if we have one (crops are growing)
+        new Sequence('WaitForCrops', [
+            new Condition('HasFarmCenter', bb => bb.farmCenter !== null),
+            new WaitAtFarm(),
+        ]),
+
+        // Priority 8: Explore as last resort (only if no farm center)
         new Explore(),
     ]);
 }

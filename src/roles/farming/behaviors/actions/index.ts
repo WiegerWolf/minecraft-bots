@@ -8,3 +8,4 @@ export { CraftHoe } from './CraftHoe';
 export { GatherWood } from './GatherWood';
 export { Explore } from './Explore';
 export { FindFarmCenter } from './FindFarmCenter';
+export { WaitAtFarm } from './WaitAtFarm';

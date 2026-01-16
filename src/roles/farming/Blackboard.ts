@@ -116,11 +116,13 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         }
     }
 
-    // Find farmland - simplified detection (removed overly strict filters)
+    // Find farmland - filter by Y-level if we have a farm center
+    // A 9x9 farm = 80 farmland blocks, so search for more than that
+    const farmCenterY = bb.farmCenter?.y ?? pos.y;
     const rawFarmland = bot.findBlocks({
         point: searchCenter,
         maxDistance: 32,
-        count: 50,
+        count: 100,  // 9x9 farm = 80 blocks, leave room for larger farms
         matching: b => {
             if (!b || !b.name) return false;
             return b.name === 'farmland';
@@ -129,15 +131,38 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
 
     bb.nearbyFarmland = rawFarmland.map(p => bot.blockAt(p)).filter((b): b is Block => {
         if (!b) return false;
+        // Filter by Y-level: farmland should be at same Y as water OR one above (for trench farms)
+        // NOT below water (that would be underwater!)
+        if (bb.farmCenter) {
+            const yDiff = b.position.y - farmCenterY;
+            if (yDiff < 0 || yDiff > 1) return false;  // Only accept Y=0 or Y=+1 relative to water
+        }
         // Check if there's air above (can plant)
         const above = bot.blockAt(b.position.offset(0, 1, 0));
         if (!above || above.name !== 'air') return false;
         return true;
     });
 
-    // Debug: log if we found farmland
-    if (rawFarmland.length > 0 && bb.nearbyFarmland.length === 0) {
-        console.log(`[Blackboard] Found ${rawFarmland.length} farmland blocks but none with air above`);
+    // Debug: log farmland stats
+    if (rawFarmland.length > 0) {
+        const correctYBlocks = rawFarmland.filter(p => {
+            const yDiff = p.y - farmCenterY;
+            return yDiff >= 0 && yDiff <= 1;
+        });
+
+        // Count how many have air above
+        let withAir = 0;
+        let withCrops = 0;
+        for (const p of correctYBlocks) {
+            const block = bot.blockAt(p);
+            const above = block ? bot.blockAt(block.position.offset(0, 1, 0)) : null;
+            if (above?.name === 'air') withAir++;
+            else if (above?.name === 'wheat' || above?.name === 'carrots' || above?.name === 'potatoes' || above?.name === 'beetroots') withCrops++;
+        }
+
+        if (bb.nearbyFarmland.length === 0) {
+            console.log(`[Blackboard] Found ${rawFarmland.length} farmland (${correctYBlocks.length} at correct Y): ${withAir} empty, ${withCrops} planted`);
+        }
     }
 
     // Find mature crops
