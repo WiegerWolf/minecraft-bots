@@ -22,10 +22,14 @@ export class CraftChest implements BehaviorNode {
             return 'failure';
         }
 
-        // Need village center to know where to place
+        // Establish village center at current position if not set
         if (!bb.villageCenter) {
-            console.log('[Lumberjack] Need village center to place chest');
-            return 'failure';
+            const pos = bot.entity.position.floored();
+            bb.villageCenter = pos;
+            console.log(`[Lumberjack] Establishing village center at ${pos}`);
+            if (bb.villageChat) {
+                bb.villageChat.announceVillageCenter(pos);
+            }
         }
 
         // Check if we have materials (8 planks)

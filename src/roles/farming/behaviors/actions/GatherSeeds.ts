@@ -8,9 +8,29 @@ const { GoalNear } = goals;
 
 export class GatherSeeds implements BehaviorNode {
     name = 'GatherSeeds';
+    private lastMaterialRequestTime = 0;
+    private MATERIAL_REQUEST_COOLDOWN = 30000; // 30 seconds
 
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
         if (!bb.needsSeeds) return 'failure';
+
+        // While gathering seeds, also request logs if we need a hoe
+        if (bb.needsTools && bb.villageChat) {
+            const hasEnoughForHoe = (
+                (bb.stickCount >= 2 && bb.plankCount >= 2) ||
+                bb.logCount >= 2
+            );
+            if (!hasEnoughForHoe) {
+                const now = Date.now();
+                if (now - this.lastMaterialRequestTime > this.MATERIAL_REQUEST_COOLDOWN) {
+                    if (!bb.villageChat.hasPendingRequestFor('log')) {
+                        console.log('[Farmer] Requesting 2 logs from lumberjack');
+                        bb.villageChat.requestResource('log', 2);
+                        this.lastMaterialRequestTime = now;
+                    }
+                }
+            }
+        }
 
         // If no grass in blackboard, try to find some directly
         let grass = bb.nearbyGrass[0];

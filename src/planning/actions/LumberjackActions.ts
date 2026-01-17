@@ -239,6 +239,7 @@ export class ProcessWoodAction extends BaseGOAPAction {
 
 /**
  * GOAP Action: Craft a chest for storage
+ * Will establish village center at current position if needed
  */
 export class CraftChestAction extends BaseGOAPAction {
   name = 'CraftChest';
@@ -246,7 +247,7 @@ export class CraftChestAction extends BaseGOAPAction {
 
   preconditions = [
     booleanPrecondition('derived.needsChest', true, 'needs chest'),
-    booleanPrecondition('derived.hasVillage', true, 'has village center'),
+    // Removed: derived.hasVillage - action will establish village center if needed
     numericPrecondition('inv.planks', v => v >= 8, 'has planks for chest'),
   ];
 
@@ -268,6 +269,7 @@ export class CraftChestAction extends BaseGOAPAction {
 
 /**
  * GOAP Action: Craft and place a crafting table
+ * Will establish village center at current position if needed
  */
 export class CraftAndPlaceCraftingTableAction extends BaseGOAPAction {
   name = 'CraftAndPlaceCraftingTable';
@@ -275,7 +277,7 @@ export class CraftAndPlaceCraftingTableAction extends BaseGOAPAction {
 
   preconditions = [
     booleanPrecondition('derived.needsCraftingTable', true, 'needs crafting table'),
-    booleanPrecondition('derived.hasVillage', true, 'has village center'),
+    // Removed: derived.hasVillage - action will establish village center if needed
     numericPrecondition('inv.planks', v => v >= 4, 'has planks for table'),
   ];
 

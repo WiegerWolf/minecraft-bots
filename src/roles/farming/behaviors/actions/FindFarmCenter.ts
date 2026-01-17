@@ -30,6 +30,12 @@ export class FindFarmCenter implements BehaviorNode {
             if (water) {
                 bb.farmCenter = water.position.clone();
                 console.log(`[BT] Established farm center at ${water.position}`);
+
+                // Request terraforming from landscaper
+                if (bb.villageChat) {
+                    console.log(`[Farmer] Requesting terraforming at ${water.position}`);
+                    bb.villageChat.requestTerraform(water.position);
+                }
                 return 'success';
             }
         }
@@ -82,6 +88,12 @@ export class FindFarmCenter implements BehaviorNode {
                     bb.farmCenter = new Vec3(best.pos.x, best.pos.y, best.pos.z);
                     console.log(`[BT] Established farm center at ${bb.farmCenter}`);
 
+                    // Request terraforming from landscaper
+                    if (bb.villageChat) {
+                        console.log(`[Farmer] Requesting terraforming at ${bb.farmCenter}`);
+                        bb.villageChat.requestTerraform(bb.farmCenter);
+                    }
+
                     return 'success';
                 } catch (err) {
                     console.log(`[BT] Failed to reach water at ${best.pos}: ${err}`);
@@ -90,6 +102,13 @@ export class FindFarmCenter implements BehaviorNode {
                     if (dist < 32) {
                         bb.farmCenter = new Vec3(best.pos.x, best.pos.y, best.pos.z);
                         console.log(`[BT] Set farm center anyway (${Math.round(dist)} blocks away)`);
+
+                        // Request terraforming from landscaper
+                        if (bb.villageChat) {
+                            console.log(`[Farmer] Requesting terraforming at ${bb.farmCenter}`);
+                            bb.villageChat.requestTerraform(bb.farmCenter);
+                        }
+
                         return 'success';
                     }
                     return 'failure';

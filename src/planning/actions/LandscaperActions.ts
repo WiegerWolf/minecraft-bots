@@ -9,6 +9,7 @@ import {
   CraftPickaxe,
   DepositItems,
   Explore,
+  CheckSharedChest,
 } from '../../roles/landscaper/behaviors/actions';
 
 /**
@@ -240,6 +241,36 @@ export class ExploreAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Check shared chest for materials
+ */
+export class CheckSharedChestAction extends BaseGOAPAction {
+  name = 'CheckSharedChest';
+  private impl = new CheckSharedChest();
+
+  preconditions = [
+    // Need to have a shared chest available
+    booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
+    // Only check chest when we need logs for tools
+    numericPrecondition('inv.logs', v => v < 2, 'needs logs'),
+  ];
+
+  effects = [
+    // Optimistically assume we'll get logs
+    setEffect('inv.logs', 4, 'retrieved logs from chest'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Low cost - checking chest is a quick way to get materials
+    return 1.5;
+  }
+
+  override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * Create all landscaper actions for the planner.
  */
 export function createLandscaperActions(): BaseGOAPAction[] {
@@ -251,6 +282,7 @@ export function createLandscaperActions(): BaseGOAPAction[] {
     new CraftPickaxeAction(),
     new CraftPickaxeFromPlanksAction(),
     new DepositItemsAction(),
+    new CheckSharedChestAction(),
     new ExploreAction(),
   ];
 }
