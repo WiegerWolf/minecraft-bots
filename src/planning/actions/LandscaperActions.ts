@@ -113,6 +113,21 @@ export class CraftShovelAction extends BaseGOAPAction {
     numericPrecondition('inv.logs', v => v >= 2, 'has enough logs'),
   ];
 
+  override checkPreconditions(ws: WorldState): boolean {
+    const hasShovel = ws.getBool('has.shovel');
+    const logs = ws.getNumber('inv.logs');
+    console.log(`[CraftShovelAction] Precondition check: hasShovel=${hasShovel}, inv.logs=${logs}`);
+    if (hasShovel) {
+      console.log('[CraftShovelAction] FAILED: already has shovel');
+      return false;
+    }
+    if (logs < 2) {
+      console.log('[CraftShovelAction] FAILED: not enough logs');
+      return false;
+    }
+    return true;
+  }
+
   effects = [
     setEffect('has.shovel', true, 'crafted shovel'),
     incrementEffect('inv.logs', -2, 'used logs for crafting'),
@@ -284,6 +299,21 @@ export class CheckSharedChestAction extends BaseGOAPAction {
     // Only check chest when we need logs for tools
     numericPrecondition('inv.logs', v => v < 2, 'needs logs'),
   ];
+
+  override checkPreconditions(ws: WorldState): boolean {
+    const hasStorageAccess = ws.getBool('derived.hasStorageAccess');
+    const logs = ws.getNumber('inv.logs');
+    console.log(`[CheckSharedChestAction] Precondition check: hasStorageAccess=${hasStorageAccess}, inv.logs=${logs}`);
+    if (!hasStorageAccess) {
+      console.log('[CheckSharedChestAction] FAILED: no storage access');
+      return false;
+    }
+    if (logs >= 2) {
+      console.log('[CheckSharedChestAction] FAILED: already has enough logs');
+      return false;
+    }
+    return true;
+  }
 
   effects = [
     // Optimistically assume we'll get logs

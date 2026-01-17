@@ -164,8 +164,8 @@ export class GOAPPlanner {
         // Check if this state is already in open set with better cost
         const existingIdx = openSet.findIndex(n => this.getStateKey(n.state) === newStateKey);
         if (existingIdx >= 0) {
-          const existingNode = openSet[existingIdx];
-          if (existingNode && gCost < existingNode.gCost) {
+          const existingNode = openSet[existingIdx]!;
+          if (gCost < existingNode.gCost) {
             // Found better path to this state
             if (this.config.debug) {
               console.log(`[Planner] Replacing ${action.name} in open set (gCost ${existingNode.gCost.toFixed(1)} -> ${gCost.toFixed(1)})`);
