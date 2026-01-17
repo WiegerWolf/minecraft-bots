@@ -10,6 +10,7 @@ import {
   DepositItems,
   Explore,
   CheckSharedChest,
+  RequestMaterials,
 } from '../../roles/landscaper/behaviors/actions';
 
 /**
@@ -301,6 +302,37 @@ export class CheckSharedChestAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Request materials from lumberjack
+ */
+export class RequestMaterialsAction extends BaseGOAPAction {
+  name = 'RequestMaterials';
+  private impl = new RequestMaterials();
+
+  preconditions = [
+    // Need tools but don't have materials
+    booleanPrecondition('needs.tools', true, 'needs tools'),
+    numericPrecondition('inv.logs', v => v < 2, 'needs logs'),
+  ];
+
+  effects = [
+    // Optimistically assume we'll get logs (request was made)
+    setEffect('inv.logs', 2, 'requested logs from lumberjack'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Low cost - just making a request
+    return 1.0;
+  }
+
+  override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    // Running means we're waiting for materials
+    if (result === 'running') return ActionResult.RUNNING;
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * Create all landscaper actions for the planner.
  */
 export function createLandscaperActions(): BaseGOAPAction[] {
@@ -313,6 +345,7 @@ export function createLandscaperActions(): BaseGOAPAction[] {
     new CraftPickaxeFromPlanksAction(),
     new DepositItemsAction(),
     new CheckSharedChestAction(),
+    new RequestMaterialsAction(),
     new ExploreAction(),
   ];
 }

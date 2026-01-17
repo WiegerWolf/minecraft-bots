@@ -126,6 +126,13 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
         // Check for pending terraform requests
         const pendingRequests = bb.villageChat.getPendingTerraformRequests();
         bb.hasPendingTerraformRequest = pendingRequests.length > 0;
+
+        // Safety cleanup: if we have a terraform task but no pending request, the task is orphaned
+        // This can happen if the task failed or the request was cleared externally
+        if (bb.currentTerraformTask && !bb.hasPendingTerraformRequest) {
+            console.log(`[Landscaper] Clearing orphaned terraform task (phase: ${bb.currentTerraformTask.phase})`);
+            bb.currentTerraformTask = null;
+        }
     }
 
     // ═══════════════════════════════════════════════

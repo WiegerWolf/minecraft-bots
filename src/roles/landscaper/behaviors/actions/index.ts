@@ -5,3 +5,4 @@ export { PickupItems } from './PickupItems';
 export { DepositItems } from './DepositItems';
 export { Explore } from './Explore';
 export { CheckSharedChest } from './CheckSharedChest';
+export { RequestMaterials } from './RequestMaterials';
