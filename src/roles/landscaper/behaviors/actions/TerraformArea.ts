@@ -82,7 +82,8 @@ export class TerraformArea implements BehaviorNode {
 
         if (!waterPos) {
             console.log(`[Landscaper] No water found near farm center at ${request.position.floored()} - skipping`);
-            bb.villageChat.announceTerraformDone(request.position);
+            // Don't announce done - just release the claim so someone else can try
+            // The request stays in the system for retry
             return 'failure';
         }
 

@@ -125,8 +125,15 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
 
         // Check for pending terraform requests (not yet claimed)
         const pendingRequests = bb.villageChat.getPendingTerraformRequests();
+        const allRequests = bb.villageChat.getAllTerraformRequests?.() || [];
         // Consider it "pending" if there's a pending request OR we have an active task
         bb.hasPendingTerraformRequest = pendingRequests.length > 0 || bb.currentTerraformTask !== null;
+
+        // Debug log when there are any requests
+        if (allRequests.length > 0) {
+            const statuses = allRequests.map(r => `${r.status}@${r.position.floored()}`).join(', ');
+            console.log(`[Landscaper] Terraform: pending=${pendingRequests.length}, all=${allRequests.length} [${statuses}], activeTask=${!!bb.currentTerraformTask}`);
+        }
     }
 
     // ═══════════════════════════════════════════════
