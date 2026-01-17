@@ -166,6 +166,9 @@ export class ChopTreeGoal extends BaseGoal {
     const inventoryFull = ws.getBool('state.inventoryFull');
     const logCount = ws.getNumber('inv.logs');
 
+    // Goal is satisfied when we have 16+ logs - no need to chop more
+    if (logCount >= 16) return 0;
+
     if (inventoryFull || treeCount === 0) return 0;
 
     // Scale with available trees, but reduce if already have lots of logs
