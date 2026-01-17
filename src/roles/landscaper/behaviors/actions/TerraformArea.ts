@@ -105,8 +105,9 @@ export class TerraformArea implements BehaviorNode {
 
         console.log(`[Landscaper] Starting terraform at ${request.position.floored()}, ground Y=${targetY}, water at ${waterPos.floored()}`);
 
-        // Initialize the terraform task
+        // Initialize the terraform task - center on farm position, not water
         bb.currentTerraformTask = {
+            farmCenter: new Vec3(centerX, targetY, centerZ),
             waterPos: waterPos,
             targetY: targetY,
             phase: 'analyzing',
@@ -143,18 +144,19 @@ export class TerraformArea implements BehaviorNode {
         const task = bb.currentTerraformTask!;
         bb.lastAction = 'terraform_analyzing';
 
+        const farmCenter = task.farmCenter;
         const waterPos = task.waterPos;
         const targetY = task.targetY;
         const radius = 4; // 9x9 area (hydration range from water)
 
-        // Use water position as center of the 9x9 area
-        const centerX = Math.floor(waterPos.x);
-        const centerZ = Math.floor(waterPos.z);
+        // Use FARM CENTER as center of the 9x9 area (not water)
+        const centerX = Math.floor(farmCenter.x);
+        const centerZ = Math.floor(farmCenter.z);
 
         const blocksToRemove: Vec3[] = [];
         const blocksToFill: Vec3[] = [];
 
-        console.log(`[Landscaper] Analyzing 9x9 area centered at (${centerX}, ${targetY}, ${centerZ})`);
+        console.log(`[Landscaper] Analyzing 9x9 area centered at (${centerX}, ${targetY}, ${centerZ}), water at ${waterPos.floored()}`);
 
         // Scan the 9x9 area
         for (let dx = -radius; dx <= radius; dx++) {
@@ -162,8 +164,8 @@ export class TerraformArea implements BehaviorNode {
                 const x = centerX + dx;
                 const z = centerZ + dz;
 
-                // Skip the water source block itself
-                if (dx === 0 && dz === 0) continue;
+                // Skip the water source block position
+                if (x === Math.floor(waterPos.x) && z === Math.floor(waterPos.z)) continue;
 
                 // Check what's at the target surface level
                 const surfacePos = new Vec3(x, targetY, z);
@@ -438,7 +440,7 @@ export class TerraformArea implements BehaviorNode {
      * Searches for dirt/grass blocks in a ring around the work area.
      */
     private async gatherDirtFromNearby(bot: Bot, bb: LandscaperBlackboard, task: TerraformTask): Promise<boolean> {
-        const waterPos = task.waterPos;
+        const farmCenter = task.farmCenter;
         const targetY = task.targetY;
         const workRadius = 4; // The 9x9 work area
         const searchRadius = 12; // How far to search for dirt
@@ -451,8 +453,8 @@ export class TerraformArea implements BehaviorNode {
                 // Skip blocks inside the work area
                 if (Math.abs(dx) <= workRadius && Math.abs(dz) <= workRadius) continue;
 
-                const x = Math.floor(waterPos.x) + dx;
-                const z = Math.floor(waterPos.z) + dz;
+                const x = Math.floor(farmCenter.x) + dx;
+                const z = Math.floor(farmCenter.z) + dz;
 
                 // Check at and slightly above/below target level
                 for (let dy = -2; dy <= 2; dy++) {
@@ -531,12 +533,12 @@ export class TerraformArea implements BehaviorNode {
         const task = bb.currentTerraformTask!;
         bb.lastAction = 'terraform_done';
 
-        // Announce completion
+        // Announce completion at the FARM CENTER (matches the original request position)
         if (bb.villageChat) {
-            bb.villageChat.announceTerraformDone(task.waterPos);
+            bb.villageChat.announceTerraformDone(task.farmCenter);
         }
 
-        console.log(`[Landscaper] Terraform complete at ${task.waterPos.floored()}`);
+        console.log(`[Landscaper] Terraform complete at ${task.farmCenter.floored()}`);
 
         task.phase = 'done';
         bb.currentTerraformTask = null;

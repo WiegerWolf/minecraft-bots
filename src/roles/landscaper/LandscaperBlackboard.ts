@@ -10,7 +10,8 @@ export interface ExplorationMemory {
 }
 
 export interface TerraformTask {
-    waterPos: Vec3;
+    farmCenter: Vec3;         // The land position to center the 9x9 farm
+    waterPos: Vec3;           // Nearby water for irrigation
     targetY: number;
     phase: 'analyzing' | 'digging' | 'filling' | 'finishing' | 'done';
     blocksToRemove: Vec3[];   // Blocks above target level
