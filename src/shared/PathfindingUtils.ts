@@ -28,9 +28,9 @@ interface PositionSample {
 
 const DEFAULT_STUCK_CONFIG: StuckDetectionConfig = {
     checkIntervalMs: 500,
-    minProgressPerSecond: 0.5,
-    stuckTimeThresholdMs: 3000,
-    maxRecoveryAttempts: 3,
+    minProgressPerSecond: 0.1,  // Very lenient - almost any movement counts
+    stuckTimeThresholdMs: 8000, // 8 seconds of no progress before stuck
+    maxRecoveryAttempts: 0,     // Disabled - just timeout, no recovery actions
     debug: false,
 };
 
@@ -169,186 +169,113 @@ async function attemptRecovery(bot: Bot, action: RecoveryAction, debug: boolean)
 // ============================================================================
 
 /**
- * Smart pathfinding wrapper with stuck detection and recovery.
+ * Smart pathfinding wrapper with timeout.
  *
- * Monitors progress toward the goal and detects when the bot is stuck.
- * When stuck, attempts various recovery actions before giving up.
+ * Simply wraps bot.pathfinder.goto with a timeout to prevent infinite blocking.
+ * Returns a result object indicating success/failure and reason.
  */
 export async function smartPathfinderGoto(
     bot: Bot,
     goal: any,
     options?: {
         timeoutMs?: number;
-        stuckDetection?: Partial<StuckDetectionConfig>;
+        stuckDetection?: Partial<StuckDetectionConfig>;  // Kept for API compatibility, but ignored
     }
 ): Promise<PathfindingResult> {
     const timeoutMs = options?.timeoutMs ?? 30000;
-    const config: StuckDetectionConfig = {
-        ...DEFAULT_STUCK_CONFIG,
-        ...options?.stuckDetection,
-    };
-
     const startTime = Date.now();
-    let recoveryAttempts = 0;
-    let recoveryActionIndex = 0;
 
     const initialDistance = getDistanceToGoal(bot.entity.position, goal);
 
-    if (config.debug) {
-        console.log(`[Pathfinder] Starting pathfinding, distance: ${initialDistance.toFixed(2)} blocks`);
-    }
+    // Simple approach: just race pathfinding against a timeout
+    let pathfindingComplete = false;
+    let pathfindingError: Error | null = null;
+    let timedOut = false;
 
-    while (true) {
-        const samples: PositionSample[] = [];
-        let pathfindingComplete = false;
-        let pathfindingError: Error | null = null;
-        let monitorInterval: ReturnType<typeof setInterval> | null = null;
-
-        // Start monitoring progress
-        const monitorPromise = new Promise<'stuck' | 'timeout' | 'complete' | 'error'>((resolve) => {
-            monitorInterval = setInterval(() => {
-                const currentDistance = getDistanceToGoal(bot.entity.position, goal);
-                samples.push({ timestamp: Date.now(), distanceToGoal: currentDistance });
-
-                // Keep only samples within the threshold window (plus a bit extra)
-                const cutoffTime = Date.now() - config.stuckTimeThresholdMs - config.checkIntervalMs;
-                while (samples.length > 0 && samples[0]!.timestamp < cutoffTime) {
-                    samples.shift();
-                }
-
-                if (config.debug && samples.length > 0) {
-                    const firstSample = samples[0]!;
-                    const progress = samples.length > 1
-                        ? ((firstSample.distanceToGoal - currentDistance) / ((Date.now() - firstSample.timestamp) / 1000)).toFixed(2)
-                        : '---';
-                    console.log(`[Pathfinder] Distance: ${currentDistance.toFixed(2)}, Progress rate: ${progress} blocks/sec`);
-                }
-
-                // Check timeout
-                if (Date.now() - startTime > timeoutMs) {
-                    resolve('timeout');
-                    return;
-                }
-
-                // Check if stuck
-                if (isStuck(samples, config)) {
-                    resolve('stuck');
-                    return;
-                }
-
-                // Check if pathfinding completed
-                if (pathfindingComplete) {
-                    resolve('complete');
-                } else if (pathfindingError) {
-                    resolve('error');
-                }
-            }, config.checkIntervalMs);
-        });
-
-        // Start pathfinding
-        const pathfindingPromise = bot.pathfinder.goto(goal)
-            .then(() => { pathfindingComplete = true; })
-            .catch((err: Error) => { pathfindingError = err; });
-
-        // Wait for either pathfinding to complete, stuck detection, or timeout
-        const result = await monitorPromise;
-
-        // Cleanup
-        if (monitorInterval) {
-            clearInterval(monitorInterval);
-        }
+    // Set up timeout
+    const timeoutId = setTimeout(() => {
+        timedOut = true;
         bot.pathfinder.stop();
-        bot.clearControlStates();
+    }, timeoutMs);
 
-        // Wait for pathfinding promise to settle
-        await pathfindingPromise.catch(() => {});
-
-        const finalDistance = getDistanceToGoal(bot.entity.position, goal);
-        const elapsedMs = Date.now() - startTime;
-
-        if (result === 'complete' || finalDistance < 0.5) {
-            if (config.debug) {
-                console.log(`[Pathfinder] Success! Final distance: ${finalDistance.toFixed(2)}, elapsed: ${elapsedMs}ms`);
-            }
-            return {
-                success: true,
-                recoveryAttempts,
-                finalDistanceToGoal: finalDistance,
-                elapsedMs,
-            };
-        }
-
-        if (result === 'error' && pathfindingError) {
-            const err = pathfindingError as Error;
-            if (isGoalChangedError(err)) {
-                if (config.debug) {
-                    console.log(`[Pathfinder] Goal changed, aborting`);
-                }
-                return {
-                    success: false,
-                    failureReason: 'goal_changed',
-                    recoveryAttempts,
-                    finalDistanceToGoal: finalDistance,
-                    elapsedMs,
-                };
-            }
-
-            // Check if unreachable
-            if (err.message.includes('no path') ||
-                err.message.includes('No path')) {
-                if (config.debug) {
-                    console.log(`[Pathfinder] No path found`);
-                }
-                return {
-                    success: false,
-                    failureReason: 'unreachable',
-                    recoveryAttempts,
-                    finalDistanceToGoal: finalDistance,
-                    elapsedMs,
-                };
-            }
-        }
-
-        if (result === 'timeout') {
-            if (config.debug) {
-                console.log(`[Pathfinder] Timed out after ${elapsedMs}ms`);
-            }
-            return {
-                success: false,
-                failureReason: 'timeout',
-                recoveryAttempts,
-                finalDistanceToGoal: finalDistance,
-                elapsedMs,
-            };
-        }
-
-        // We're stuck - attempt recovery
-        if (recoveryAttempts >= config.maxRecoveryAttempts) {
-            if (config.debug) {
-                console.log(`[Pathfinder] Stuck after ${recoveryAttempts} recovery attempts, giving up`);
-            }
-            return {
-                success: false,
-                failureReason: 'stuck',
-                recoveryAttempts,
-                finalDistanceToGoal: finalDistance,
-                elapsedMs,
-            };
-        }
-
-        // Try recovery action
-        const action = RECOVERY_ACTIONS[recoveryActionIndex % RECOVERY_ACTIONS.length]!;
-        if (config.debug) {
-            console.log(`[Pathfinder] Stuck detected! Attempting recovery ${recoveryAttempts + 1}/${config.maxRecoveryAttempts}: ${action}`);
-        }
-
-        await attemptRecovery(bot, action, config.debug);
-        recoveryAttempts++;
-        recoveryActionIndex++;
-
-        // Small delay before retrying pathfinding
-        await sleep(200);
+    try {
+        // Start pathfinding
+        await bot.pathfinder.goto(goal);
+        pathfindingComplete = true;
+    } catch (err) {
+        pathfindingError = err instanceof Error ? err : new Error(String(err));
+    } finally {
+        clearTimeout(timeoutId);
     }
+
+    const finalDistance = getDistanceToGoal(bot.entity.position, goal);
+    const elapsedMs = Date.now() - startTime;
+
+    // Success - pathfinding completed normally
+    if (pathfindingComplete) {
+        return {
+            success: true,
+            recoveryAttempts: 0,
+            finalDistanceToGoal: finalDistance,
+            elapsedMs,
+        };
+    }
+
+    // Timed out
+    if (timedOut) {
+        return {
+            success: false,
+            failureReason: 'timeout',
+            recoveryAttempts: 0,
+            finalDistanceToGoal: finalDistance,
+            elapsedMs,
+        };
+    }
+
+    // Error occurred
+    if (pathfindingError) {
+        // Check for goal changed
+        if (isGoalChangedError(pathfindingError)) {
+            return {
+                success: false,
+                failureReason: 'goal_changed',
+                recoveryAttempts: 0,
+                finalDistanceToGoal: finalDistance,
+                elapsedMs,
+            };
+        }
+
+        // Check for no path / unreachable
+        if (pathfindingError.message.includes('no path') ||
+            pathfindingError.message.includes('No path') ||
+            pathfindingError.message.includes('Path was stopped')) {
+            return {
+                success: false,
+                failureReason: 'unreachable',
+                recoveryAttempts: 0,
+                finalDistanceToGoal: finalDistance,
+                elapsedMs,
+            };
+        }
+
+        // Generic failure
+        return {
+            success: false,
+            failureReason: 'unreachable',
+            recoveryAttempts: 0,
+            finalDistanceToGoal: finalDistance,
+            elapsedMs,
+        };
+    }
+
+    // Should not reach here
+    return {
+        success: false,
+        failureReason: 'unreachable',
+        recoveryAttempts: 0,
+        finalDistanceToGoal: finalDistance,
+        elapsedMs,
+    };
 }
 
 // ============================================================================
