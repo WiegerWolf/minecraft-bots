@@ -47,6 +47,22 @@ export class TerraformArea implements BehaviorNode {
         // Claim the request
         bb.villageChat.claimTerraformRequest(request.position);
 
+        // Move closer to the terraform area if needed (chunks must be loaded to scan)
+        const distToRequest = bot.entity.position.distanceTo(request.position);
+        if (distToRequest > 32) {
+            console.log(`[Landscaper] Moving closer to terraform area at ${request.position.floored()} (${Math.round(distToRequest)} blocks away)`);
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(request.position.x, request.position.y, request.position.z, 16),
+                { timeoutMs: 30000 }
+            );
+            if (!result.success) {
+                console.log(`[Landscaper] Failed to reach terraform area: ${result.failureReason}`);
+                bb.villageChat.releaseTerraformClaim(request.position);
+                return 'failure';
+            }
+        }
+
         // The request position is now a LAND position (farm center), not water
         // Detect the ground level at the center
         const centerX = Math.floor(request.position.x);
@@ -81,13 +97,13 @@ export class TerraformArea implements BehaviorNode {
         }
 
         if (!waterPos) {
-            console.log(`[Landscaper] No water found near farm center at ${request.position.floored()} - skipping`);
-            // Don't announce done - just release the claim so someone else can try
-            // The request stays in the system for retry
+            console.log(`[Landscaper] No water found within ${searchRadius} blocks of farm center at ${request.position.floored()} (searched Y=${targetY-2} to Y=${targetY+1})`);
+            // Release the claim so the request can be retried
+            bb.villageChat.releaseTerraformClaim(request.position);
             return 'failure';
         }
 
-        console.log(`[Landscaper] Starting terraform at ${request.position.floored()}, target Y=${targetY}, water at ${waterPos.floored()}`);
+        console.log(`[Landscaper] Starting terraform at ${request.position.floored()}, ground Y=${targetY}, water at ${waterPos.floored()}`);
 
         // Initialize the terraform task
         bb.currentTerraformTask = {

@@ -218,6 +218,22 @@ export class VillageChat {
                     }
                 }
             }
+
+            // Parse terraform release (claim released, back to pending)
+            if (message.startsWith('[TERRAFORM_RELEASE] ')) {
+                const match = message.match(/\[TERRAFORM_RELEASE\] (-?\d+) (-?\d+) (-?\d+)/);
+                if (match) {
+                    const pos = new Vec3(parseInt(match[1]!), parseInt(match[2]!), parseInt(match[3]!));
+                    const request = this.state.pendingTerraformRequests.find(r =>
+                        r.position.distanceTo(pos) < 5 && r.status === 'claimed'
+                    );
+                    if (request) {
+                        request.status = 'pending';
+                        request.claimedBy = undefined;
+                        console.log(`[VillageChat] ${username} released terraform claim at ${pos}`);
+                    }
+                }
+            }
         });
     }
 
@@ -333,6 +349,20 @@ export class VillageChat {
         }
 
         const msg = `[TERRAFORM_CLAIM] ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}`;
+        this.bot.chat(msg);
+    }
+
+    // Release a terraform claim (set back to pending for retry)
+    releaseTerraformClaim(pos: Vec3) {
+        const request = this.state.pendingTerraformRequests.find(r =>
+            r.position.distanceTo(pos) < 5 && r.status === 'claimed'
+        );
+        if (request) {
+            request.status = 'pending';
+            request.claimedBy = undefined;
+        }
+        // Broadcast so other bots know it's available again
+        const msg = `[TERRAFORM_RELEASE] ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}`;
         this.bot.chat(msg);
     }
 

@@ -126,14 +126,20 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
         // Check for pending terraform requests (not yet claimed)
         const pendingRequests = bb.villageChat.getPendingTerraformRequests();
         const allRequests = bb.villageChat.getAllTerraformRequests?.() || [];
-        // Consider it "pending" if there's a pending request OR we have an active task
-        bb.hasPendingTerraformRequest = pendingRequests.length > 0 || bb.currentTerraformTask !== null;
 
-        // Debug log when there are any requests
-        if (allRequests.length > 0) {
-            const statuses = allRequests.map(r => `${r.status}@${r.position.floored()}`).join(', ');
-            console.log(`[Landscaper] Terraform: pending=${pendingRequests.length}, all=${allRequests.length} [${statuses}], activeTask=${!!bb.currentTerraformTask}`);
+        // Auto-release stale claims: if we claimed something but have no active task, release it
+        const myUsername = bot.username;
+        for (const req of allRequests) {
+            if (req.status === 'claimed' && req.claimedBy === myUsername && !bb.currentTerraformTask) {
+                console.log(`[Landscaper] Releasing stale claim at ${req.position.floored()}`);
+                bb.villageChat.releaseTerraformClaim(req.position);
+            }
         }
+
+        // Re-fetch after potential release
+        const updatedPending = bb.villageChat.getPendingTerraformRequests();
+        // Consider it "pending" if there's a pending request OR we have an active task
+        bb.hasPendingTerraformRequest = updatedPending.length > 0 || bb.currentTerraformTask !== null;
     }
 
     // ═══════════════════════════════════════════════
