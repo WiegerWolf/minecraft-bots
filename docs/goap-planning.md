@@ -323,6 +323,20 @@ const importantFacts = [
 
 Full state hashing would differentiate states that differ only in irrelevant facts. We only hash facts that actions can affect.
 
+### Critical: Incremental Effects Need State Keys
+
+**Bug pattern to avoid**: If an action uses `incrementEffect` (e.g., `incrementEffect('pending.signWrites', -1)`), that fact MUST be in `importantFacts`.
+
+Why? Consider a goal requiring `pending.signWrites == 0` starting from `pending.signWrites == 2`:
+1. Planner applies `WriteKnowledgeSign` → state becomes `pending.signWrites = 1`
+2. State added to closed set with key that doesn't include `pending.signWrites`
+3. Planner tries `WriteKnowledgeSign` again to reach `pending.signWrites = 0`
+4. But the resulting state has the **same key** (since `pending.signWrites` isn't in the key)
+5. Planner says "state in closed set" and skips it
+6. Plan fails - can never find `[WriteKnowledgeSign, WriteKnowledgeSign]` sequence
+
+**Rule**: Any fact modified by `incrementEffect` or that requires multiple action applications must be in the state key.
+
 ## The Plan Executor
 
 ### Execution Flow

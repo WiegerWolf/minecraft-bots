@@ -179,6 +179,14 @@ ws.set('derived.canCraftHoe',
 
 This computation happens once in the builder, then planning uses it many times.
 
+### Derived Facts Must Reflect Reality
+
+**Bug pattern to avoid**: Derived facts like `hasStorageAccess` must account for runtime state, not just existence.
+
+Example: `hasStorageAccess` was computed as `sharedChest !== null || nearbyChests.length > 0`. But if all chests are full (tracked in `bb.fullChests`), storage isn't actually available. The `DepositLogs` goal would be selected but always fail.
+
+**Rule**: Derived facts should answer "can I actually do this?" not just "does the infrastructure exist?"
+
 ### Why Not Just Read Blackboard During Planning?
 
 1. **Performance**: Computing `canCraftHoe` once vs. recomputing during each A* expansion
@@ -222,6 +230,14 @@ Perception is refreshed every tick because:
 - Blocks change
 
 Caching would cause the bot to act on stale information.
+
+### Critical: Search Radii Must Match Actions
+
+**Bug pattern to avoid**: If the blackboard searches for resources (trees, crops, etc.) at a larger radius than the action uses, the planner will think resources exist but actions will fail to find them.
+
+Example: Blackboard searched 64 blocks for trees, but `ChopTree` action only searched 32 blocks. Result: `nearby.trees > 0` so planner selects `ChopTree`, but action returns failure because `findTree(32)` finds nothing.
+
+**Rule**: Blackboard search radii must match or be smaller than corresponding action radii.
 
 ## Memory Systems
 

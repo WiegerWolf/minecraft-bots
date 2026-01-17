@@ -301,6 +301,8 @@ Plan exhaustion has two meanings:
 
 This distinction prevents punishing successful goals.
 
+**Critical timing**: `consecutiveFailures` must NOT be reset in `requestReplan()`. The reset happens in `loadPlan()` when a new plan starts. If reset happens before the `onReplan` callback, `hadRecentFailures()` will always return false and cooldowns will never apply to exhausted-with-failures plans.
+
 ## World-Level Recovery
 
 ### World State Change Detection
