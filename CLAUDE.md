@@ -30,8 +30,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The project uses **Pino** for structured logging:
 
 - **Console output**: Pretty-printed via `pino-pretty`
-- **File output**: JSON logs in `logs/YYYY-MM-DD/BotName.log`
+- **File output**: JSON logs in `logs/SESSION_ID/RoleLabel.log`
 - **Log levels**: `error`, `warn`, `info`, `debug` (controlled via `LOG_LEVEL` env var)
+
+### Log Directory Structure
+
+```
+logs/
+  2026-01-17_20-44-32/   # Session timestamp (sortable)
+    Farmer.log           # One file per role
+    Lmbr.log
+    Land.log
+  2026-01-17_20-45-10/   # Next session
+    Farmer.log
+  latest -> 2026-01-17_20-45-10/  # Symlink to most recent
+```
+
+**Why session-based?** During development, running the bot repeatedly would fill date folders with random bot names. Session-based organization keeps each run isolated and easy to navigate.
 
 ### Logger Patterns
 
@@ -49,11 +64,21 @@ const plannerLog = createChildLogger(logger, 'Planner');
 ### Searching Logs
 
 ```bash
-# Find specific events
-cat logs/*/DevFarmer.log | grep "Goal selected"
+# Last session's logs
+cat logs/latest/*.log | grep "Goal selected"
 
-# Filter by log level (50 = error)
-cat logs/*/*.log | jq 'select(.level >= 50)'
+# All errors from latest session
+cat logs/latest/*.log | jq 'select(.level >= 50)'
+
+# Find specific events across all sessions
+grep -r "Goal selected" logs/
+
+# List recent sessions
+ls -t logs/ | head -5
+
+# Compare two sessions
+diff <(cat logs/2026-01-17_20-44-32/Farmer.log | jq .msg) \
+     <(cat logs/2026-01-17_20-45-10/Farmer.log | jq .msg)
 ```
 
 ## Architecture

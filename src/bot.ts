@@ -13,9 +13,16 @@ const { GoalNear } = goals;
 // Read configuration from environment variables (set by manager)
 const BOT_ROLE = process.env.BOT_ROLE || 'farming';
 const BOT_NAME = process.env.BOT_NAME || faker.internet.username().slice(0, 16);
+const ROLE_LABEL = process.env.ROLE_LABEL || 'Bot';
+const SESSION_ID = process.env.SESSION_ID || new Date().toISOString().replace(/[:.]/g, '-');
 
 // Create bot-wide logger
-const logger: Logger = createBotLogger({ botName: BOT_NAME, role: BOT_ROLE });
+const logger: Logger = createBotLogger({
+    botName: BOT_NAME,
+    role: BOT_ROLE,
+    roleLabel: ROLE_LABEL,
+    sessionId: SESSION_ID,
+});
 const botLog = createChildLogger(logger, 'Bot');
 
 botLog.info({ botName: BOT_NAME, role: BOT_ROLE }, 'Bot starting');

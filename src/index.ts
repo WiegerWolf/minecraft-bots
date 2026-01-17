@@ -3,13 +3,17 @@ import { watch } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { faker } from '@faker-js/faker';
-import { createManagerLogger } from './shared/logger';
+import { createManagerLogger, formatBotLogLine, generateSessionId } from './shared/logger';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Manager logger
 const log = createManagerLogger();
+
+// Session ID for all logs from this run
+const sessionId = generateSessionId();
+log.info({ sessionId }, 'Starting session');
 
 const BOT_PATH = resolve(__dirname, "bot.ts");
 
@@ -114,33 +118,56 @@ async function startBot(config: { role: string; roleLabel: string }, isRestart =
             ...process.env,
             BOT_ROLE: config.role,
             BOT_NAME: botName,
+            ROLE_LABEL: config.roleLabel,
+            SESSION_ID: sessionId,
         },
     });
 
     botProcesses.set(configKey, botProcess);
 
-    // Handle stdout
+    // Handle stdout - pretty print JSON logs from bots
     const handleStdout = async () => {
         if (!botProcess?.stdout || typeof botProcess.stdout === 'number') return;
 
         const reader = botProcess.stdout.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
+
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            const text = decoder.decode(value);
-            // Prefix output with bot role for clarity
-            const prefixedText = text.split('\n')
-                .map(line => line ? `[${config.roleLabel}] ${line}` : '')
-                .join('\n');
-            process.stdout.write(prefixedText);
 
-            if (text.includes("✅ Bot has spawned!")) {
-                const attempts = reconnectAttempts.get(configKey) || 0;
-                if (attempts > 0) {
-                    log.info({ bot: config.roleLabel }, 'Bot reconnected successfully, resetting backoff');
+            buffer += decoder.decode(value, { stream: true });
+
+            // Process complete lines
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+            for (const line of lines) {
+                if (!line) continue;
+
+                // Check for spawn marker (may be plain text)
+                if (line.includes("✅ Bot has spawned!")) {
+                    const attempts = reconnectAttempts.get(configKey) || 0;
+                    if (attempts > 0) {
+                        log.info({ bot: config.roleLabel }, 'Bot reconnected successfully, resetting backoff');
+                    }
+                    reconnectAttempts.set(configKey, 0);
                 }
-                reconnectAttempts.set(configKey, 0);
+
+                // Format and output
+                const formatted = formatBotLogLine(line);
+                if (formatted) {
+                    process.stdout.write(formatted + '\n');
+                }
+            }
+        }
+
+        // Handle any remaining buffer
+        if (buffer) {
+            const formatted = formatBotLogLine(buffer);
+            if (formatted) {
+                process.stdout.write(formatted + '\n');
             }
         }
     };

@@ -52,7 +52,18 @@ The project uses **Pino** for structured logging with dual output:
 
 ### Output Destinations
 - **Console**: Pretty-printed via `pino-pretty` during development
-- **Files**: JSON format in `logs/YYYY-MM-DD/BotName.log` for searchability
+- **Files**: JSON format in `logs/SESSION_ID/RoleLabel.log` for searchability
+
+### Directory Structure
+```
+logs/
+  2026-01-17_20-44-32/   # Session timestamp (each run)
+    Farmer.log           # One file per role (consistent names)
+    Lmbr.log
+  latest -> ...          # Symlink to most recent session
+```
+
+**Why session-based?** During development, running the bot repeatedly would fill date folders with random bot names. Session-based organization keeps each run isolated and easy to navigate.
 
 ### Log Levels
 | Level | Usage |
@@ -129,11 +140,14 @@ const stats = executor.getStats();
 
 Search log files:
 ```bash
-# Find goal selections
-cat logs/*/DevFarmer.log | grep "Goal selected"
+# Last session's logs
+cat logs/latest/*.log | grep "Goal selected"
 
-# Find errors
-cat logs/*/*.log | jq 'select(.level >= 50)'
+# All errors from latest session
+cat logs/latest/*.log | jq 'select(.level >= 50)'
+
+# Find across all sessions
+grep -r "Goal selected" logs/
 ```
 
 ## Contributing to Docs
