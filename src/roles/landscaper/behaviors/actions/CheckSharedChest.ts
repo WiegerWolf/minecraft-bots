@@ -16,35 +16,51 @@ export class CheckSharedChest implements BehaviorNode {
     name = 'CheckSharedChest';
 
     async tick(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
-        // Need a shared chest to check
-        if (!bb.sharedChest) {
-            console.log('[Landscaper] No shared chest known');
-            return 'failure';
-        }
-
         // Already have enough materials
         if (bb.logCount >= 2 || bb.plankCount >= 7) {
             return 'failure';
         }
 
-        bb.lastAction = 'check_chest';
+        // Find a chest to check - prefer shared chest, fall back to nearby chests
+        let chestBlock = null;
 
-        const chestPos = bb.sharedChest;
-        const chestBlock = bot.blockAt(chestPos);
+        if (bb.sharedChest) {
+            chestBlock = bot.blockAt(bb.sharedChest);
+            if (!chestBlock || !['chest', 'barrel'].includes(chestBlock.name)) {
+                console.log(`[Landscaper] Shared chest at ${bb.sharedChest} no longer exists`);
+                chestBlock = null;
+            }
+        }
 
-        if (!chestBlock || !['chest', 'barrel'].includes(chestBlock.name)) {
-            console.log(`[Landscaper] Shared chest at ${chestPos} no longer exists`);
+        // Try nearby chests as fallback
+        if (!chestBlock && bb.nearbyChests.length > 0) {
+            chestBlock = bb.nearbyChests[0];
+            console.log(`[Landscaper] Using nearby chest at ${chestBlock?.position}`);
+        }
+
+        if (!chestBlock) {
+            console.log('[Landscaper] No chest available');
             return 'failure';
         }
 
+        bb.lastAction = 'check_chest';
+        const chestPos = chestBlock.position;
+
         try {
             // Navigate to chest
-            console.log(`[Landscaper] Going to shared chest at ${chestPos}`);
+            console.log(`[Landscaper] Going to chest at ${chestPos}`);
             await bot.pathfinder.goto(new GoalNear(chestPos.x, chestPos.y, chestPos.z, 2));
             await sleep(200);
 
+            // Re-fetch block in case it changed
+            const currentChestBlock = bot.blockAt(chestPos);
+            if (!currentChestBlock || !['chest', 'barrel'].includes(currentChestBlock.name)) {
+                console.log(`[Landscaper] Chest at ${chestPos} disappeared`);
+                return 'failure';
+            }
+
             // Open chest
-            const chest = await bot.openContainer(chestBlock);
+            const chest = await bot.openContainer(currentChestBlock);
             await sleep(300);
 
             // Look for logs first, then planks
