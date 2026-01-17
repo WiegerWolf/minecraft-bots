@@ -131,12 +131,15 @@ export class DepositItemsGoal extends BaseGoal {
 }
 
 /**
- * Goal: Explore and wait for terraform requests.
- * LOWEST priority - fallback when nothing else to do.
+ * Goal: Wait at spawn for terraform requests.
+ * The landscaper should idle until called by other bots or until
+ * materials are available in the shared chest.
+ *
+ * Returns 0 utility - landscaper just waits rather than exploring.
  */
 export class ExploreGoal extends BaseGoal {
   name = 'Explore';
-  description = 'Explore and wait for terraform requests';
+  description = 'Wait at spawn for terraform requests';
 
   conditions = [
     numericGoalCondition('state.consecutiveIdleTicks', v => v === 0, 'not idle', {
@@ -147,19 +150,11 @@ export class ExploreGoal extends BaseGoal {
   ];
 
   getUtility(ws: WorldState): number {
-    const hasPendingRequest = ws.getBool('has.pendingTerraformRequest');
-    const idleTicks = ws.getNumber('state.consecutiveIdleTicks');
-
-    // If we have a pending request, don't explore
-    if (hasPendingRequest) return 5;
-
-    // Increase utility when idle for too long
-    if (idleTicks > 10) {
-      return 15 + Math.min(25, idleTicks / 2);
-    }
-
-    // Low base utility - exploration is a fallback
-    return 10;
+    // Landscaper should just wait at spawn - don't explore
+    // It will become active when:
+    // 1. FulfillTerraformRequest goal activates (pending request)
+    // 2. ObtainTools goal activates (materials in chest)
+    return 0;
   }
 
   override isValid(ws: WorldState): boolean {
