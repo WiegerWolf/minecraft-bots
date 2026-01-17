@@ -82,3 +82,31 @@ The farming bot autonomously:
 3. Tills soil, plants seeds, harvests mature crops
 4. Collects dropped items, deposits produce in chests
 5. Explores for resources when idle
+
+## Keeping Documentation Current
+
+The `docs/` folder captures the **reasoning** behind design decisions. When working on this codebase:
+
+### When to Update Docs
+
+- **Changing thresholds/constants**: Update `docs/README.md` quick reference table
+- **Modifying GOAP goals/actions**: Update `docs/goap-planning.md` with new utility formulas or action patterns
+- **Changing state management**: Update `docs/state-management.md` if blackboard fields or WorldState facts change
+- **Modifying bot coordination**: Update `docs/multi-bot-coordination.md` for new chat protocols or role changes
+- **Adding failure handling**: Update `docs/failure-handling.md` with new recovery mechanisms
+
+### What to Document
+
+Document the **why**, not the **what**:
+- Bad: "The threshold is 5"
+- Good: "The threshold is 5 because lower values caused thrashing and higher values made the bot unresponsive"
+
+### Key Numbers to Keep in Sync
+
+If you change these values, update `docs/README.md`:
+- Tick interval (currently 100ms)
+- Hysteresis threshold (currently 20%)
+- Goal cooldown (currently 5 seconds)
+- Max consecutive failures (currently 3)
+- World change threshold (currently 5 facts)
+- Backoff cap (currently 30 seconds)
