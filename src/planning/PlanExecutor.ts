@@ -280,11 +280,13 @@ export class PlanExecutor {
       this.currentAction.cancel();
     }
 
-    // Clear plan
+    // Clear plan but preserve consecutiveFailures for hadRecentFailures() check
+    // consecutiveFailures is reset in loadPlan() when a new plan starts
     this.currentPlan = [];
     this.currentAction = null;
     this.currentActionIndex = 0;
-    this.consecutiveFailures = 0;
+    // Note: Don't reset consecutiveFailures here - the callback may need to check
+    // hadRecentFailures() to decide whether to apply cooldown to the goal
 
     // Notify callback
     this.onReplan(reason);
