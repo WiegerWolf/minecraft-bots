@@ -513,18 +513,20 @@ export class TerraformArea implements BehaviorNode {
     /**
      * Gather dirt from OUTSIDE the 9x9 work area.
      * Prefers: surface grass blocks, inland (away from water), close to bot.
+     * Falls back to underground dirt if surface isn't available.
      */
     private async gatherDirtFromNearby(bot: Bot, bb: LandscaperBlackboard, task: TerraformTask): Promise<boolean> {
         const waterCenter = task.waterCenter;
         const targetY = task.targetY;
         const workRadius = 4; // The 9x9 work area
-        const searchRadius = 16;
+        const searchRadius = 24; // Larger search radius to find inland dirt
 
         interface DirtCandidate {
             pos: Vec3;
             isSurface: boolean;      // grass_block on top = surface
             distFromWater: number;   // prefer far from water (inland)
             distFromBot: number;
+            isUnderground: boolean;  // below surface
         }
 
         const candidates: DirtCandidate[] = [];
@@ -538,7 +540,7 @@ export class TerraformArea implements BehaviorNode {
                 const z = Math.floor(waterCenter.z) + dz;
 
                 // Check surface first (grass blocks), then underground
-                for (let dy = 3; dy >= -3; dy--) {
+                for (let dy = 4; dy >= -5; dy--) {
                     const pos = new Vec3(x, targetY + dy, z);
                     const block = bot.blockAt(pos);
                     const above = bot.blockAt(pos.offset(0, 1, 0));
@@ -560,10 +562,12 @@ export class TerraformArea implements BehaviorNode {
                         above.name === 'dead_bush'
                     );
 
-                    // Skip if there's water nearby (within 2 blocks) - avoid shoreline
+                    // Calculate distance from water - skip only blocks VERY close to water (1 block)
+                    // Underground blocks can be closer since digging them won't affect water flow
+                    const minWaterDist = isSurface ? 2 : 1;
                     let nearWater = false;
-                    for (let wx = -2; wx <= 2 && !nearWater; wx++) {
-                        for (let wz = -2; wz <= 2 && !nearWater; wz++) {
+                    for (let wx = -minWaterDist; wx <= minWaterDist && !nearWater; wx++) {
+                        for (let wz = -minWaterDist; wz <= minWaterDist && !nearWater; wz++) {
                             for (let wy = -1; wy <= 1; wy++) {
                                 const checkBlock = bot.blockAt(pos.offset(wx, wy, wz));
                                 if (checkBlock && (checkBlock.name === 'water' || checkBlock.name === 'flowing_water')) {
@@ -575,15 +579,50 @@ export class TerraformArea implements BehaviorNode {
                     }
                     if (nearWater) continue;
 
+                    // Check if this is underground (has solid block above)
+                    const isUnderground = above && above.boundingBox === 'block' &&
+                                          above.name !== 'grass_block' && above.name !== 'dirt';
+
                     candidates.push({
                         pos: pos.clone(),
                         isSurface: isSurface || false,
                         distFromWater: pos.distanceTo(waterCenter),
-                        distFromBot: pos.distanceTo(bot.entity.position)
+                        distFromBot: pos.distanceTo(bot.entity.position),
+                        isUnderground: isUnderground || false
                     });
 
-                    // Only take topmost block at each x,z
+                    // Only take topmost block at each x,z for surface
                     if (isSurface) break;
+                }
+            }
+        }
+
+        if (candidates.length === 0) {
+            // Last resort: try to find any dirt underground even further away
+            console.log(`[Landscaper] No dirt in primary search, trying extended underground search`);
+            for (let dx = -32; dx <= 32; dx += 2) {
+                for (let dz = -32; dz <= 32; dz += 2) {
+                    if (Math.abs(dx) <= workRadius && Math.abs(dz) <= workRadius) continue;
+
+                    const x = Math.floor(waterCenter.x) + dx;
+                    const z = Math.floor(waterCenter.z) + dz;
+
+                    // Check underground only
+                    for (let dy = -2; dy >= -8; dy--) {
+                        const pos = new Vec3(x, targetY + dy, z);
+                        const block = bot.blockAt(pos);
+                        if (!block) continue;
+
+                        if (block.name === 'dirt') {
+                            candidates.push({
+                                pos: pos.clone(),
+                                isSurface: false,
+                                distFromWater: pos.distanceTo(waterCenter),
+                                distFromBot: pos.distanceTo(bot.entity.position),
+                                isUnderground: true
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -592,10 +631,12 @@ export class TerraformArea implements BehaviorNode {
             return false;
         }
 
-        // Sort: surface blocks first, then by distance from water (far = better), then by bot distance
+        // Sort: surface blocks first, underground second, then by distance from water (far = better), then by bot distance
         candidates.sort((a, b) => {
-            // Surface blocks are much better (don't dig underground)
+            // Surface blocks are best (visible, easy access)
             if (a.isSurface !== b.isSurface) return a.isSurface ? -1 : 1;
+            // Non-underground is better than underground
+            if (a.isUnderground !== b.isUnderground) return a.isUnderground ? 1 : -1;
             // Prefer further from water (inland)
             if (Math.abs(a.distFromWater - b.distFromWater) > 3) {
                 return b.distFromWater - a.distFromWater;
@@ -634,7 +675,8 @@ export class TerraformArea implements BehaviorNode {
             try {
                 await bot.dig(block);
                 gathered++;
-                console.log(`[Landscaper] Gathered ${block.name} ${gathered}/${neededDirt} from ${candidate.pos.floored()}${candidate.isSurface ? ' (surface)' : ''}`);
+                const source = candidate.isSurface ? 'surface' : (candidate.isUnderground ? 'underground' : 'subsurface');
+                console.log(`[Landscaper] Gathered ${block.name} ${gathered}/${neededDirt} from ${candidate.pos.floored()} (${source})`);
                 await sleep(100);
             } catch (error) {
                 // Skip
