@@ -182,11 +182,11 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
 
     bb.nearbyFarmland = rawFarmland.map(p => bot.blockAt(p)).filter((b): b is Block => {
         if (!b) return false;
-        // Filter by Y-level: farmland should be at same Y as water OR one above (for trench farms)
-        // NOT below water (that would be underwater!)
+        // Filter by Y-level: farmland MUST be at same Y as water to be hydrated
+        // In Minecraft, water only hydrates farmland at the SAME Y level, not above/below!
         if (bb.farmCenter) {
             const yDiff = b.position.y - farmCenterY;
-            if (yDiff < 0 || yDiff > 1) return false;  // Only accept Y=0 or Y=+1 relative to water
+            if (yDiff !== 0) return false;  // Only accept Y=0 (same level as water)
         }
         // Check if there's air above (can plant)
         const above = bot.blockAt(b.position.offset(0, 1, 0));
@@ -387,26 +387,27 @@ function isMatureCrop(block: Block): boolean {
 function countTillableAround(bot: Bot, center: Vec3): number {
     let count = 0;
     // Check in hydration range (4 blocks) plus a bit more for irregular shapes
+    // IMPORTANT: Only count at Y=0 (same level as water) - that's where hydration works!
     for (let x = -5; x <= 5; x++) {
         for (let z = -5; z <= 5; z++) {
-            // Check same level and one above (for sloped terrain)
-            for (let y = 0; y <= 1; y++) {
-                const block = bot.blockAt(center.offset(x, y, z));
-                if (!block || !block.name || !block.position) continue;
+            // Skip the water block itself
+            if (x === 0 && z === 0) continue;
 
-                // Dirt and grass are ideal
-                if (['grass_block', 'dirt', 'coarse_dirt', 'rooted_dirt', 'podzol'].includes(block.name)) {
-                    const above = bot.blockAt(block.position.offset(0, 1, 0));
-                    if (above && (above.name === 'air' || above.name.includes('grass') || above.name.includes('fern'))) {
-                        count++;
-                    }
+            const block = bot.blockAt(center.offset(x, 0, z));  // Y=0 only
+            if (!block || !block.name || !block.position) continue;
+
+            // Dirt and grass are ideal
+            if (['grass_block', 'dirt', 'coarse_dirt', 'rooted_dirt', 'podzol'].includes(block.name)) {
+                const above = bot.blockAt(block.position.offset(0, 1, 0));
+                if (above && (above.name === 'air' || above.name.includes('grass') || above.name.includes('fern'))) {
+                    count++;
                 }
-                // Sand and gravel can be replaced with dirt - count as half
-                else if (['sand', 'gravel', 'clay'].includes(block.name)) {
-                    const above = bot.blockAt(block.position.offset(0, 1, 0));
-                    if (above && above.name === 'air') {
-                        count += 0.5;
-                    }
+            }
+            // Sand and gravel can be replaced with dirt - count as half
+            else if (['sand', 'gravel', 'clay'].includes(block.name)) {
+                const above = bot.blockAt(block.position.offset(0, 1, 0));
+                if (above && above.name === 'air') {
+                    count += 0.5;
                 }
             }
         }

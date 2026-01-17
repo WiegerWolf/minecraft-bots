@@ -15,28 +15,25 @@ export class TillGround implements BehaviorNode {
         if (!bb.farmCenter) return 'failure';
 
         // Find tillable block near water
-        // Standard farm: farmland should be at the SAME Y level as water
-        // Search same level first, then +1, then -1 as fallbacks
+        // IMPORTANT: In Minecraft, water ONLY hydrates farmland at the SAME Y level
+        // Farmland at Y+1 above water will NOT be hydrated!
+        // Only search at Y=0 (same level as water)
         let target: { position: Vec3 } | null = null;
 
-        const yOffsets = [0, 1, -1];  // Prioritize same level as water
-        for (const y of yOffsets) {
-            for (let x = -4; x <= 4; x++) {
-                for (let z = -4; z <= 4; z++) {
-                    // Skip the water block itself
-                    if (x === 0 && z === 0 && y === 0) continue;
+        for (let x = -4; x <= 4; x++) {
+            for (let z = -4; z <= 4; z++) {
+                // Skip the water block itself
+                if (x === 0 && z === 0) continue;
 
-                    const pos = bb.farmCenter.offset(x, y, z);
-                    const block = bot.blockAt(pos);
-                    if (block && ['grass_block', 'dirt'].includes(block.name)) {
-                        const above = bot.blockAt(pos.offset(0, 1, 0));
-                        if (above && above.name === 'air') {
-                            target = { position: pos };
-                            break;
-                        }
+                const pos = bb.farmCenter.offset(x, 0, z);  // Y=0 only - same level as water
+                const block = bot.blockAt(pos);
+                if (block && ['grass_block', 'dirt'].includes(block.name)) {
+                    const above = bot.blockAt(pos.offset(0, 1, 0));
+                    if (above && above.name === 'air') {
+                        target = { position: pos };
+                        break;
                     }
                 }
-                if (target) break;
             }
             if (target) break;
         }
