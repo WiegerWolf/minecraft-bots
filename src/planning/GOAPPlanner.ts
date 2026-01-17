@@ -301,6 +301,8 @@ export class GOAPPlanner {
     const importantFacts = [
       'has.hoe', 'has.sword', 'has.axe', 'has.craftingTable',
       'has.shovel', 'has.pickaxe', // Landscaper tools
+      'has.pendingTerraformRequest', 'terraform.active', // Terraform state
+      'has.pendingRequests', // Village requests
       'inv.seeds', 'inv.produce', 'inv.logs', 'inv.planks', 'inv.sticks',
       'nearby.matureCrops', 'nearby.farmland', 'nearby.drops', 'nearby.trees',
       'tree.active', 'derived.hasFarmEstablished',
