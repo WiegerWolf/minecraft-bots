@@ -11,6 +11,7 @@ import { GatherSeeds } from '../../roles/farming/behaviors/actions/GatherSeeds';
 import { GatherWood } from '../../roles/farming/behaviors/actions/GatherWood';
 import { CraftHoe } from '../../roles/farming/behaviors/actions/CraftHoe';
 import { Explore } from '../../roles/farming/behaviors/actions/Explore';
+import { FindFarmCenter } from '../../roles/farming/behaviors/actions/FindFarmCenter';
 
 /**
  * GOAP Action: Pick up dropped items
@@ -244,6 +245,61 @@ export class CraftHoeAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Continue an in-progress tree harvest
+ * This allows the planner to chain tree chopping with completion.
+ */
+export class ContinueTreeHarvestAction extends BaseGOAPAction {
+  name = 'ContinueTreeHarvest';
+  private impl = new GatherWood(false); // Default mode continues existing harvest
+
+  preconditions = [
+    booleanPrecondition('tree.active', true, 'tree harvest in progress'),
+  ];
+
+  effects = [
+    setEffect('tree.active', false, 'tree harvest complete'),
+    incrementEffect('inv.logs', 2, 'collected remaining logs'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    return 2.0;
+  }
+
+  override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
+ * GOAP Action: Find and establish a farm center near water
+ */
+export class FindFarmCenterAction extends BaseGOAPAction {
+  name = 'FindFarmCenter';
+  private impl = new FindFarmCenter();
+
+  preconditions = [
+    booleanPrecondition('derived.hasFarmEstablished', false, 'no farm center yet'),
+  ];
+
+  effects = [
+    setEffect('derived.hasFarmEstablished', true, 'farm center established'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Cost depends on whether we already see water
+    const waterCount = ws.getNumber('nearby.water');
+    if (waterCount > 0) return 1.0; // Water nearby, just need to establish
+    return 5.0; // Need to search for water
+  }
+
+  override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * GOAP Action: Explore to find resources
  */
 export class ExploreAction extends BaseGOAPAction {
@@ -283,7 +339,9 @@ export function createFarmingActions(): BaseGOAPAction[] {
     new DepositItemsAction(),
     new GatherSeedsAction(),
     new GatherWoodAction(),
+    new ContinueTreeHarvestAction(),
     new CraftHoeAction(),
+    new FindFarmCenterAction(),
     new ExploreAction(),
   ];
 }
