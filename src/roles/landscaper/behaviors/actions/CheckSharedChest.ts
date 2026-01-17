@@ -112,7 +112,12 @@ export class CheckSharedChest implements BehaviorNode {
                 console.log(`[Landscaper] Retrieved materials from chest - logs: ${bb.logCount}, planks: ${bb.plankCount}`);
                 return 'success';
             } else {
+                // No materials in chest - request from lumberjack
                 console.log(`[Landscaper] Chest had no logs or planks available`);
+                if (bb.villageChat && !bb.villageChat.hasPendingRequestFor('log')) {
+                    console.log('[Landscaper] Requesting 2 logs from lumberjack');
+                    bb.villageChat.requestResource('log', 2);
+                }
                 return 'failure';
             }
         } catch (err) {

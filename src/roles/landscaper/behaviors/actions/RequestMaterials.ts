@@ -40,10 +40,10 @@ export class RequestMaterials implements BehaviorNode {
             return 'running';
         }
 
-        // Check if we already have a pending request for logs
+        // Check if we already have a pending request for logs - consider it success (request in progress)
         if (bb.villageChat.hasPendingRequestFor('log')) {
             bb.lastAction = 'waiting_for_materials';
-            return 'running';
+            return 'success'; // Request already made, move on to check chest
         }
 
         bb.lastAction = 'request_materials';
@@ -53,6 +53,6 @@ export class RequestMaterials implements BehaviorNode {
         console.log('[Landscaper] Requesting 2 logs from lumberjack for tool crafting');
         bb.villageChat.requestResource('log', 2);
 
-        return 'running'; // Wait for fulfillment
+        return 'success'; // Request made, next action should check chest for logs
     }
 }

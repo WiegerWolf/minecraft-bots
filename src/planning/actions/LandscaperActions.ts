@@ -303,6 +303,10 @@ export class CheckSharedChestAction extends BaseGOAPAction {
 
 /**
  * GOAP Action: Request materials from lumberjack
+ *
+ * This action just makes the request - it doesn't give logs directly.
+ * After requesting, CheckSharedChest should be used to retrieve the logs
+ * once the lumberjack deposits them.
  */
 export class RequestMaterialsAction extends BaseGOAPAction {
   name = 'RequestMaterials';
@@ -312,22 +316,23 @@ export class RequestMaterialsAction extends BaseGOAPAction {
     // Need tools but don't have materials
     booleanPrecondition('needs.tools', true, 'needs tools'),
     numericPrecondition('inv.logs', v => v < 2, 'needs logs'),
+    // Only request if we have chest access (where logs will be deposited)
+    booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
   ];
 
   effects = [
-    // Optimistically assume we'll get logs (request was made)
-    setEffect('inv.logs', 2, 'requested logs from lumberjack'),
+    // Request was made - logs will arrive in chest (not inventory)
+    // The actual logs come from CheckSharedChest action
+    // This action's main purpose is to trigger the lumberjack to deposit logs
   ];
 
   override getCost(ws: WorldState): number {
-    // Low cost - just making a request
-    return 1.0;
+    // Higher cost since this requires waiting for lumberjack
+    return 3.0;
   }
 
   override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
     const result = await this.impl.tick(bot, bb);
-    // Running means we're waiting for materials
-    if (result === 'running') return ActionResult.RUNNING;
     return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
   }
 }
@@ -345,7 +350,6 @@ export function createLandscaperActions(): BaseGOAPAction[] {
     new CraftPickaxeFromPlanksAction(),
     new DepositItemsAction(),
     new CheckSharedChestAction(),
-    new RequestMaterialsAction(),
     new ExploreAction(),
   ];
 }
