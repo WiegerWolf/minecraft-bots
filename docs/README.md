@@ -105,6 +105,7 @@ LOG_LEVEL=debug bun run start farmer  # Set log level
 | Seed threshold | 10 | Comfortable farming buffer |
 | Sign search radius | 15 blocks | Area around spawn to find knowledge signs |
 | WriteKnowledgeSign utility | 55-65 | Medium priority, after critical tasks |
+| Sign crafting materials | 6 planks + 1 stick | ProcessWood can chain to satisfy this |
 | Lumberjack tree search | 50/32 blocks | With/without village center (must match blackboard) |
 | Full chest memory | 5 minutes | Time before retrying a full chest |
 

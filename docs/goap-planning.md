@@ -551,3 +551,35 @@ async execute(bot, bb, ws): Promise<ActionResult> {
 ```
 
 Each call advances one step. RUNNING signals "more work needed."
+
+### Action Chaining with Custom Preconditions
+
+When an action has complex material requirements, use `checkPreconditions` to enable planner chaining:
+
+```typescript
+class WriteKnowledgeSignAction extends BaseGOAPAction {
+    // Sign needs 6 planks + 1 stick, OR already have a sign
+    override checkPreconditions(ws: WorldState): boolean {
+        // Already have a sign - can write immediately
+        if (ws.getBool('has.sign')) return true;
+
+        // Can craft (derived fact checks crafting table too)
+        if (ws.getBool('derived.canCraftSign')) return true;
+
+        // Raw material check - allows ProcessWood to chain
+        const planks = ws.getNumber('inv.planks');
+        const sticks = ws.getNumber('inv.sticks');
+        return planks >= 6 && sticks >= 1;
+    }
+
+    effects = [
+        incrementEffect('inv.planks', -6, 'used planks for sign'),
+        incrementEffect('inv.sticks', -1, 'used stick for sign'),
+    ];
+}
+```
+
+**Why this works for chaining**: `ProcessWood` has effect `incrementEffect('inv.planks', 8)`. When the bot has 0 planks, the planner simulates:
+1. Apply `ProcessWood` → state has `inv.planks = 8`
+2. Check `WriteKnowledgeSign` preconditions → `8 >= 6` passes
+3. Plan: `[ProcessWood, WriteKnowledgeSign]`

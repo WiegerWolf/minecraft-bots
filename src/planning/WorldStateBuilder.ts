@@ -181,6 +181,7 @@ export class WorldStateBuilder {
 
     // Equipment
     ws.set('has.axe', bb.hasAxe);
+    ws.set('has.sign', this.hasSign(bot));
 
     // Nearby resources
     ws.set('nearby.trees', bb.nearbyTrees.length);
@@ -202,6 +203,7 @@ export class WorldStateBuilder {
 
     // Derived facts
     ws.set('derived.canCraftAxe', this.canCraftAxe(bb));
+    ws.set('derived.canCraftSign', this.canCraftSign(bb));
     ws.set('derived.hasStorageAccess', this.hasAvailableStorage(bb));
     ws.set('derived.hasVillage', bb.villageCenter !== null);
     ws.set('derived.needsCraftingTable', bb.nearbyCraftingTables.length === 0 && !bb.sharedCraftingTable);
@@ -267,6 +269,24 @@ export class WorldStateBuilder {
     const hasSticks = bb.stickCount >= 2;
     const canMakeSticks = bb.plankCount >= 5; // 2 planks for sticks + 3 for pickaxe head
     return hasPlanks && (hasSticks || canMakeSticks);
+  }
+
+  /**
+   * Check if bot has a sign in inventory.
+   */
+  private static hasSign(bot: Bot): boolean {
+    return bot.inventory.items().some(i => i.name.includes('_sign'));
+  }
+
+  /**
+   * Check if bot can craft a sign (has materials).
+   * Sign recipe: 6 planks + 1 stick = 3 signs (requires crafting table)
+   */
+  private static canCraftSign(bb: LumberjackBlackboard): boolean {
+    const hasPlanks = bb.plankCount >= 6;
+    const hasSticks = bb.stickCount >= 1;
+    const hasCraftingTable = bb.nearbyCraftingTables.length > 0 || bb.sharedCraftingTable !== null;
+    return hasPlanks && hasSticks && hasCraftingTable;
   }
 
   /**

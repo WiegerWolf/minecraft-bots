@@ -334,21 +334,64 @@ export class PlantSaplingsAction extends BaseGOAPAction {
  * GOAP Action: Write knowledge to signs at spawn
  * Records infrastructure locations (village center, crafting table, chest) to signs
  * for persistence across bot restarts.
+ *
+ * Sign crafting requires: 6 planks + 1 stick at a crafting table.
+ * The action will succeed if:
+ * - Bot already has a sign in inventory, OR
+ * - Bot has materials (6 planks, 1 stick) and access to a crafting table
  */
 export class WriteKnowledgeSignAction extends BaseGOAPAction {
   name = 'WriteKnowledgeSign';
   private impl = new WriteKnowledgeSign();
 
+  // Preconditions array is empty because we use custom checkPreconditions for OR logic
   preconditions = [
     numericPrecondition('pending.signWrites', v => v > 0, 'has pending sign writes'),
   ];
 
   effects = [
     incrementEffect('pending.signWrites', -1, 'wrote sign'),
+    // Assume we need to craft (pessimistic for planning)
+    // If we already have a sign, these won't actually be consumed at runtime
+    incrementEffect('inv.planks', -6, 'used planks for sign'),
+    incrementEffect('inv.sticks', -1, 'used stick for sign'),
   ];
 
+  /**
+   * Custom precondition check with OR logic:
+   * - has.sign == true (already have a sign), OR
+   * - derived.canCraftSign == true (can craft: 6 planks + 1 stick + crafting table)
+   *
+   * For planner chaining, we also accept raw material checks so ProcessWood can satisfy:
+   * - inv.planks >= 6 AND inv.sticks >= 1 (with implicit crafting table)
+   */
+  override checkPreconditions(ws: WorldState): boolean {
+    const pendingWrites = ws.getNumber('pending.signWrites');
+    if (pendingWrites <= 0) return false;
+
+    // Already have a sign - can write immediately
+    const hasSign = ws.getBool('has.sign');
+    if (hasSign) return true;
+
+    // Can craft a sign (derived fact checks planks, sticks, and crafting table access)
+    const canCraft = ws.getBool('derived.canCraftSign');
+    if (canCraft) return true;
+
+    // For planner chaining: check raw materials (ProcessWood effects can satisfy this)
+    // This allows plans like ProcessWood → WriteKnowledgeSign
+    const planks = ws.getNumber('inv.planks');
+    const sticks = ws.getNumber('inv.sticks');
+    if (planks >= 6 && sticks >= 1) return true;
+
+    return false;
+  }
+
   override getCost(ws: WorldState): number {
-    // Medium cost - requires navigation to spawn and possibly crafting
+    // Lower cost if we already have a sign
+    const hasSign = ws.getBool('has.sign');
+    if (hasSign) return 2.0;
+
+    // Medium cost - requires navigation to spawn and crafting
     return 4.0;
   }
 
