@@ -169,89 +169,209 @@ async function attemptRecovery(bot: Bot, action: RecoveryAction, debug: boolean)
 // ============================================================================
 
 /**
- * Smart pathfinding wrapper with timeout.
- *
- * Simply wraps bot.pathfinder.goto with a timeout to prevent infinite blocking.
- * Returns a result object indicating success/failure and reason.
+ * Extract target position from various goal types.
  */
-export async function smartPathfinderGoto(
+function getGoalPosition(goal: any): Vec3 | null {
+    if ('x' in goal && 'z' in goal) {
+        const y = 'y' in goal ? goal.y : 64;
+        return new Vec3(goal.x, y, goal.z);
+    }
+    if ('pos' in goal && goal.pos) {
+        return goal.pos.clone();
+    }
+    if ('entity' in goal && goal.entity?.position) {
+        return goal.entity.position.clone();
+    }
+    return null;
+}
+
+/**
+ * Simple pathfinding with timeout only, no recovery.
+ */
+async function pathfindWithTimeout(
     bot: Bot,
     goal: any,
-    options?: {
-        timeoutMs?: number;
-        stuckDetection?: Partial<StuckDetectionConfig>;  // Kept for API compatibility, but ignored
-    }
-): Promise<PathfindingResult> {
-    const timeoutMs = options?.timeoutMs ?? 30000;
-    const startTime = Date.now();
-
-    // Use Promise.race for guaranteed timeout
+    timeoutMs: number
+): Promise<{ success: boolean; error?: Error }> {
     let timedOut = false;
     let timeoutId: ReturnType<typeof setTimeout>;
 
     const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => {
             timedOut = true;
-            try {
-                bot.pathfinder.stop();
-            } catch {
-                // Ignore stop errors
-            }
+            try { bot.pathfinder.stop(); } catch { /* ignore */ }
             reject(new Error('Pathfinding timed out'));
         }, timeoutMs);
     });
 
-    const pathfindingPromise = bot.pathfinder.goto(goal);
-
     try {
-        await Promise.race([pathfindingPromise, timeoutPromise]);
+        await Promise.race([bot.pathfinder.goto(goal), timeoutPromise]);
         clearTimeout(timeoutId!);
+        return { success: true };
+    } catch (err) {
+        clearTimeout(timeoutId!);
+        return {
+            success: false,
+            error: err instanceof Error ? err : new Error(String(err))
+        };
+    }
+}
 
-        const finalDistance = getDistanceToGoal(bot.entity.position, goal);
+/**
+ * Walk in a direction for a short distance using controls (no pathfinding).
+ */
+async function walkDirection(bot: Bot, direction: Vec3, blocks: number): Promise<void> {
+    const yaw = Math.atan2(-direction.x, -direction.z);
+    await bot.look(yaw, 0);
+
+    bot.setControlState('forward', true);
+    bot.setControlState('sprint', true);
+
+    // Estimate time: ~5.6 blocks/sec sprinting
+    const walkTimeMs = (blocks / 5.6) * 1000;
+    await sleep(Math.min(walkTimeMs, 2000)); // Cap at 2 seconds
+
+    bot.clearControlStates();
+    await sleep(100);
+}
+
+/**
+ * Smart pathfinding wrapper with timeout and optional knight's move recovery.
+ *
+ * When direct pathfinding fails, attempts recovery by:
+ * 1. Backing out (walking opposite direction)
+ * 2. Approaching from an angle (knight's move - L-shaped path)
+ */
+export async function smartPathfinderGoto(
+    bot: Bot,
+    goal: any,
+    options?: {
+        timeoutMs?: number;
+        stuckDetection?: Partial<StuckDetectionConfig>;  // Kept for API compatibility
+        knightMoveRecovery?: boolean;  // Enable knight's move recovery (default: true)
+        debug?: boolean;
+    }
+): Promise<PathfindingResult> {
+    const timeoutMs = options?.timeoutMs ?? 30000;
+    const knightMoveRecovery = options?.knightMoveRecovery ?? true;
+    const debug = options?.debug ?? false;
+    const startTime = Date.now();
+
+    // First attempt: direct pathfinding
+    const directResult = await pathfindWithTimeout(bot, goal, timeoutMs);
+
+    if (directResult.success) {
         return {
             success: true,
             recoveryAttempts: 0,
-            finalDistanceToGoal: finalDistance,
+            finalDistanceToGoal: getDistanceToGoal(bot.entity.position, goal),
             elapsedMs: Date.now() - startTime,
         };
-    } catch (err) {
-        clearTimeout(timeoutId!);
+    }
 
-        const finalDistance = getDistanceToGoal(bot.entity.position, goal);
-        const elapsedMs = Date.now() - startTime;
-        const error = err instanceof Error ? err : new Error(String(err));
+    // Check if we should attempt recovery
+    const error = directResult.error;
+    const isTimeout = error?.message.includes('timed out');
+    const isUnreachable = error?.message.includes('no path') ||
+                          error?.message.includes('No path') ||
+                          error?.message.includes('Path was stopped');
 
-        // Timed out
-        if (timedOut || error.message.includes('timed out')) {
-            return {
-                success: false,
-                failureReason: 'timeout',
-                recoveryAttempts: 0,
-                finalDistanceToGoal: finalDistance,
-                elapsedMs,
-            };
-        }
-
-        // Goal changed
-        if (isGoalChangedError(error)) {
-            return {
-                success: false,
-                failureReason: 'goal_changed',
-                recoveryAttempts: 0,
-                finalDistanceToGoal: finalDistance,
-                elapsedMs,
-            };
-        }
-
-        // Unreachable / no path
+    // Don't recover from goal_changed errors
+    if (error && isGoalChangedError(error)) {
         return {
             success: false,
-            failureReason: 'unreachable',
+            failureReason: 'goal_changed',
             recoveryAttempts: 0,
+            finalDistanceToGoal: getDistanceToGoal(bot.entity.position, goal),
+            elapsedMs: Date.now() - startTime,
+        };
+    }
+
+    // Skip recovery if disabled or if we're already close enough
+    const currentDist = getDistanceToGoal(bot.entity.position, goal);
+    if (!knightMoveRecovery || currentDist < 3) {
+        return {
+            success: false,
+            failureReason: isTimeout ? 'timeout' : 'unreachable',
+            recoveryAttempts: 0,
+            finalDistanceToGoal: currentDist,
+            elapsedMs: Date.now() - startTime,
+        };
+    }
+
+    // Get goal position for recovery calculations
+    const goalPos = getGoalPosition(goal);
+    if (!goalPos) {
+        return {
+            success: false,
+            failureReason: isTimeout ? 'timeout' : 'unreachable',
+            recoveryAttempts: 0,
+            finalDistanceToGoal: currentDist,
+            elapsedMs: Date.now() - startTime,
+        };
+    }
+
+    // ========================================================================
+    // Knight's Move Recovery
+    // ========================================================================
+    if (debug) console.log(`[Pathfinder] Direct path failed, attempting knight's move recovery`);
+
+    const botPos = bot.entity.position;
+    const toGoal = goalPos.minus(botPos);
+    const distToGoal = toGoal.norm();
+
+    // Step 1: Back out - walk opposite direction
+    if (debug) console.log(`[Pathfinder] Step 1: Backing out`);
+    const backDirection = toGoal.scaled(-1 / distToGoal); // Normalize and reverse
+    await walkDirection(bot, backDirection, 4);
+
+    // Step 2: Move perpendicular (knight's move setup)
+    // Calculate perpendicular direction (rotate 90 degrees on XZ plane)
+    const perpendicular = new Vec3(-toGoal.z, 0, toGoal.x).normalize();
+    // Randomly pick left or right
+    const sideDirection = Math.random() > 0.5 ? perpendicular : perpendicular.scaled(-1);
+
+    if (debug) console.log(`[Pathfinder] Step 2: Moving sideways`);
+    await walkDirection(bot, sideDirection, 5);
+
+    // Step 3: Try pathfinding again from new position
+    if (debug) console.log(`[Pathfinder] Step 3: Attempting path from new angle`);
+    const recoveryTimeoutMs = Math.max(timeoutMs - (Date.now() - startTime), 5000);
+    const recoveryResult = await pathfindWithTimeout(bot, goal, recoveryTimeoutMs);
+
+    const finalDistance = getDistanceToGoal(bot.entity.position, goal);
+    const elapsedMs = Date.now() - startTime;
+
+    if (recoveryResult.success) {
+        if (debug) console.log(`[Pathfinder] Knight's move recovery succeeded!`);
+        return {
+            success: true,
+            recoveryAttempts: 1,
             finalDistanceToGoal: finalDistance,
             elapsedMs,
         };
     }
+
+    // Recovery failed - check if we at least got closer
+    if (finalDistance < currentDist * 0.7) {
+        if (debug) console.log(`[Pathfinder] Recovery partial success - got closer (${currentDist.toFixed(1)} -> ${finalDistance.toFixed(1)})`);
+        // Consider it a success if we got significantly closer
+        return {
+            success: true,
+            recoveryAttempts: 1,
+            finalDistanceToGoal: finalDistance,
+            elapsedMs,
+        };
+    }
+
+    if (debug) console.log(`[Pathfinder] Knight's move recovery failed`);
+    return {
+        success: false,
+        failureReason: isTimeout ? 'timeout' : 'unreachable',
+        recoveryAttempts: 1,
+        finalDistanceToGoal: finalDistance,
+        elapsedMs,
+    };
 }
 
 // ============================================================================
