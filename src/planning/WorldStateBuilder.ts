@@ -211,6 +211,10 @@ export class WorldStateBuilder {
 
     // Sign-based persistent knowledge
     ws.set('pending.signWrites', bb.pendingSignWrites.length);
+
+    // Startup behaviors (one-time on spawn)
+    ws.set('has.studiedSigns', bb.hasStudiedSigns);
+    ws.set('has.checkedStorage', bb.hasCheckedStorage);
   }
 
   /**

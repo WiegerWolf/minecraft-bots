@@ -71,6 +71,10 @@ export interface LumberjackBlackboard {
 
     // Full chest tracking (position string -> expiry timestamp)
     fullChests: Map<string, number>;
+
+    // Startup behaviors (one-time on spawn)
+    hasStudiedSigns: boolean;             // Has bot walked to and read signs near spawn
+    hasCheckedStorage: boolean;           // Has bot checked chest for startup supplies
 }
 
 export function createLumberjackBlackboard(): LumberjackBlackboard {
@@ -115,6 +119,10 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
 
         // Full chest tracking
         fullChests: new Map(),
+
+        // Startup behaviors
+        hasStudiedSigns: false,
+        hasCheckedStorage: false,
     };
 }
 

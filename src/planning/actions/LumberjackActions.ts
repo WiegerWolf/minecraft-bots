@@ -15,6 +15,8 @@ import {
   PatrolForest,
   PlantSaplings,
   WriteKnowledgeSign,
+  StudySpawnSigns,
+  WithdrawSupplies,
 } from '../../roles/lumberjack/behaviors/actions';
 
 /**
@@ -430,10 +432,71 @@ export class PatrolForestAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Study signs at spawn (roleplay + learning)
+ * Walks to spawn, looks at each sign, reads them, announces on village chat.
+ * HIGHEST PRIORITY on fresh spawn.
+ */
+export class StudySpawnSignsAction extends BaseGOAPAction {
+  name = 'StudySpawnSigns';
+  private impl = new StudySpawnSigns();
+
+  preconditions = [
+    booleanPrecondition('has.studiedSigns', false, 'has not studied signs yet'),
+  ];
+
+  effects = [
+    setEffect('has.studiedSigns', true, 'studied spawn signs'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Very low cost - this is a priority action on spawn
+    return 1.0;
+  }
+
+  override async execute(bot: Bot, bb: LumberjackBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
+ * GOAP Action: Check storage for useful supplies on spawn
+ * Goes to chest, takes useful items (axes, logs, planks).
+ * VERY HIGH priority when no tools and storage available.
+ */
+export class WithdrawSuppliesAction extends BaseGOAPAction {
+  name = 'WithdrawSupplies';
+  private impl = new WithdrawSupplies();
+
+  preconditions = [
+    booleanPrecondition('has.checkedStorage', false, 'has not checked storage yet'),
+    booleanPrecondition('derived.hasStorageAccess', true, 'has storage access'),
+  ];
+
+  effects = [
+    setEffect('has.checkedStorage', true, 'checked storage'),
+    // Optimistically assume we might get an axe
+    setEffect('has.axe', true, 'may have found axe'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Low cost - checking storage is valuable
+    return 1.5;
+  }
+
+  override async execute(bot: Bot, bb: LumberjackBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * Create all lumberjack actions for the planner.
  */
 export function createLumberjackActions(): BaseGOAPAction[] {
   return [
+    new StudySpawnSignsAction(),   // Startup: study signs first
+    new WithdrawSuppliesAction(),  // Startup: check chest for supplies
     new PickupItemsAction(),
     new ChopTreeAction(),
     new FinishTreeHarvestAction(),

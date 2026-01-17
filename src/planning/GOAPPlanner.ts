@@ -327,6 +327,7 @@ export class GOAPPlanner {
       'has.hoe', 'has.sword', 'has.axe', 'has.craftingTable',
       'has.shovel', 'has.pickaxe', // Landscaper tools
       'has.sign', // For sign crafting/writing
+      'has.studiedSigns', 'has.checkedStorage', // Startup behaviors
       'has.pendingTerraformRequest', 'terraform.active', // Terraform state
       'has.pendingRequests', // Village requests
       'inv.seeds', 'inv.produce', 'inv.logs', 'inv.planks', 'inv.sticks', 'inv.saplings',

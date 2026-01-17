@@ -393,10 +393,84 @@ export class PatrolForestGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Study signs at spawn to learn infrastructure locations.
+ * HIGHEST PRIORITY on fresh spawn - roleplay reading signs.
+ *
+ * This goal activates only once when the bot first spawns and hasn't
+ * studied signs yet. The bot will walk to spawn, look at each sign,
+ * and announce what it learned on village chat.
+ */
+export class StudySpawnSignsGoal extends BaseGoal {
+  name = 'StudySpawnSigns';
+  description = 'Walk to spawn and study knowledge signs';
+
+  conditions = [
+    booleanGoalCondition('has.studiedSigns', true, 'has studied spawn signs'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const hasStudied = ws.getBool('has.studiedSigns');
+    if (hasStudied) return 0;
+
+    // Very high priority on fresh spawn - do this first!
+    return 200;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    return !ws.getBool('has.studiedSigns');
+  }
+}
+
+/**
+ * Goal: Check storage for useful supplies on spawn.
+ * VERY HIGH PRIORITY when bot has no tools and knows about storage.
+ *
+ * This goal activates when the bot just spawned, has no axe, and knows
+ * about a chest (from signs or village chat). Much faster than punching
+ * trees to get started.
+ */
+export class WithdrawSuppliesGoal extends BaseGoal {
+  name = 'WithdrawSupplies';
+  description = 'Check storage for tools and materials';
+
+  conditions = [
+    booleanGoalCondition('has.checkedStorage', true, 'has checked storage'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const hasChecked = ws.getBool('has.checkedStorage');
+    if (hasChecked) return 0;
+
+    const hasStorage = ws.getBool('derived.hasStorageAccess');
+    if (!hasStorage) return 0;
+
+    const hasAxe = ws.getBool('has.axe');
+    const logCount = ws.getNumber('inv.logs');
+
+    // Very high priority if we have no axe - check chest first!
+    if (!hasAxe) return 180;
+
+    // Medium-high if we have axe but low on materials
+    if (logCount < 4) return 100;
+
+    // Low priority if we're already equipped
+    return 50;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const hasChecked = ws.getBool('has.checkedStorage');
+    const hasStorage = ws.getBool('derived.hasStorageAccess');
+    return !hasChecked && hasStorage;
+  }
+}
+
+/**
  * Registry of all lumberjack goals.
  */
 export function createLumberjackGoals(): BaseGoal[] {
   return [
+    new StudySpawnSignsGoal(),    // Highest priority on spawn
+    new WithdrawSuppliesGoal(),   // Very high priority when no tools
     new CollectDropsGoal(),
     new FulfillRequestsGoal(),
     new CompleteTreeHarvestGoal(),
