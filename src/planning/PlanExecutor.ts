@@ -301,6 +301,13 @@ export class PlanExecutor {
   }
 
   /**
+   * Check if the current/last plan had any failures.
+   */
+  hadRecentFailures(): boolean {
+    return this.consecutiveFailures > 0;
+  }
+
+  /**
    * Reset statistics.
    */
   resetStats(): void {

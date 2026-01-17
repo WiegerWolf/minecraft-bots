@@ -286,17 +286,27 @@ export abstract class GOAPRole implements Role {
       console.log(`[GOAP] Replan requested: ${reason}`);
     }
 
-    // Clear current goal if plan failed or world changed significantly
-    if (this.arbiter && (reason === ReplanReason.ACTION_FAILED || reason === ReplanReason.WORLD_CHANGED)) {
-      // Put the failed goal on cooldown so other goals get a chance
+    // Check if there were failures during plan execution
+    const hadFailures = this.executor?.hadRecentFailures() ?? false;
+
+    // Clear current goal and apply cooldown if needed
+    if (this.arbiter) {
       const currentGoal = this.arbiter.getCurrentGoal();
-      if (currentGoal && reason === ReplanReason.ACTION_FAILED) {
+
+      // Put goal on cooldown if action failed OR plan exhausted with failures
+      // This prevents the same failing goal from being selected immediately
+      if (currentGoal && (reason === ReplanReason.ACTION_FAILED ||
+          (reason === ReplanReason.PLAN_EXHAUSTED && hadFailures))) {
         this.failedGoalCooldowns.set(currentGoal.name, Date.now() + 5000);
-        if (this.config.debug) {
-          console.log(`[GOAP] Goal ${currentGoal.name} on cooldown for 5s after action failure`);
-        }
+        console.log(`[GOAP] Goal ${currentGoal.name} on cooldown for 5s (${reason})`);
       }
-      this.arbiter.clearCurrentGoal();
+
+      // Clear current goal so arbiter picks a new one
+      if (reason === ReplanReason.ACTION_FAILED ||
+          reason === ReplanReason.WORLD_CHANGED ||
+          reason === ReplanReason.PLAN_EXHAUSTED) {
+        this.arbiter.clearCurrentGoal();
+      }
     }
 
     // Next tick will trigger replanning
