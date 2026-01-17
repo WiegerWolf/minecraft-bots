@@ -202,7 +202,7 @@ export class WorldStateBuilder {
 
     // Derived facts
     ws.set('derived.canCraftAxe', this.canCraftAxe(bb));
-    ws.set('derived.hasStorageAccess', bb.sharedChest !== null || bb.nearbyChests.length > 0);
+    ws.set('derived.hasStorageAccess', this.hasAvailableStorage(bb));
     ws.set('derived.hasVillage', bb.villageCenter !== null);
     ws.set('derived.needsCraftingTable', bb.nearbyCraftingTables.length === 0 && !bb.sharedCraftingTable);
     ws.set('derived.needsChest', bb.nearbyChests.length === 0 && !bb.sharedChest);
@@ -267,6 +267,37 @@ export class WorldStateBuilder {
     const hasSticks = bb.stickCount >= 2;
     const canMakeSticks = bb.plankCount >= 5; // 2 planks for sticks + 3 for pickaxe head
     return hasPlanks && (hasSticks || canMakeSticks);
+  }
+
+  /**
+   * Check if lumberjack has any available (non-full) storage.
+   * Returns false if all known chests are marked as full.
+   */
+  private static hasAvailableStorage(bb: LumberjackBlackboard): boolean {
+    const posToKey = (pos: { x: number; y: number; z: number }) =>
+      `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
+
+    const now = Date.now();
+
+    // Check shared chest
+    if (bb.sharedChest) {
+      const key = posToKey(bb.sharedChest);
+      const expiry = bb.fullChests.get(key);
+      if (!expiry || now >= expiry) {
+        return true; // Shared chest is available
+      }
+    }
+
+    // Check nearby chests
+    for (const chest of bb.nearbyChests) {
+      const key = posToKey(chest.position);
+      const expiry = bb.fullChests.get(key);
+      if (!expiry || now >= expiry) {
+        return true; // This chest is available
+      }
+    }
+
+    return false; // All chests are full
   }
 
   /**
