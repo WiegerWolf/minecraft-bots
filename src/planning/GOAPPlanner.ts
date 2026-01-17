@@ -328,11 +328,12 @@ export class GOAPPlanner {
       'has.shovel', 'has.pickaxe', // Landscaper tools
       'has.pendingTerraformRequest', 'terraform.active', // Terraform state
       'has.pendingRequests', // Village requests
-      'inv.seeds', 'inv.produce', 'inv.logs', 'inv.planks', 'inv.sticks',
+      'inv.seeds', 'inv.produce', 'inv.logs', 'inv.planks', 'inv.sticks', 'inv.saplings',
       'nearby.matureCrops', 'nearby.farmland', 'nearby.drops', 'nearby.trees',
       'tree.active', 'derived.hasFarmEstablished',
       'derived.hasAnyTool', 'derived.hasStorageAccess', // Derived states
       'state.consecutiveIdleTicks',
+      'pending.signWrites', // Sign knowledge persistence
     ];
 
     const keyParts: string[] = [];
