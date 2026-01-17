@@ -129,6 +129,20 @@ export class GOAPPlanner {
         const newState = current.state.clone();
         this.applyEffects(action, newState);
 
+        // Debug: Check if this action satisfies the goal
+        if (this.config.debug) {
+          const satisfies = this.isGoalSatisfied(newState, goal);
+          console.log(`[Planner] After ${action.name}: goal satisfied = ${satisfies}`);
+          if (!satisfies) {
+            // Check each condition
+            for (const condition of goal.conditions) {
+              const value = newState.get(condition.key);
+              const passes = condition.check(value);
+              console.log(`[Planner]   Condition ${condition.key}: value=${value} (${typeof value}), passes=${passes}`);
+            }
+          }
+        }
+
         const newStateKey = this.getStateKey(newState);
         if (closedSet.has(newStateKey)) {
           continue; // Already explored

@@ -20,8 +20,9 @@ export class GOAPLandscaperRole extends GOAPRole {
   name = 'goap-landscaper';
 
   constructor(config?: GOAPRoleConfig) {
-    super(config);
-    console.log('[GOAPLandscaperRole] Initialized with GOAP planning system');
+    // Enable debug mode for landscaper to troubleshoot planning issues
+    super({ debug: true, ...config });
+    console.log('[GOAPLandscaperRole] Initialized with GOAP planning system (debug mode)');
   }
 
   protected getActions(): GOAPAction[] {
