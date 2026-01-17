@@ -53,6 +53,7 @@ export abstract class GOAPRole implements Role {
   protected running: boolean = false;
   protected tickInterval: NodeJS.Timeout | null = null;
   protected currentWorldState: WorldState | null = null;
+  private ticking: boolean = false; // Prevent overlapping ticks
 
   // Failed goal cooldowns: goal name -> timestamp when cooldown expires
   private failedGoalCooldowns: Map<string, number> = new Map();
@@ -101,10 +102,18 @@ export abstract class GOAPRole implements Role {
     console.log('[GOAP] Role started');
 
     // Start the main loop
+    // Note: We use a guard to prevent overlapping ticks since pathfinding
+    // operations can take longer than the tick interval
     this.tickInterval = setInterval(() => {
-      this.tick().catch(err => {
-        console.error('[GOAP] Tick error:', err);
-      });
+      if (this.ticking) return; // Skip if previous tick still running
+      this.ticking = true;
+      this.tick()
+        .catch(err => {
+          console.error('[GOAP] Tick error:', err);
+        })
+        .finally(() => {
+          this.ticking = false;
+        });
     }, this.config.tickInterval);
   }
 
