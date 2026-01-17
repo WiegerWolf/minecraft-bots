@@ -288,6 +288,14 @@ export abstract class GOAPRole implements Role {
 
     // Clear current goal if plan failed or world changed significantly
     if (this.arbiter && (reason === ReplanReason.ACTION_FAILED || reason === ReplanReason.WORLD_CHANGED)) {
+      // Put the failed goal on cooldown so other goals get a chance
+      const currentGoal = this.arbiter.getCurrentGoal();
+      if (currentGoal && reason === ReplanReason.ACTION_FAILED) {
+        this.failedGoalCooldowns.set(currentGoal.name, Date.now() + 5000);
+        if (this.config.debug) {
+          console.log(`[GOAP] Goal ${currentGoal.name} on cooldown for 5s after action failure`);
+        }
+      }
       this.arbiter.clearCurrentGoal();
     }
 
