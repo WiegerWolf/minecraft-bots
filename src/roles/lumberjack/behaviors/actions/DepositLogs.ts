@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
-import { LOG_NAMES, SAPLING_NAMES } from '../../../shared/TreeHarvest';
+import { LOG_NAMES } from '../../../shared/TreeHarvest';
 import { pathfinderGotoWithRetry } from './utils';
 
 const { GoalLookAtBlock } = goals;
@@ -73,12 +73,11 @@ export class DepositLogs implements BehaviorNode {
             const chestWindow = await bot.openContainer(chest);
             await sleep(100);
 
-            // Deposit all wood-related items
+            // Deposit wood-related items (keep saplings for replanting)
             const itemsToDeposit = bot.inventory.items().filter(item =>
                 LOG_NAMES.includes(item.name) ||
                 item.name.endsWith('_planks') ||
-                item.name === 'stick' ||
-                SAPLING_NAMES.includes(item.name)
+                item.name === 'stick'
             );
 
             let deposited = 0;

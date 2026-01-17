@@ -7,3 +7,4 @@ export { CraftChest } from './CraftChest';
 export { CraftAndPlaceCraftingTable } from './CraftAndPlaceCraftingTable';
 export { ProcessWood } from './ProcessWood';
 export { PatrolForest, WaitForVillage } from './PatrolForest';
+export { PlantSaplings } from './PlantSaplings';

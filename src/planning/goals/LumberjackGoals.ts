@@ -262,6 +262,47 @@ export class ProcessWoodGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Plant saplings to sustain the forest.
+ * Medium priority - important for sustainability but not urgent.
+ *
+ * This goal ensures the lumberjack replants trees after harvesting,
+ * maintaining the forest for future wood gathering.
+ */
+export class PlantSaplingsGoal extends BaseGoal {
+  name = 'PlantSaplings';
+  description = 'Plant saplings to sustain the forest';
+
+  conditions = [
+    numericGoalCondition('inv.saplings', v => v === 0, 'no saplings to plant', {
+      value: 0,
+      comparison: 'eq',
+      estimatedDelta: -1, // Plant one sapling per action
+    }),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const saplingCount = ws.getNumber('inv.saplings');
+    const treeActive = ws.getBool('tree.active');
+
+    // Don't plant while actively harvesting (tree harvest handles that)
+    if (treeActive) return 0;
+
+    // No saplings = no utility
+    if (saplingCount === 0) return 0;
+
+    // Scale utility with number of saplings - more saplings = higher priority
+    // Base: 55, scales up to 75 with many saplings
+    return Math.min(75, 55 + saplingCount * 2);
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const saplingCount = ws.getNumber('inv.saplings');
+    const treeActive = ws.getBool('tree.active');
+    return saplingCount > 0 && !treeActive;
+  }
+}
+
+/**
  * Goal: Patrol forest to find trees.
  * LOWEST PRIORITY - fallback when nothing else to do.
  *
@@ -318,6 +359,7 @@ export function createLumberjackGoals(): BaseGoal[] {
     new ObtainAxeGoal(),
     new DepositLogsGoal(),
     new ChopTreeGoal(),
+    new PlantSaplingsGoal(),
     new CraftInfrastructureGoal(),
     new ProcessWoodGoal(),
     new PatrolForestGoal(), // Always last - lowest priority fallback

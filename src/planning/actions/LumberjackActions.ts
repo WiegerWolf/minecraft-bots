@@ -13,6 +13,7 @@ import {
   CraftChest,
   CraftAndPlaceCraftingTable,
   PatrolForest,
+  PlantSaplings,
 } from '../../roles/lumberjack/behaviors/actions';
 
 /**
@@ -301,6 +302,34 @@ export class CraftAndPlaceCraftingTableAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Plant saplings to sustain the forest
+ * Plants saplings when bot has them and isn't actively harvesting a tree
+ */
+export class PlantSaplingsAction extends BaseGOAPAction {
+  name = 'PlantSaplings';
+  private impl = new PlantSaplings();
+
+  preconditions = [
+    numericPrecondition('inv.saplings', v => v > 0, 'has saplings'),
+    booleanPrecondition('tree.active', false, 'no active tree harvest'),
+  ];
+
+  effects = [
+    incrementEffect('inv.saplings', -1, 'planted sapling'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Low cost - planting is quick and important for sustainability
+    return 1.5;
+  }
+
+  override async execute(bot: Bot, bb: LumberjackBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * GOAP Action: Patrol to find trees
  */
 export class PatrolForestAction extends BaseGOAPAction {
@@ -336,6 +365,7 @@ export function createLumberjackActions(): BaseGOAPAction[] {
     new PickupItemsAction(),
     new ChopTreeAction(),
     new FinishTreeHarvestAction(),
+    new PlantSaplingsAction(),
     new DepositLogsAction(),
     new CraftAxeAction(),
     new CraftAxeFromPlanksAction(), // Variant when we have planks ready
