@@ -185,57 +185,55 @@ export async function smartPathfinderGoto(
     const timeoutMs = options?.timeoutMs ?? 30000;
     const startTime = Date.now();
 
-    const initialDistance = getDistanceToGoal(bot.entity.position, goal);
-
-    // Simple approach: just race pathfinding against a timeout
-    let pathfindingComplete = false;
-    let pathfindingError: Error | null = null;
+    // Use Promise.race for guaranteed timeout
     let timedOut = false;
+    let timeoutId: ReturnType<typeof setTimeout>;
 
-    // Set up timeout
-    const timeoutId = setTimeout(() => {
-        timedOut = true;
-        bot.pathfinder.stop();
-    }, timeoutMs);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+            timedOut = true;
+            try {
+                bot.pathfinder.stop();
+            } catch {
+                // Ignore stop errors
+            }
+            reject(new Error('Pathfinding timed out'));
+        }, timeoutMs);
+    });
+
+    const pathfindingPromise = bot.pathfinder.goto(goal);
 
     try {
-        // Start pathfinding
-        await bot.pathfinder.goto(goal);
-        pathfindingComplete = true;
-    } catch (err) {
-        pathfindingError = err instanceof Error ? err : new Error(String(err));
-    } finally {
-        clearTimeout(timeoutId);
-    }
+        await Promise.race([pathfindingPromise, timeoutPromise]);
+        clearTimeout(timeoutId!);
 
-    const finalDistance = getDistanceToGoal(bot.entity.position, goal);
-    const elapsedMs = Date.now() - startTime;
-
-    // Success - pathfinding completed normally
-    if (pathfindingComplete) {
+        const finalDistance = getDistanceToGoal(bot.entity.position, goal);
         return {
             success: true,
             recoveryAttempts: 0,
             finalDistanceToGoal: finalDistance,
-            elapsedMs,
+            elapsedMs: Date.now() - startTime,
         };
-    }
+    } catch (err) {
+        clearTimeout(timeoutId!);
 
-    // Timed out
-    if (timedOut) {
-        return {
-            success: false,
-            failureReason: 'timeout',
-            recoveryAttempts: 0,
-            finalDistanceToGoal: finalDistance,
-            elapsedMs,
-        };
-    }
+        const finalDistance = getDistanceToGoal(bot.entity.position, goal);
+        const elapsedMs = Date.now() - startTime;
+        const error = err instanceof Error ? err : new Error(String(err));
 
-    // Error occurred
-    if (pathfindingError) {
-        // Check for goal changed
-        if (isGoalChangedError(pathfindingError)) {
+        // Timed out
+        if (timedOut || error.message.includes('timed out')) {
+            return {
+                success: false,
+                failureReason: 'timeout',
+                recoveryAttempts: 0,
+                finalDistanceToGoal: finalDistance,
+                elapsedMs,
+            };
+        }
+
+        // Goal changed
+        if (isGoalChangedError(error)) {
             return {
                 success: false,
                 failureReason: 'goal_changed',
@@ -245,20 +243,7 @@ export async function smartPathfinderGoto(
             };
         }
 
-        // Check for no path / unreachable
-        if (pathfindingError.message.includes('no path') ||
-            pathfindingError.message.includes('No path') ||
-            pathfindingError.message.includes('Path was stopped')) {
-            return {
-                success: false,
-                failureReason: 'unreachable',
-                recoveryAttempts: 0,
-                finalDistanceToGoal: finalDistance,
-                elapsedMs,
-            };
-        }
-
-        // Generic failure
+        // Unreachable / no path
         return {
             success: false,
             failureReason: 'unreachable',
@@ -267,15 +252,6 @@ export async function smartPathfinderGoto(
             elapsedMs,
         };
     }
-
-    // Should not reach here
-    return {
-        success: false,
-        failureReason: 'unreachable',
-        recoveryAttempts: 0,
-        finalDistanceToGoal: finalDistance,
-        elapsedMs,
-    };
 }
 
 // ============================================================================
