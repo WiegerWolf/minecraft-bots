@@ -14,6 +14,7 @@ const BOT_PATH = resolve(__dirname, "bot.ts");
 const BOT_CONFIGS = [
     { role: 'goap-farming', roleLabel: 'Farmer' },
     { role: 'goap-lumberjack', roleLabel: 'Lmbr' },
+    { role: 'landscaper', roleLabel: 'Land' },
 ];
 
 // Track multiple bot processes

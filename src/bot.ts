@@ -30,6 +30,7 @@ bot.loadPlugin(pathfinder);
 const roles: Record<string, Role> = {
     farming: new FarmingRole(),
     lumberjack: new LumberjackRole(),
+    landscaper: new GOAPLandscaperRole({ debug: true }),
     'goap-farming': new GOAPFarmingRole({ debug: true }),
     'goap-lumberjack': new GOAPLumberjackRole({ debug: true }),
     'goap-landscaper': new GOAPLandscaperRole({ debug: true }),
@@ -97,7 +98,7 @@ bot.on('chat', (username: string, message: string) => {
             setRole(null);
             bot.chat("Stopped landscaper.");
         } else {
-            setRole('goap-landscaper');
+            setRole('landscaper');
             bot.chat("Starting landscaper logic.");
         }
     }
