@@ -240,10 +240,30 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 
-    // Find dropped items (entities, not blocks - already safe)
-    bb.nearbyDrops = Object.values(bot.entities).filter(e =>
-        e.name === 'item' && e.position && e.position.distanceTo(pos) < 16
-    );
+    // Find dropped items - filter to only include reachable ones
+    bb.nearbyDrops = Object.values(bot.entities).filter(e => {
+        if (e.name !== 'item' || !e.position) return false;
+        if (e.position.distanceTo(pos) >= 16) return false;
+
+        // Check if the item is on a walkable surface
+        const itemPos = e.position;
+        const blockBelow = bot.blockAt(itemPos.offset(0, -0.5, 0));
+
+        if (!blockBelow) return true; // Can't check, assume reachable
+
+        // Items on leaves or in water are likely unreachable
+        if (blockBelow.name.includes('leaves') || blockBelow.name === 'water') {
+            if (Math.abs(itemPos.y - pos.y) <= 2) {
+                return true; // Close enough vertically
+            }
+            return false;
+        }
+
+        // Items too high above the bot are unreachable
+        if (itemPos.y > pos.y + 5) return false;
+
+        return true;
+    });
 
     // Find chests
     bb.nearbyChests = bot.findBlocks({

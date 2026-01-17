@@ -235,7 +235,11 @@ export class CraftHoeAction extends BaseGOAPAction {
 
   override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
     const result = await this.impl.tick(bot, bb);
-    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+    // CraftHoe returns 'running' for intermediate steps (planks, sticks, table)
+    // These are still successful progress toward the goal
+    if (result === 'success') return ActionResult.SUCCESS;
+    if (result === 'running') return ActionResult.RUNNING;
+    return ActionResult.FAILURE;
   }
 }
 

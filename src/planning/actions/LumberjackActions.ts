@@ -132,17 +132,16 @@ export class CraftAxeAction extends BaseGOAPAction {
   name = 'CraftAxe';
   private impl = new CraftAxe();
 
-  // Basic check - detailed material check done in checkPreconditions override
+  // Basic check - need at least 3 logs for: crafting table (4 planks) + sticks (2 planks) + axe (3 planks) = 9 planks = 3 logs
+  // This allows the planner to chain ChopTree → CraftAxe
   preconditions = [
     booleanPrecondition('has.axe', false, 'no axe yet'),
-    // Need at least 2 logs or 5 planks (for axe head + sticks + potentially crafting table)
-    // This allows the planner to chain ChopTree → CraftAxe
-    numericPrecondition('inv.logs', v => v >= 2, 'has logs for planks'),
+    numericPrecondition('inv.logs', v => v >= 3, 'has enough logs for axe'),
   ];
 
   effects = [
     setEffect('has.axe', true, 'crafted axe'),
-    incrementEffect('inv.logs', -2, 'used logs for planks'),
+    incrementEffect('inv.logs', -3, 'used logs for axe crafting'),
   ];
 
   override getCost(ws: WorldState): number {
@@ -158,6 +157,7 @@ export class CraftAxeAction extends BaseGOAPAction {
 /**
  * GOAP Action: Craft a wooden axe when we already have planks
  * This variant is for when we already have enough planks/sticks.
+ * Need 9 planks worst case: crafting table (4) + sticks (2) + axe (3)
  */
 export class CraftAxeFromPlanksAction extends BaseGOAPAction {
   name = 'CraftAxeFromPlanks';
@@ -165,13 +165,14 @@ export class CraftAxeFromPlanksAction extends BaseGOAPAction {
 
   preconditions = [
     booleanPrecondition('has.axe', false, 'no axe yet'),
-    // Need 5 planks (3 for axe head + 2 for sticks, or already have sticks)
-    numericPrecondition('inv.planks', v => v >= 5, 'has enough planks'),
+    // Need 9 planks worst case: crafting table (4) + sticks (2) + axe (3)
+    // If crafting table exists nearby, fewer are needed, but planner can't know that
+    numericPrecondition('inv.planks', v => v >= 9, 'has enough planks'),
   ];
 
   effects = [
     setEffect('has.axe', true, 'crafted axe'),
-    incrementEffect('inv.planks', -5, 'used planks for axe + sticks'),
+    incrementEffect('inv.planks', -9, 'used planks for table + sticks + axe'),
   ];
 
   override getCost(ws: WorldState): number {

@@ -205,10 +205,32 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 
-    // Find dropped items
-    bb.nearbyDrops = Object.values(bot.entities).filter(e =>
-        e.name === 'item' && e.position && e.position.distanceTo(pos) < 16
-    );
+    // Find dropped items - filter to only include reachable ones
+    bb.nearbyDrops = Object.values(bot.entities).filter(e => {
+        if (e.name !== 'item' || !e.position) return false;
+        if (e.position.distanceTo(pos) >= 16) return false;
+
+        // Check if the item is on a walkable surface
+        // Items floating on leaves/water are not reachable
+        const itemPos = e.position;
+        const blockBelow = bot.blockAt(itemPos.offset(0, -0.5, 0)); // Check slightly below item
+
+        if (!blockBelow) return true; // Can't check, assume reachable
+
+        // Items on leaves or in water are likely unreachable
+        if (blockBelow.name.includes('leaves') || blockBelow.name === 'water') {
+            // Exception: if bot is at similar Y level (within 2 blocks), might be reachable
+            if (Math.abs(itemPos.y - pos.y) <= 2) {
+                return true; // Close enough vertically, might be able to grab it
+            }
+            return false; // Item is on leaves/water and bot is far below/above
+        }
+
+        // Items too high above the bot (more than 5 blocks) are unreachable
+        if (itemPos.y > pos.y + 5) return false;
+
+        return true;
+    });
 
     // Find chests
     bb.nearbyChests = bot.findBlocks({
