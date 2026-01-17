@@ -12,9 +12,10 @@ export interface ExplorationMemory {
 export interface TerraformTask {
     waterCenter: Vec3;        // The water block at the center of the 9x9 farm
     targetY: number;          // Y level for the farm surface (same as water Y)
-    phase: 'analyzing' | 'digging' | 'filling' | 'finishing' | 'done';
+    phase: 'analyzing' | 'sealing_water' | 'digging' | 'filling' | 'finishing' | 'done';
     blocksToRemove: Vec3[];   // Blocks above target level
-    blocksToFill: Vec3[];     // Holes below target level
+    waterBlocksToFill: Vec3[]; // Water blocks to fill FIRST (before digging)
+    blocksToFill: Vec3[];     // Regular holes to fill (after digging)
     progress: number;
 }
 

@@ -81,7 +81,8 @@ export class TerraformArea implements BehaviorNode {
             targetY: targetY,
             phase: 'analyzing',
             blocksToRemove: [],
-            blocksToFill: [],
+            waterBlocksToFill: [],  // Water blocks to seal BEFORE digging
+            blocksToFill: [],       // Regular fills AFTER digging
             progress: 0
         };
         bb.lastAction = 'terraform_start';
@@ -95,6 +96,8 @@ export class TerraformArea implements BehaviorNode {
         switch (task.phase) {
             case 'analyzing':
                 return this.analyzeArea(bot, bb);
+            case 'sealing_water':
+                return this.sealWaterBlocks(bot, bb);  // Fill water BEFORE digging
             case 'digging':
                 return this.digBlocks(bot, bb);
             case 'filling':
@@ -121,7 +124,8 @@ export class TerraformArea implements BehaviorNode {
         const centerZ = Math.floor(waterCenter.z);
 
         const blocksToRemove: Vec3[] = [];
-        const blocksToFill: Vec3[] = [];
+        const waterBlocksToFill: Vec3[] = [];  // Water blocks - fill FIRST to prevent spreading
+        const blocksToFill: Vec3[] = [];       // Regular fills - after digging
 
         console.log(`[Landscaper] Analyzing 9x9 area centered on water at (${centerX}, ${targetY}, ${centerZ})`);
 
@@ -137,23 +141,25 @@ export class TerraformArea implements BehaviorNode {
                 const surfacePos = new Vec3(x, targetY, z);
                 const surfaceBlock = bot.blockAt(surfacePos);
                 const abovePos = new Vec3(x, targetY + 1, z);
-                const aboveBlock = bot.blockAt(abovePos);
                 const belowPos = new Vec3(x, targetY - 1, z);
                 const belowBlock = bot.blockAt(belowPos);
 
-                // Case 1: Surface is air or water - need to place dirt
-                if (!surfaceBlock || surfaceBlock.name === 'air' ||
-                    surfaceBlock.name === 'water' || surfaceBlock.name === 'flowing_water') {
+                // Case 1: Surface is water - PRIORITY: fill before digging anything
+                if (surfaceBlock && (surfaceBlock.name === 'water' || surfaceBlock.name === 'flowing_water')) {
+                    waterBlocksToFill.push(surfacePos.clone());
+                }
+                // Case 2: Surface is air - regular fill (after digging)
+                else if (!surfaceBlock || surfaceBlock.name === 'air') {
                     blocksToFill.push(surfacePos.clone());
                 }
-                // Case 2: Surface has a block but it's not farmable - dig and replace
+                // Case 3: Surface has a block but it's not farmable - dig and replace
                 else if (!FARMABLE_BLOCKS.includes(surfaceBlock.name)) {
                     if (SOFT_BLOCKS.includes(surfaceBlock.name) || HARD_BLOCKS.includes(surfaceBlock.name)) {
                         blocksToRemove.push(surfacePos.clone());
                         blocksToFill.push(surfacePos.clone());
                     }
                 }
-                // Case 3: Surface is already farmable (dirt/grass) - good, just clear above
+                // Case 4: Surface is already farmable (dirt/grass) - good, just clear above
 
                 // Clear any blocks above the surface
                 for (let y = targetY + 1; y <= targetY + 4; y++) {
@@ -170,19 +176,32 @@ export class TerraformArea implements BehaviorNode {
                     }
                 }
 
-                // Check for holes below that need filling (support for farm surface)
-                if (belowBlock && (belowBlock.name === 'air' || belowBlock.name === 'water')) {
-                    // Need support below
-                    blocksToFill.push(belowPos.clone());
+                // Check for holes/water below that need filling (support for farm surface)
+                if (belowBlock) {
+                    if (belowBlock.name === 'water' || belowBlock.name === 'flowing_water') {
+                        waterBlocksToFill.push(belowPos.clone());
+                    } else if (belowBlock.name === 'air') {
+                        blocksToFill.push(belowPos.clone());
+                    }
                 }
             }
         }
 
         // Sort: dig from top to bottom, fill from bottom to top
         blocksToRemove.sort((a, b) => b.y - a.y);
+        waterBlocksToFill.sort((a, b) => a.y - b.y);
         blocksToFill.sort((a, b) => a.y - b.y);
 
-        // Remove duplicates from fill list
+        // Remove duplicates
+        const uniqueWaterFills = new Map<string, Vec3>();
+        for (const pos of waterBlocksToFill) {
+            const key = `${pos.x},${pos.y},${pos.z}`;
+            if (!uniqueWaterFills.has(key)) {
+                uniqueWaterFills.set(key, pos);
+            }
+        }
+        task.waterBlocksToFill = Array.from(uniqueWaterFills.values()).sort((a, b) => a.y - b.y);
+
         const uniqueFills = new Map<string, Vec3>();
         for (const pos of blocksToFill) {
             const key = `${pos.x},${pos.y},${pos.z}`;
@@ -193,15 +212,127 @@ export class TerraformArea implements BehaviorNode {
         task.blocksToFill = Array.from(uniqueFills.values()).sort((a, b) => a.y - b.y);
         task.blocksToRemove = blocksToRemove;
 
-        // Determine next phase
-        task.phase = blocksToRemove.length > 0 ? 'digging' : (task.blocksToFill.length > 0 ? 'filling' : 'finishing');
+        // Determine next phase - SEAL WATER FIRST, then dig, then fill remaining
+        if (task.waterBlocksToFill.length > 0) {
+            task.phase = 'sealing_water';
+        } else if (blocksToRemove.length > 0) {
+            task.phase = 'digging';
+        } else if (task.blocksToFill.length > 0) {
+            task.phase = 'filling';
+        } else {
+            task.phase = 'finishing';
+        }
 
         // Log summary
-        const totalWork = blocksToRemove.length + task.blocksToFill.length;
+        const totalWork = blocksToRemove.length + task.waterBlocksToFill.length + task.blocksToFill.length;
         if (totalWork > 0) {
-            console.log(`[Landscaper] Work needed: ${blocksToRemove.length} to dig, ${task.blocksToFill.length} to fill`);
+            console.log(`[Landscaper] Work needed: ${task.waterBlocksToFill.length} water to seal, ${blocksToRemove.length} to dig, ${task.blocksToFill.length} to fill`);
         } else {
             console.log(`[Landscaper] Area already suitable - 9x9 dirt with water center`);
+        }
+
+        return 'running';
+    }
+
+    /**
+     * Seal water blocks by filling them with dirt BEFORE digging.
+     * This prevents the water source from spreading when we dig adjacent blocks.
+     */
+    private async sealWaterBlocks(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
+        const task = bb.currentTerraformTask!;
+        bb.lastAction = 'terraform_sealing';
+
+        if (task.waterBlocksToFill.length === 0) {
+            // Done sealing water, move to digging
+            task.phase = task.blocksToRemove.length > 0 ? 'digging' : (task.blocksToFill.length > 0 ? 'filling' : 'finishing');
+            console.log(`[Landscaper] Water sealed, moving to ${task.phase} phase`);
+            return 'running';
+        }
+
+        // Check if we have dirt
+        const dirtItem = bot.inventory.items().find(i => i.name === 'dirt');
+        if (!dirtItem) {
+            console.log(`[Landscaper] Need dirt to seal water - gathering from inland`);
+            const gathered = await this.gatherDirtFromNearby(bot, bb, task);
+            if (!gathered) {
+                console.log(`[Landscaper] No dirt found - skipping water seal (may cause water flow issues)`);
+                task.waterBlocksToFill = [];
+                task.phase = task.blocksToRemove.length > 0 ? 'digging' : 'finishing';
+                return 'running';
+            }
+            return 'running';
+        }
+
+        const fillPos = task.waterBlocksToFill[0]!;
+        const block = bot.blockAt(fillPos);
+
+        // Check if already filled (or no longer water)
+        if (block && block.name !== 'water' && block.name !== 'flowing_water' && block.name !== 'air') {
+            task.waterBlocksToFill.shift();
+            task.progress++;
+            return 'running';
+        }
+
+        // Find a surface to place against - for water, we can place on top of adjacent blocks
+        const adjacentOffsets = [
+            new Vec3(0, -1, 0), // below (preferred - place on seabed)
+            new Vec3(1, 0, 0), new Vec3(-1, 0, 0),
+            new Vec3(0, 0, 1), new Vec3(0, 0, -1),
+            new Vec3(0, 1, 0),
+        ];
+
+        let referenceBlock = null;
+        let faceVector = null;
+
+        for (const offset of adjacentOffsets) {
+            const checkPos = fillPos.plus(offset);
+            const checkBlock = bot.blockAt(checkPos);
+            // Can place against solid blocks (including other dirt we've placed)
+            if (checkBlock && checkBlock.boundingBox === 'block' &&
+                checkBlock.name !== 'water' && checkBlock.name !== 'flowing_water') {
+                referenceBlock = checkBlock;
+                faceVector = offset.scaled(-1);
+                break;
+            }
+        }
+
+        if (!referenceBlock) {
+            console.log(`[Landscaper] No reference block to seal water at ${fillPos.floored()}, skipping`);
+            task.waterBlocksToFill.shift();
+            return 'running';
+        }
+
+        // Move close
+        const dist = bot.entity.position.distanceTo(fillPos);
+        if (dist > 4) {
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(fillPos.x, fillPos.y, fillPos.z, 3),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success) {
+                // Try placing anyway if we're somewhat close
+            }
+        }
+
+        // Equip and place dirt
+        const dirtToPlace = bot.inventory.items().find(i => i.name === 'dirt');
+        if (!dirtToPlace) {
+            task.waterBlocksToFill.shift();
+            return 'running';
+        }
+
+        try {
+            await bot.equip(dirtToPlace, 'hand');
+            await sleep(50);
+            await bot.placeBlock(referenceBlock, faceVector!);
+            console.log(`[Landscaper] Sealed water at ${fillPos.floored()}`);
+            task.waterBlocksToFill.shift();
+            task.progress++;
+            await sleep(100);
+        } catch (error) {
+            console.log(`[Landscaper] Failed to seal water at ${fillPos.floored()}: ${error instanceof Error ? error.message : 'unknown'}`);
+            task.waterBlocksToFill.shift();
         }
 
         return 'running';
@@ -418,12 +549,15 @@ export class TerraformArea implements BehaviorNode {
                     const isDirt = block.name === 'dirt' || block.name === 'grass_block';
                     if (!isDirt) continue;
 
-                    // Check if it's a surface block (air or plants above)
+                    // Check if it's a surface block (air or small plants above)
+                    // Note: 'grass_block' is NOT a plant, it's solid ground
                     const isSurface = above && (
                         above.name === 'air' ||
-                        above.name.includes('grass') ||
+                        above.name === 'short_grass' ||
+                        above.name === 'tall_grass' ||
                         above.name.includes('flower') ||
-                        above.name.includes('fern')
+                        above.name.includes('fern') ||
+                        above.name === 'dead_bush'
                     );
 
                     // Skip if there's water nearby (within 2 blocks) - avoid shoreline
