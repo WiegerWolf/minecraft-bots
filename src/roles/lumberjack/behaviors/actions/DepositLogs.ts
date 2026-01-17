@@ -48,6 +48,15 @@ export class DepositLogs implements BehaviorNode {
                     bb.villageChat.announceSharedChest(chestPos);
                     bb.sharedChest = chestPos;
                 }
+
+                // Queue sign write for discovered chest
+                if (bb.spawnPosition) {
+                    bb.pendingSignWrites.push({
+                        type: 'CHEST',
+                        pos: chestPos.clone()
+                    });
+                    bb.log?.debug({ type: 'CHEST', pos: chestPos.toString() }, 'Queued sign write for discovered chest');
+                }
             } else {
                 return 'failure'; // No chest available
             }
@@ -98,6 +107,14 @@ export class DepositLogs implements BehaviorNode {
             }
 
             chestWindow.close();
+
+            // If we had items to deposit but deposited nothing, chest is full
+            if (itemsToDeposit.length > 0 && deposited === 0) {
+                bb.log?.warn({ chestPos: chestPos.toString() }, 'Chest is full, clearing shared chest to find/craft new one');
+                bb.sharedChest = null;
+                return 'failure';
+            }
+
             bb.log?.debug(`[Lumberjack] Deposited ${deposited} items (${logsDeposited} logs)`);
 
             // Announce deposit via chat so farmer knows materials are available

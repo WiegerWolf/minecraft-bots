@@ -208,6 +208,27 @@ export class CraftAxe implements BehaviorNode {
                             bb.villageChat.announceSharedCraftingTable(placePos);
                             bb.sharedCraftingTable = placePos;
                         }
+
+                        // Queue sign write for persistent knowledge
+                        if (bb.spawnPosition) {
+                            // Also establish village center if not set
+                            if (!bb.villageCenter) {
+                                bb.villageCenter = placePos.clone();
+                                bb.villageChat?.announceVillageCenter(placePos);
+                                bb.pendingSignWrites.push({
+                                    type: 'VILLAGE',
+                                    pos: placePos.clone()
+                                });
+                                bb.log?.debug({ type: 'VILLAGE', pos: placePos.toString() }, 'Queued sign write for village center');
+                            }
+
+                            bb.pendingSignWrites.push({
+                                type: 'CRAFT',
+                                pos: placePos.clone()
+                            });
+                            bb.log?.debug({ type: 'CRAFT', pos: placePos.toString() }, 'Queued sign write for crafting table');
+                        }
+
                         return placedTable;
                     }
                 } catch (error) {
