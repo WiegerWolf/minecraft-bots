@@ -75,6 +75,8 @@ export class ObtainToolsGoal extends BaseGoal {
     const logCount = ws.getNumber('inv.logs');
     const plankCount = ws.getNumber('inv.planks');
     const plankEquivalent = plankCount + (logCount * 4);
+    const hasStorageAccess = ws.getBool('derived.hasStorageAccess');
+    const hasPendingRequest = ws.getBool('has.pendingTerraformRequest');
 
     // Have materials to craft tools
     if (plankEquivalent >= 7) {
@@ -89,7 +91,16 @@ export class ObtainToolsGoal extends BaseGoal {
       return 50;
     }
 
-    // No materials - can't craft
+    // No materials but have chest access - can go get materials!
+    // This is especially important when we have a pending terraform request
+    if (hasStorageAccess) {
+      if (hasPendingRequest) {
+        return 75; // High priority - need tools to fulfill request
+      }
+      return 40; // Moderate priority - check chest for materials
+    }
+
+    // No materials and no chest access - can't do anything
     return 0;
   }
 }
