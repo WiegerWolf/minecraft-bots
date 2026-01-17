@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { LandscaperBlackboard } from '../../LandscaperBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalNear } = goals;
 
@@ -75,12 +76,22 @@ export class PickupItems implements BehaviorNode {
         console.log(`[Landscaper] Moving to pickup item at ${drop.position.floored()} (dist: ${dist.toFixed(1)})`);
 
         try {
-            await bot.pathfinder.goto(new GoalNear(drop.position.x, drop.position.y, drop.position.z, 1));
+            // Use smart pathfinder with timeout to prevent infinite blocking
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(drop.position.x, drop.position.y, drop.position.z, 1),
+                { timeoutMs: 15000 }  // 15 second timeout for pickup
+            );
+
+            if (!result.success) {
+                console.log(`[Landscaper] Pickup path failed: ${result.failureReason}`);
+                return 'failure';
+            }
             return 'success';
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'unknown';
             if (!msg.includes('goal was changed') && !msg.includes('Path was stopped')) {
-                console.log(`[Landscaper] Pickup path failed: ${msg}`);
+                console.log(`[Landscaper] Pickup path error: ${msg}`);
             }
             return 'failure';
         }
