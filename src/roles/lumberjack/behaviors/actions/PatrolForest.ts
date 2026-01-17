@@ -19,7 +19,7 @@ export class PatrolForest implements BehaviorNode {
 
         // If we have a village center, patrol around it
         const center = bb.villageCenter || bot.entity.position;
-        const maxRadius = bb.villageCenter ? 50 : 32;
+        const maxRadius = bb.villageCenter ? 80 : 64; // ~5 chunks
 
         // Look for trees in unexplored directions
         const logs = bot.findBlocks({

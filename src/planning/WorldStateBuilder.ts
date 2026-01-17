@@ -137,6 +137,9 @@ export class WorldStateBuilder {
 
     // Nearby resources
     ws.set('nearby.trees', bb.nearbyTrees.length);
+    // Reachable trees = trees at or below bot level (already filtered in blackboard)
+    // This distinguishes from trees we can see but are standing on top of
+    ws.set('nearby.reachableTrees', bb.nearbyTrees.length);
     ws.set('nearby.logs', bb.nearbyLogs.length);
     ws.set('nearby.leaves', bb.nearbyLeaves.length);
 

@@ -17,7 +17,7 @@ async function ensureCraftingTable(bot: Bot): Promise<Block | null> {
     // Look for existing crafting table nearby
     const nearbyTables = bot.findBlocks({
         matching: b => b.name === 'crafting_table',
-        maxDistance: 32,
+        maxDistance: 64, // Increased range for navigation
         count: 1
     });
 
@@ -93,7 +93,7 @@ export class CraftHoe implements BehaviorNode {
         if (bb.plankCount >= 4) {
             const existingTable = bot.findBlocks({
                 matching: b => b.name === 'crafting_table',
-                maxDistance: 32,
+                maxDistance: 64, // Increased range for navigation
                 count: 1
             });
             const hasTableItem = bot.inventory.items().some(i => i.name === 'crafting_table');

@@ -132,7 +132,7 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     // WORLD PERCEPTION (expensive, cache results)
     // ═══════════════════════════════════════════════
     const searchCenter = bb.farmCenter || pos;
-    const SEARCH_RADIUS = 32;
+    const SEARCH_RADIUS = 64; // ~4 chunks for better navigation
     // Search further for water when we don't have a farm yet
     const WATER_SEARCH_RADIUS = bb.farmCenter ? SEARCH_RADIUS : 80;
 
@@ -232,7 +232,7 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     const grassNames = ['short_grass', 'tall_grass', 'grass', 'fern', 'large_fern'];
     bb.nearbyGrass = bot.findBlocks({
         point: pos, // Search around bot, not farm center
-        maxDistance: 48,
+        maxDistance: 64, // Increased range for grass
         count: 10,
         matching: b => {
             if (!b || !b.position || !b.name) return false;
@@ -248,7 +248,7 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     // Find chests
     bb.nearbyChests = bot.findBlocks({
         point: pos,
-        maxDistance: 32,
+        maxDistance: 64, // Increased range for navigation
         count: 5,
         matching: b => {
             // FIX: Add null checks
@@ -260,7 +260,7 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     // Find crafting tables
     bb.nearbyCraftingTables = bot.findBlocks({
         point: pos,
-        maxDistance: 32,
+        maxDistance: 64, // Increased range for navigation
         count: 3,
         matching: b => {
             if (!b || !b.position || !b.name) return false;

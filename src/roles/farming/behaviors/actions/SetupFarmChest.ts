@@ -183,7 +183,7 @@ export class SetupFarmChest implements BehaviorNode {
         // Find a tree/log nearby
         const logs = bot.findBlocks({
             point: bot.entity.position,
-            maxDistance: 32,
+            maxDistance: 64, // Increased range for navigation
             count: 10,
             matching: b => b?.name?.includes('_log') ?? false
         });
@@ -234,7 +234,7 @@ export class SetupFarmChest implements BehaviorNode {
         if (!craftingTable) {
             const craftingTables = bot.findBlocks({
                 point: bot.entity.position,
-                maxDistance: 32,
+                maxDistance: 64, // Increased range for navigation
                 count: 1,
                 matching: b => b?.name === 'crafting_table'
             });

@@ -119,7 +119,7 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     // WORLD PERCEPTION
     // ═══════════════════════════════════════════════
     const searchCenter = bb.villageCenter || pos;
-    const SEARCH_RADIUS = bb.villageCenter ? 50 : 32; // Stay near village if we have one
+    const SEARCH_RADIUS = bb.villageCenter ? 80 : 64; // Stay near village if we have one (~5 chunks)
 
     // Find logs
     bb.nearbyLogs = bot.findBlocks({
@@ -132,15 +132,17 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 
-    // Find tree bases (logs with valid ground below)
+    // Find REACHABLE tree bases (logs below bot level with valid ground)
     // Valid ground includes: dirt variants, mangrove roots, mud, or other logs (for tall trees)
     const VALID_TREE_BASE = [
         'dirt', 'grass_block', 'podzol', 'mycelium', 'coarse_dirt', 'rooted_dirt',
         'mangrove_roots', 'muddy_mangrove_roots', 'mud', // Mangrove swamp blocks
+        'moss_block', 'clay', 'sand', // Additional valid surfaces
     ];
     bb.nearbyTrees = bb.nearbyLogs.filter(log => {
-        // Skip logs too high above bot
-        if (log.position.y > bot.entity.position.y + 5) return false;
+        // Only count trees BELOW bot or at same Y level (not in canopy above)
+        // This prevents the bot from seeing trees it's standing on top of as "reachable"
+        if (log.position.y > bot.entity.position.y) return false;
 
         const below = bot.blockAt(log.position.offset(0, -1, 0));
         if (!below) return false;

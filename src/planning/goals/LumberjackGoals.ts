@@ -92,7 +92,7 @@ export class ObtainAxeGoal extends BaseGoal {
     // Check if we have any path to getting materials
     const logCount = ws.getNumber('inv.logs');
     const plankCount = ws.getNumber('inv.planks');
-    const treeCount = ws.getNumber('nearby.trees');
+    const treeCount = ws.getNumber('nearby.reachableTrees');
 
     // If we have logs, we can process them to planks
     // Need at least 2 logs to get 8 planks (enough to make sticks + axe head)
@@ -100,12 +100,12 @@ export class ObtainAxeGoal extends BaseGoal {
       return 70; // Can get materials soon
     }
 
-    // If we have some logs/planks and trees nearby, still viable
+    // If we have some logs/planks and reachable trees nearby, still viable
     if ((logCount >= 1 || plankCount >= 1) && treeCount > 0) {
       return 60;
     }
 
-    // No materials and no trees - can't craft, return 0 to let other goals (like Patrol) run
+    // No materials and no reachable trees - can't craft, return 0 to let other goals (like Patrol) run
     return 0;
   }
 }
@@ -153,7 +153,8 @@ export class ChopTreeGoal extends BaseGoal {
   ];
 
   getUtility(ws: WorldState): number {
-    const treeCount = ws.getNumber('nearby.trees');
+    // Use reachableTrees to only consider trees we can actually get to
+    const treeCount = ws.getNumber('nearby.reachableTrees');
     const inventoryFull = ws.getBool('state.inventoryFull');
     const logCount = ws.getNumber('inv.logs');
 
@@ -236,21 +237,23 @@ export class ProcessWoodGoal extends BaseGoal {
  */
 export class PatrolForestGoal extends BaseGoal {
   name = 'PatrolForest';
-  description = 'Explore to find trees';
+  description = 'Explore to find reachable trees';
 
-  // Goal: find trees (have at least 1 tree nearby)
+  // Goal: find REACHABLE trees (not just trees we're standing on top of)
   conditions = [
-    numericGoalCondition('nearby.trees', v => v > 0, 'found trees'),
+    numericGoalCondition('nearby.reachableTrees', v => v > 0, 'found reachable trees'),
   ];
 
   getUtility(ws: WorldState): number {
-    const treeCount = ws.getNumber('nearby.trees');
+    // Use reachableTrees to determine if we need to patrol
+    // This prevents "already satisfied" when bot is standing on tree canopy
+    const reachableTreeCount = ws.getNumber('nearby.reachableTrees');
     const idleTicks = ws.getNumber('state.consecutiveIdleTicks');
 
-    // Higher utility if no trees nearby (need to find trees)
-    if (treeCount === 0) return 25;
+    // High utility if no REACHABLE trees (even if we see some above us)
+    if (reachableTreeCount === 0) return 25;
 
-    // Low base utility when we have trees, increases if bot has been idle
+    // Low base utility when we have reachable trees, increases if bot has been idle
     return 5 + Math.min(20, idleTicks / 10);
   }
 

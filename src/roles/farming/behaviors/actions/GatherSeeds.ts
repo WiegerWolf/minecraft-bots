@@ -24,7 +24,7 @@ export class GatherSeeds implements BehaviorNode {
 
             const grassBlocks = bot.findBlocks({
                 point: bot.entity.position,
-                maxDistance: 32,
+                maxDistance: 64, // Increased range for navigation
                 count: 1,
                 matching: b => {
                     if (!b || !b.name) return false;
