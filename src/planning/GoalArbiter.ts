@@ -107,22 +107,38 @@ export class GoalArbiter {
 
     // Apply hysteresis: only switch if new goal is significantly better
     if (this.currentGoal !== null && this.currentGoal !== bestGoal) {
-      const threshold = this.currentUtility * (1 + this.config.hysteresisThreshold);
+      // First, re-check if current goal is still valid and has positive utility
+      const currentIsValid = this.currentGoal.isValid ? this.currentGoal.isValid(ws) : true;
+      const currentUtilityNow = currentIsValid ? this.currentGoal.getUtility(ws) : 0;
 
-      if (bestUtility < threshold) {
-        // New goal isn't better enough, stick with current
+      // If current goal's utility has dropped to 0 or below, force switch
+      if (currentUtilityNow <= 0) {
         if (this.config.debug) {
           console.log(
-            `[GoalArbiter] Sticking with ${this.currentGoal.name} (${this.currentUtility.toFixed(1)}) ` +
-            `despite ${bestGoal.name} (${bestUtility.toFixed(1)}) due to hysteresis`
+            `[GoalArbiter] Current goal ${this.currentGoal.name} utility dropped to ${currentUtilityNow.toFixed(1)}, switching to ${bestGoal.name}`
           );
         }
+        // Fall through to select new goal
+      } else {
+        // Update cached utility to current value
+        this.currentUtility = currentUtilityNow;
+        const threshold = currentUtilityNow * (1 + this.config.hysteresisThreshold);
 
-        return {
-          goal: this.currentGoal,
-          utility: this.currentUtility,
-          reason: 'hysteresis',
-        };
+        if (bestUtility < threshold) {
+          // New goal isn't better enough, stick with current
+          if (this.config.debug) {
+            console.log(
+              `[GoalArbiter] Sticking with ${this.currentGoal.name} (${currentUtilityNow.toFixed(1)}) ` +
+              `despite ${bestGoal.name} (${bestUtility.toFixed(1)}) due to hysteresis`
+            );
+          }
+
+          return {
+            goal: this.currentGoal,
+            utility: currentUtilityNow,
+            reason: 'hysteresis',
+          };
+        }
       }
     }
 
