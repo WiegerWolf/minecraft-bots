@@ -325,41 +325,71 @@ Conditions change. After 30 seconds:
 
 ### Sign-Based Persistence (Lumberjack)
 
+Signs near spawn serve as persistent memory that survives bot restarts and deaths.
+
 ```typescript
 // Lumberjack-specific persistence fields
 bb.spawnPosition: Vec3 | null;           // Where bot spawned
 bb.pendingSignWrites: PendingSignWrite[]; // Queue of signs to write
-bb.signPositions: Map<string, Vec3>;     // type -> sign block position
+bb.hasStudiedSigns: boolean;             // Has bot walked to and read signs?
+bb.hasCheckedStorage: boolean;           // Has bot checked chest for supplies?
+
+// Multi-instance infrastructure
+bb.knownChests: Vec3[];                  // All chest positions from signs
+bb.knownForests: Vec3[];                 // Forest/tree area positions
+bb.fullChests: Map<string, number>;      // pos -> expiry timestamp
+
+// Sign tracking
+bb.readSignPositions: Set<string>;       // "x,y,z" keys of read signs
+bb.unknownSigns: Vec3[];                 // Signs spotted but not yet read
 ```
 
-**Why track spawn position?**
+**Sign types:**
+- Infrastructure (single instance): `VILLAGE`, `CRAFT`
+- Infrastructure (multiple): `CHEST` (all use same type, collected into array)
+- Landmarks: `FOREST`, `MINE`, `FARM`, `WATER`
 
-Signs are placed near spawn as a predictable location. Without spawn position:
-- Bot wouldn't know WHERE to read/write signs
-- Signs could be scattered randomly
-- New bots couldn't find existing signs
+**Why `knownChests[]` array instead of single chest?**
+
+As the bot fills chests, it needs alternatives:
+1. First chest fills up → marked in `fullChests` for 5 minutes
+2. Bot checks `knownChests` for next closest non-full chest
+3. If all full → craft and place new chest → add to array → write new sign
+
+This prevents the bot from getting stuck with a full inventory.
+
+**Why `hasStudiedSigns` flag?**
+
+On spawn, the bot walks to each sign, looks at it, and announces what it learned. This:
+- Creates roleplay immersion ("I'm learning from the village signs")
+- Only happens once per session
+- Populates `knownChests`, `knownForests`, etc.
+
+**Why track `readSignPositions`?**
+
+Prevents re-reading signs the bot already knows about. Used for:
+- Skipping known signs during curious exploration
+- Identifying truly "unknown" signs in the world
+
+**Why `unknownSigns[]` for curious behavior?**
+
+When the bot perceives a sign it hasn't read, it adds to `unknownSigns`. The `ReadUnknownSign` goal provides low-priority curiosity behavior:
+- Bot walks to the sign, looks at it
+- If knowledge sign → learns from it
+- If decoration → quotes what it saw
+- Creates emergent exploration behavior
 
 **Why a queue for sign writes?**
 
 Infrastructure creation (chest, crafting table) triggers sign writes:
 ```typescript
-bb.pendingSignWrites.push({ type: 'CRAFT', pos: craftingTablePos });
+bb.pendingSignWrites.push({ type: 'CHEST', pos: chestPos });
 ```
 
 The queue pattern allows:
 - Immediate return from infrastructure action
 - GOAP planner schedules sign writing separately
 - Multiple signs can queue up, written one at a time
-
-**Why track sign positions?**
-
-For updating existing signs rather than placing new ones:
-```typescript
-const existingSign = findExistingSignForType(bot, bb.spawnPosition, 'CRAFT');
-if (existingSign) {
-    await bot.updateSign(existingSign, newText);
-}
-```
 
 ## Farm Center: Critical Strategic State
 
