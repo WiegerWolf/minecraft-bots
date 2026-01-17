@@ -32,6 +32,7 @@ export class FulfillTerraformRequestGoal extends BaseGoal {
 
   conditions = [
     booleanGoalCondition('has.pendingTerraformRequest', false, 'no pending terraform'),
+    booleanGoalCondition('terraform.active', false, 'no active terraform task'),
   ];
 
   getUtility(ws: WorldState): number {

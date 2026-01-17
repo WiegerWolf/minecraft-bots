@@ -195,6 +195,9 @@ export class FulfillRequestsAction extends BaseGOAPAction {
 
   preconditions = [
     booleanPrecondition('has.pendingRequests', true, 'pending requests exist'),
+    booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
+    // Need logs to fulfill any wood product request (logs, planks, or sticks)
+    numericPrecondition('inv.logs', v => v >= 2, 'has logs to provide'),
   ];
 
   effects = [

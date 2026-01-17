@@ -248,20 +248,21 @@ export class TerraformArea implements BehaviorNode {
         }
 
         // Check if we have dirt
-        if (bb.dirtCount === 0) {
-            console.log(`[Landscaper] Need dirt to fill`);
-            // Try to continue anyway - maybe we just collected some
-            const dirtItem = bot.inventory.items().find(i => i.name === 'dirt');
-            if (!dirtItem) {
-                // Check if we dug up enough during digging phase
-                // If not, mark remaining fills as skipped and continue
-                if (task.blocksToFill.length > 0) {
-                    console.log(`[Landscaper] Skipping fill phase - no dirt available`);
-                    task.blocksToFill = [];
-                    task.phase = 'finishing';
-                }
+        const dirtItem = bot.inventory.items().find(i => i.name === 'dirt');
+        if (!dirtItem) {
+            console.log(`[Landscaper] Need dirt to fill - searching for dirt nearby`);
+
+            // Try to gather dirt from outside the work area
+            const gathered = await this.gatherDirtFromNearby(bot, bb, task);
+            if (!gathered) {
+                // Couldn't find dirt nearby - skip remaining fills
+                console.log(`[Landscaper] No dirt found nearby - completing with partial fill`);
+                task.blocksToFill = [];
+                task.phase = 'finishing';
                 return 'running';
             }
+            // Got some dirt, continue filling
+            return 'running';
         }
 
         const fillPos = task.blocksToFill[0]!;
@@ -312,14 +313,14 @@ export class TerraformArea implements BehaviorNode {
         }
 
         // Equip dirt
-        const dirtItem = bot.inventory.items().find(i => i.name === 'dirt');
-        if (!dirtItem) {
+        const dirtToPlace = bot.inventory.items().find(i => i.name === 'dirt');
+        if (!dirtToPlace) {
             task.blocksToFill.shift();
             return 'running';
         }
 
         try {
-            await bot.equip(dirtItem, 'hand');
+            await bot.equip(dirtToPlace, 'hand');
             await sleep(50);
             await bot.placeBlock(referenceBlock, faceVector!);
             console.log(`[Landscaper] Placed dirt at ${fillPos.floored()}`);
@@ -332,6 +333,97 @@ export class TerraformArea implements BehaviorNode {
         }
 
         return 'running';
+    }
+
+    /**
+     * Gather dirt from outside the terraform area when we run out during filling.
+     * Searches for dirt/grass blocks in a ring around the work area.
+     */
+    private async gatherDirtFromNearby(bot: Bot, bb: LandscaperBlackboard, task: TerraformTask): Promise<boolean> {
+        const waterPos = task.waterPos;
+        const targetY = task.targetY;
+        const workRadius = 4; // The 9x9 work area
+        const searchRadius = 12; // How far to search for dirt
+
+        // Find dirt blocks outside the work area but nearby
+        const dirtPositions: Vec3[] = [];
+
+        for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+            for (let dz = -searchRadius; dz <= searchRadius; dz++) {
+                // Skip blocks inside the work area
+                if (Math.abs(dx) <= workRadius && Math.abs(dz) <= workRadius) continue;
+
+                const x = Math.floor(waterPos.x) + dx;
+                const z = Math.floor(waterPos.z) + dz;
+
+                // Check at and slightly above/below target level
+                for (let dy = -2; dy <= 2; dy++) {
+                    const pos = new Vec3(x, targetY + dy, z);
+                    const block = bot.blockAt(pos);
+
+                    if (block && (block.name === 'dirt' || block.name === 'grass_block')) {
+                        dirtPositions.push(pos.clone());
+                    }
+                }
+            }
+        }
+
+        if (dirtPositions.length === 0) {
+            console.log(`[Landscaper] No dirt found within ${searchRadius} blocks of work area`);
+            return false;
+        }
+
+        // Sort by distance to bot
+        dirtPositions.sort((a, b) =>
+            bot.entity.position.distanceTo(a) - bot.entity.position.distanceTo(b)
+        );
+
+        // Dig up to 16 dirt blocks (or however many we need)
+        const neededDirt = Math.min(task.blocksToFill.length, 16);
+        let gathered = 0;
+
+        // Equip shovel if we have one
+        const shovel = bot.inventory.items().find(i => i.name.includes('shovel'));
+        if (shovel) {
+            try {
+                await bot.equip(shovel, 'hand');
+            } catch (e) { /* continue */ }
+        }
+
+        for (const dirtPos of dirtPositions) {
+            if (gathered >= neededDirt) break;
+            if (bb.inventoryFull) break;
+
+            const block = bot.blockAt(dirtPos);
+            if (!block || (block.name !== 'dirt' && block.name !== 'grass_block')) continue;
+
+            // Move to the dirt
+            const dist = bot.entity.position.distanceTo(dirtPos);
+            if (dist > 4) {
+                try {
+                    await bot.pathfinder.goto(new GoalNear(dirtPos.x, dirtPos.y, dirtPos.z, 3));
+                } catch (error) {
+                    continue; // Skip unreachable dirt
+                }
+            }
+
+            // Dig it
+            try {
+                await bot.dig(block);
+                gathered++;
+                console.log(`[Landscaper] Gathered dirt ${gathered}/${neededDirt} from ${dirtPos.floored()}`);
+                await sleep(100);
+            } catch (error) {
+                // Skip this block
+            }
+        }
+
+        if (gathered > 0) {
+            console.log(`[Landscaper] Gathered ${gathered} dirt blocks for filling`);
+            return true;
+        }
+
+        return false;
     }
 
     private async finishTask(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {

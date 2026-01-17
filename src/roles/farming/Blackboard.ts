@@ -329,7 +329,7 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     // COMPUTED DECISIONS
     // ═══════════════════════════════════════════════
     bb.needsTools = !bb.hasHoe;
-    bb.needsSeeds = bb.seedCount < 3;
+    bb.needsSeeds = bb.seedCount < 10;  // Match GOAP goal threshold
     bb.canHarvest = bb.nearbyMatureCrops.length > 0 && !bb.inventoryFull;
     bb.canPlant = bb.hasHoe && bb.seedCount > 0 && bb.nearbyFarmland.length > 0;
     bb.canTill = bb.hasHoe && bb.seedCount > 0 && bb.nearbyWater.length > 0;
