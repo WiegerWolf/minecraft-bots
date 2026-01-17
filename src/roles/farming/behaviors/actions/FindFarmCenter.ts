@@ -2,8 +2,6 @@ import type { Bot } from 'mineflayer';
 import {
     type FarmingBlackboard,
     hasClearSky,
-    recordBadWater,
-    isNearBadWater
 } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
@@ -22,19 +20,10 @@ export class FindFarmCenter implements BehaviorNode {
         // Already have a farm center
         if (bb.farmCenter) return 'failure';
 
-        // Try to find water nearby via blackboard - must be under clear sky
-        // Use radius 0 - just check the water block itself, not surroundings
-        // Shorelines are fine even if there are trees/hills on one side!
+        // Try to find water nearby via blackboard - just needs clear sky above
         const suitableWater = bb.nearbyWater.filter(w =>
-            !isNearBadWater(bb, w.position) && hasClearSky(bot, w.position, 0)
+            hasClearSky(bot, w.position, 0)
         );
-
-        // Record any cave water we found (only if the water itself is underground)
-        for (const water of bb.nearbyWater) {
-            if (!hasClearSky(bot, water.position, 0)) {
-                recordBadWater(bb, water.position);
-            }
-        }
 
         if (suitableWater.length > 0) {
             const water = suitableWater[0];
@@ -58,24 +47,15 @@ export class FindFarmCenter implements BehaviorNode {
         });
 
         // Filter for water under clear sky (not in caves)
-        // Be lenient - just check if the water itself has sky above, shorelines are fine!
-        // Use a smaller radius for badWater check (8 blocks) to avoid filtering all nearby water
+        // Simple check: if the water block has sky directly above, it's good
         const suitablePositions: Vec3[] = [];
-        let caveWaterCount = 0;
 
         for (const pos of waterBlocks) {
             const vec = new Vec3(pos.x, pos.y, pos.z);
 
-            // Skip if VERY close to known bad water (use small radius to avoid over-filtering)
-            if (isNearBadWater(bb, vec, 8)) continue;
-
-            // Just check if this water block has clear sky - radius 0
+            // Just check if this water block has clear sky above
             if (hasClearSky(bot, vec, 0)) {
-                suitablePositions.push(pos);
-            } else {
-                // Record this as bad water (underground)
-                recordBadWater(bb, vec);
-                caveWaterCount++;
+                suitablePositions.push(vec);
             }
         }
 
@@ -118,8 +98,7 @@ export class FindFarmCenter implements BehaviorNode {
         }
 
         if (waterBlocks.length > 0) {
-            const badWaterMem = bb.badWaterPositions.length;
-            console.log(`[BT] Found ${waterBlocks.length} water sources in 128-block range, ${caveWaterCount} in caves (${badWaterMem} bad locations remembered)`);
+            console.log(`[BT] Found ${waterBlocks.length} water sources but none with clear sky above`);
         } else {
             console.log(`[BT] No water found within 128 blocks`);
         }
