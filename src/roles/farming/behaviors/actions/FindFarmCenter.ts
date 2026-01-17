@@ -34,26 +34,35 @@ export class FindFarmCenter implements BehaviorNode {
         if (suitableWater.length > 0) {
             waterPositions = suitableWater.map(w => w.position.clone());
         } else {
-            // Search more actively
-            const waterBlocks = bot.findBlocks({
-                point: bot.entity.position,
-                maxDistance: 64,
-                count: 30,
-                matching: b => b?.name === 'water'
-            });
+            // Search more actively - try different ranges
+            for (const maxDist of [32, 64, 96]) {
+                const waterBlocks = bot.findBlocks({
+                    point: bot.entity.position,
+                    maxDistance: maxDist,
+                    count: 50,
+                    matching: b => b?.name === 'water'
+                });
 
-            for (const pos of waterBlocks) {
-                const vec = new Vec3(pos.x, pos.y, pos.z);
-                if (hasClearSky(bot, vec, 0)) {
-                    waterPositions.push(vec);
+                for (const pos of waterBlocks) {
+                    const vec = new Vec3(pos.x, pos.y, pos.z);
+                    if (hasClearSky(bot, vec, 0)) {
+                        waterPositions.push(vec);
+                    }
+                }
+
+                if (waterPositions.length > 0) {
+                    console.log(`[BT] Found ${waterPositions.length} water sources within ${maxDist} blocks`);
+                    break;
                 }
             }
         }
 
         if (waterPositions.length === 0) {
-            console.log(`[BT] No suitable water found nearby`);
+            console.log(`[BT] No water with clear sky found within 64 blocks`);
             return 'failure';
         }
+
+        console.log(`[BT] Found ${waterPositions.length} water sources, scoring...`);
 
         // Score each water source based on suitability as farm center
         const scoredWater: { pos: Vec3; score: number }[] = [];
@@ -66,7 +75,7 @@ export class FindFarmCenter implements BehaviorNode {
         }
 
         if (scoredWater.length === 0) {
-            console.log(`[BT] Found water but none suitable for farming (need land around it)`);
+            console.log(`[BT] All ${waterPositions.length} water sources scored 0 (need land around water, not middle of ocean)`);
             return 'failure';
         }
 
@@ -115,10 +124,9 @@ export class FindFarmCenter implements BehaviorNode {
      * Higher score = better for farming.
      *
      * Good water sources:
-     * - Have land around them (not in middle of ocean)
+     * - Have at least SOME land around them (at least 1 block)
      * - Are at ground level (not in a pit or on a cliff)
      * - Have clear sky above
-     * - Have relatively flat surrounding terrain
      */
     private scoreWaterSource(bot: Bot, waterPos: Vec3): number {
         const waterY = waterPos.y;
@@ -126,7 +134,7 @@ export class FindFarmCenter implements BehaviorNode {
 
         // Count how many of the 8 surrounding blocks at water level are solid ground
         let landCount = 0;
-        let airCount = 0;
+        let waterCount = 0;
         const directions = [
             { dx: 1, dz: 0 }, { dx: -1, dz: 0 },
             { dx: 0, dz: 1 }, { dx: 0, dz: -1 },
@@ -143,25 +151,35 @@ export class FindFarmCenter implements BehaviorNode {
             const block = bot.blockAt(checkPos);
             const above = bot.blockAt(checkPos.offset(0, 1, 0));
 
-            if (block && block.boundingBox === 'block' && block.name !== 'water') {
+            if (!block) continue; // Unloaded chunk
+
+            if (block.name === 'water' || block.name === 'flowing_water') {
+                waterCount++;
+            } else if (block.boundingBox === 'block') {
                 landCount++;
                 // Extra points if the block above is air (walkable)
                 if (above && above.name === 'air') {
-                    score += 2;
+                    score += 3;
                 }
-            } else if (block && block.name === 'air') {
-                airCount++;
             }
         }
 
-        // Need at least some land around the water (not in middle of lake)
-        if (landCount < 2) return 0;
+        // Need at least ONE adjacent land block (can reach the water)
+        // But not ALL water (middle of ocean is bad)
+        if (landCount < 1) return 0;
 
-        // Prefer water on edges (some land, some water/air) - like a shore
+        // Prefer water on edges/shores (mix of land and water)
         score += landCount * 5;
+
+        // Penalize being in middle of large water body
+        if (waterCount >= 7) {
+            score -= 20;
+        }
 
         // Check the wider 9x9 area for buildable terrain
         let buildableCount = 0;
+        let nullCount = 0; // Unloaded chunks
+
         for (let dx = -4; dx <= 4; dx++) {
             for (let dz = -4; dz <= 4; dz++) {
                 if (dx === 0 && dz === 0) continue; // Skip water center
@@ -172,26 +190,37 @@ export class FindFarmCenter implements BehaviorNode {
                     Math.floor(waterPos.z) + dz
                 );
                 const block = bot.blockAt(checkPos);
-                const above = bot.blockAt(checkPos.offset(0, 1, 0));
+
+                if (!block) {
+                    nullCount++;
+                    continue;
+                }
 
                 // Count blocks that are already suitable or can be made suitable
-                if (block) {
-                    if (block.name === 'water' || block.name === 'flowing_water') {
-                        // Water is fine - landscaper can place dirt on top
-                        buildableCount++;
-                    } else if (block.boundingBox === 'block') {
-                        // Solid block at water level - good
-                        buildableCount++;
-                        if (above && above.name === 'air') {
-                            score += 1; // Extra for clear above
-                        }
+                if (block.name === 'water' || block.name === 'flowing_water') {
+                    // Water is fine - landscaper can place dirt on top
+                    buildableCount++;
+                } else if (block.boundingBox === 'block') {
+                    // Solid block at water level - good
+                    buildableCount++;
+                    const above = bot.blockAt(checkPos.offset(0, 1, 0));
+                    if (above && above.name === 'air') {
+                        score += 1; // Extra for clear above
                     }
+                }
+                // Air is also buildable (landscaper can fill)
+                else if (block.name === 'air') {
+                    buildableCount++;
                 }
             }
         }
 
-        // Need enough buildable area
-        if (buildableCount < 40) return 0; // At least half the 9x9 area
+        // If too many blocks are unloaded, don't pick this spot
+        if (nullCount > 40) return 0;
+
+        // Need at least 20 buildable blocks (less strict than before)
+        // Landscaper can handle filling water/air
+        if (buildableCount < 20) return 0;
 
         score += buildableCount;
 
