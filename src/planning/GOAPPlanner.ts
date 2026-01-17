@@ -286,9 +286,11 @@ export class GOAPPlanner {
     // Only include facts that are likely to be affected by actions
     const importantFacts = [
       'has.hoe', 'has.sword', 'has.axe', 'has.craftingTable',
+      'has.shovel', 'has.pickaxe', // Landscaper tools
       'inv.seeds', 'inv.produce', 'inv.logs', 'inv.planks', 'inv.sticks',
       'nearby.matureCrops', 'nearby.farmland', 'nearby.drops', 'nearby.trees',
       'tree.active', 'derived.hasFarmEstablished',
+      'derived.hasAnyTool', 'derived.hasStorageAccess', // Derived states
       'state.consecutiveIdleTicks',
     ];
 
