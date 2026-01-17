@@ -70,6 +70,11 @@ export class VillageChat {
             // Ignore own messages
             if (username === this.bot.username) return;
 
+            // Debug: log all received village-related chat
+            if (message.startsWith('[')) {
+                console.log(`[VillageChat] ${this.bot.username} received from ${username}: ${message}`);
+            }
+
             // Parse village messages
             if (message.startsWith('[VILLAGE] center ')) {
                 const match = message.match(/\[VILLAGE\] center (-?\d+) (-?\d+) (-?\d+)/);
