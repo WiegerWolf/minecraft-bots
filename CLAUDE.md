@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Documentation
+
+**Read the `docs/` folder** for in-depth understanding of design decisions:
+
+- [`docs/README.md`](docs/README.md) - Index and quick reference
+- [`docs/architecture.md`](docs/architecture.md) - Why GOAP over behavior trees, why two state systems, key trade-offs
+- [`docs/goap-planning.md`](docs/goap-planning.md) - Planning loop, goals, actions, A* algorithm
+- [`docs/state-management.md`](docs/state-management.md) - Blackboard vs WorldState, memory systems
+- [`docs/multi-bot-coordination.md`](docs/multi-bot-coordination.md) - Village chat protocol, role specialization
+- [`docs/failure-handling.md`](docs/failure-handling.md) - Recovery strategies at every level
+
+**When modifying code:**
+1. Check relevant docs to understand *why* things work the way they do
+2. If you discover new insights or change design decisions, update the docs
+3. Focus on capturing reasoning, not code walkthroughs
+
 ## Commands
 
 - **Run bot with hot-reload**: `bun run start` (uses `src/index.ts` manager)
