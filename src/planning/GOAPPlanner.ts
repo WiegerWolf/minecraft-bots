@@ -196,8 +196,15 @@ export class GOAPPlanner {
 
   /**
    * Check if action preconditions are satisfied.
+   * If the action has a custom checkPreconditions method, use that instead.
    */
   private checkPreconditions(action: GOAPAction, state: WorldState): boolean {
+    // Use action's custom checkPreconditions if available (for complex OR logic)
+    if ('checkPreconditions' in action && typeof (action as any).checkPreconditions === 'function') {
+      return (action as any).checkPreconditions(state);
+    }
+
+    // Default: check preconditions array
     for (const precond of action.preconditions) {
       const value = state.get(precond.key);
       if (!precond.check(value)) {

@@ -210,43 +210,27 @@ export class GatherWoodAction extends BaseGOAPAction {
  * The implementation handles the full crafting chain internally:
  * logs → planks → sticks → hoe
  *
- * So we need to accept either:
- * - Enough planks directly (canCraftHoe = true), OR
- * - Enough logs to make planks (logs >= 2)
+ * Precondition: Need at least 2 logs (which will be converted to planks).
+ * This allows the planner to chain: GatherWood → CraftHoe
  */
 export class CraftHoeAction extends BaseGOAPAction {
   name = 'CraftHoe';
   private impl = new CraftHoe();
 
-  // Relaxed precondition: just need SOME materials (logs or planks)
-  // The implementation handles converting logs to planks internally
+  // Need logs to convert to planks (the implementation handles the conversion)
   preconditions = [
-    // Need at least 2 logs (to make 8 planks) OR have canCraftHoe already
-    // This is checked dynamically in checkPreconditions override
+    numericPrecondition('inv.logs', v => v >= 2, 'has logs for planks'),
   ];
 
   effects = [
     setEffect('has.hoe', true, 'crafted hoe'),
     setEffect('needs.tools', false, 'has tools'),
     setEffect('derived.needsWood', false, 'used wood for hoe'),
-    // Consume logs if we had them (worst case estimate)
     incrementEffect('inv.logs', -2, 'used logs for planks'),
   ];
 
   override getCost(ws: WorldState): number {
-    // Higher cost if we need to process logs first
-    const canCraftDirectly = ws.getBool('derived.canCraftHoe');
-    return canCraftDirectly ? 2.0 : 4.0;
-  }
-
-  override checkPreconditions(ws: WorldState): boolean {
-    // Can craft if we have materials ready OR have logs to convert
-    const canCraftHoe = ws.getBool('derived.canCraftHoe');
-    const logCount = ws.getNumber('inv.logs');
-
-    // Need at least 2 logs to make enough planks (2 logs = 8 planks)
-    // Or already have the materials ready
-    return canCraftHoe || logCount >= 2;
+    return 4.0; // Higher cost since it includes crafting steps
   }
 
   override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
