@@ -135,9 +135,7 @@ export class PlanExecutor {
     // Plan exhausted
     if (this.currentActionIndex >= this.currentPlan.length) {
       if (this.currentAction === null) {
-        if (this.config.debug) {
-          console.log('[PlanExecutor] Plan complete');
-        }
+        console.log(`[PlanExecutor] Plan exhausted (failures: ${this.consecutiveFailures})`);
         this.requestReplan(ReplanReason.PLAN_EXHAUSTED);
         return false;
       }

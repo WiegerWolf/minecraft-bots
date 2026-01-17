@@ -282,12 +282,10 @@ export abstract class GOAPRole implements Role {
    * Handle replan requests from the executor.
    */
   private handleReplanRequest(reason: ReplanReason): void {
-    if (this.config.debug) {
-      console.log(`[GOAP] Replan requested: ${reason}`);
-    }
-
     // Check if there were failures during plan execution
     const hadFailures = this.executor?.hadRecentFailures() ?? false;
+
+    console.log(`[GOAP] Replan requested: ${reason}, hadFailures: ${hadFailures}`);
 
     // Clear current goal and apply cooldown if needed
     if (this.arbiter) {
