@@ -3,8 +3,16 @@ import type { Block } from 'prismarine-block';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { pathfinderGotoWithRetry } from '../farming/behaviors/actions/utils';
+import type { Logger } from '../../shared/logger';
 
 const { GoalNear, GoalLookAtBlock } = goals;
+
+// Module-level logger reference (set by caller)
+let moduleLog: Logger | null = null;
+
+export function setTreeHarvestLogger(logger: Logger | null): void {
+    moduleLog = logger;
+}
 
 // Tree-related block names
 export const LOG_NAMES = [
@@ -109,7 +117,7 @@ export async function chopLogs(bot: Bot, state: TreeHarvestState): Promise<TreeH
         try {
             await bot.equip(axe, 'hand');
         } catch (err) {
-            console.log(`[TreeHarvest] Failed to equip axe: ${err}`);
+            moduleLog?.warn({ err }, 'Failed to equip axe');
         }
     }
 
@@ -124,7 +132,7 @@ export async function chopLogs(bot: Bot, state: TreeHarvestState): Promise<TreeH
                 break;
             }
 
-            console.log(`[TreeHarvest] Chopping ${block.name} at ${block.position}`);
+            moduleLog?.debug({ block: block.name, pos: block.position.toString() }, 'Chopping log');
 
             // Mark as busy before starting async operations
             state.busy = true;
@@ -132,7 +140,7 @@ export async function chopLogs(bot: Bot, state: TreeHarvestState): Promise<TreeH
                 const goal = new GoalLookAtBlock(block.position, bot.world, { reach: 4 });
                 const success = await pathfinderGotoWithRetry(bot, goal);
                 if (!success) {
-                    console.log(`[TreeHarvest] Failed to reach log after retries`);
+                    moduleLog?.warn('Failed to reach log after retries');
                     state.busy = false;
                     break;
                 }
@@ -158,7 +166,7 @@ export async function chopLogs(bot: Bot, state: TreeHarvestState): Promise<TreeH
     }
 
     // No more logs in column, move to clearing leaves
-    console.log(`[TreeHarvest] Tree trunk cleared, removing leaves...`);
+    moduleLog?.debug('Tree trunk cleared, removing leaves');
     state.phase = 'clearing_leaves';
     return 'success';
 }
@@ -193,7 +201,7 @@ export async function clearLeaves(bot: Bot, state: TreeHarvestState): Promise<Tr
 
     if (sortedLeaves.length === 0) {
         // No more reachable leaves, move to replanting
-        console.log(`[TreeHarvest] Leaves cleared, checking for sapling to replant...`);
+        moduleLog?.debug('Leaves cleared, checking for sapling to replant');
         state.phase = 'replanting';
         return 'success';
     }
@@ -210,7 +218,7 @@ export async function clearLeaves(bot: Bot, state: TreeHarvestState): Promise<Tr
         return 'success';
     }
 
-    console.log(`[TreeHarvest] Breaking leaves at ${leafBlock.position}`);
+    moduleLog?.debug({ pos: leafBlock.position.toString() }, 'Breaking leaves');
 
     // Mark as busy before starting async operations
     state.busy = true;
@@ -218,7 +226,7 @@ export async function clearLeaves(bot: Bot, state: TreeHarvestState): Promise<Tr
         const goal = new GoalLookAtBlock(leafBlock.position, bot.world, { reach: 5 });
         const success = await pathfinderGotoWithRetry(bot, goal);
         if (!success) {
-            console.log(`[TreeHarvest] Failed to reach leaf after retries`);
+            moduleLog?.warn('Failed to reach leaf after retries');
             state.phase = 'replanting';
             state.busy = false;
             return 'success';
@@ -265,9 +273,9 @@ export async function replantSapling(
     const sapling = bot.inventory.items().find(i => i.name === saplingName);
     if (!sapling) {
         if (plantedPositions.length > 0) {
-            console.log(`[TreeHarvest] Finished planting ${plantedPositions.length} saplings`);
+            moduleLog?.info({ count: plantedPositions.length }, 'Finished planting saplings');
         } else {
-            console.log(`[TreeHarvest] No ${saplingName} to replant`);
+            moduleLog?.debug({ sapling: saplingName }, 'No saplings to replant');
         }
         state.phase = 'done';
         return { result: 'done', planted: false };
@@ -311,9 +319,9 @@ export async function replantSapling(
 
     if (!plantSpot) {
         if (plantedPositions.length > 0) {
-            console.log(`[TreeHarvest] Finished planting ${plantedPositions.length} saplings (no more suitable spots)`);
+            moduleLog?.info({ count: plantedPositions.length }, 'Finished planting saplings (no more spots)');
         } else {
-            console.log(`[TreeHarvest] No suitable spot to replant sapling`);
+            moduleLog?.debug('No suitable spot to replant sapling');
         }
         state.phase = 'done';
         return { result: 'done', planted: false };
@@ -325,7 +333,7 @@ export async function replantSapling(
         // Move close to the planting spot
         const success = await pathfinderGotoWithRetry(bot, new GoalNear(plantSpot.x, plantSpot.y, plantSpot.z, 3));
         if (!success) {
-            console.log(`[TreeHarvest] Failed to reach planting spot after retries`);
+            moduleLog?.warn('Failed to reach planting spot after retries');
             state.busy = false;
             return { result: 'success', planted: false };
         }
@@ -342,14 +350,14 @@ export async function replantSapling(
         if (groundBlock) {
             await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
             plantedPositions.push(plantSpot.clone());
-            console.log(`[TreeHarvest] Planted sapling ${plantedPositions.length} at ${plantSpot}`);
+            moduleLog?.info({ count: plantedPositions.length, pos: plantSpot.toString() }, 'Planted sapling');
             state.busy = false;
             return { result: 'success', planted: true };
         }
         state.busy = false;
     } catch (err) {
         state.busy = false;
-        console.log(`[TreeHarvest] Failed to plant sapling: ${err}`);
+        moduleLog?.warn({ err }, 'Failed to plant sapling');
     }
 
     // Stay in replanting phase to plant more saplings
@@ -390,7 +398,8 @@ export function startTreeHarvest(bot: Bot, maxDistance: number = 32): TreeHarves
     const baseLog = findTree(bot, maxDistance);
     if (!baseLog) return null;
 
-    console.log(`[TreeHarvest] Starting to harvest ${baseLog.name.replace('_log', '')} tree at ${baseLog.position}`);
+    const treeType = baseLog.name.replace('_log', '');
+    moduleLog?.info({ treeType, pos: baseLog.position.toString() }, 'Starting tree harvest');
 
     return {
         basePos: baseLog.position.clone(),

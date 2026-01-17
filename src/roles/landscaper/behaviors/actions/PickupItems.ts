@@ -49,7 +49,7 @@ export class PickupItems implements BehaviorNode {
 
         // If we've tried too many times, mark as unreachable
         if (this.failedAttemptsAtTarget >= this.MAX_ATTEMPTS) {
-            console.log(`[Landscaper] Item ${drop.id} at ${drop.position.floored()} unreachable after ${this.MAX_ATTEMPTS} attempts`);
+            bb.log?.debug(`[Landscaper] Item ${drop.id} at ${drop.position.floored()} unreachable after ${this.MAX_ATTEMPTS} attempts`);
             bb.unreachableDrops.set(drop.id, now + UNREACHABLE_COOLDOWN);
             this.lastTargetId = null;
             this.failedAttemptsAtTarget = 0;
@@ -73,7 +73,7 @@ export class PickupItems implements BehaviorNode {
 
         // Move to pickup
         bb.lastAction = 'pickup_moving';
-        console.log(`[Landscaper] Moving to pickup item at ${drop.position.floored()} (dist: ${dist.toFixed(1)})`);
+        bb.log?.debug(`[Landscaper] Moving to pickup item at ${drop.position.floored()} (dist: ${dist.toFixed(1)})`);
 
         try {
             // Use smart pathfinder with timeout to prevent infinite blocking
@@ -84,14 +84,14 @@ export class PickupItems implements BehaviorNode {
             );
 
             if (!result.success) {
-                console.log(`[Landscaper] Pickup path failed: ${result.failureReason}`);
+                bb.log?.debug(`[Landscaper] Pickup path failed: ${result.failureReason}`);
                 return 'failure';
             }
             return 'success';
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'unknown';
             if (!msg.includes('goal was changed') && !msg.includes('Path was stopped')) {
-                console.log(`[Landscaper] Pickup path error: ${msg}`);
+                bb.log?.debug(`[Landscaper] Pickup path error: ${msg}`);
             }
             return 'failure';
         }

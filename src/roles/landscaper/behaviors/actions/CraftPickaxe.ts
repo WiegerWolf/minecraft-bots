@@ -33,7 +33,7 @@ export class CraftPickaxe implements BehaviorNode {
         // First, ensure we have planks (need 3 for pickaxe head)
         if (bb.plankCount < 3) {
             if (bb.logCount < 1) {
-                console.log('[Landscaper] Need logs to craft planks for pickaxe');
+                bb.log?.debug('[Landscaper] Need logs to craft planks for pickaxe');
                 return 'failure';
             }
 
@@ -48,7 +48,7 @@ export class CraftPickaxe implements BehaviorNode {
         // Now ensure we have sticks
         if (bb.stickCount < 2) {
             if (bb.plankCount < 2) {
-                console.log('[Landscaper] Need more planks for sticks');
+                bb.log?.debug('[Landscaper] Need more planks for sticks');
                 return 'failure';
             }
 
@@ -93,11 +93,9 @@ export class CraftPickaxe implements BehaviorNode {
             if (!recipe) return false;
 
             await bot.craft(recipe, 1);
-            console.log(`[Landscaper] Crafted planks`);
             await sleep(100);
             return true;
-        } catch (error) {
-            console.warn(`[Landscaper] Failed to craft planks:`, error);
+        } catch {
             return false;
         }
     }
@@ -111,11 +109,9 @@ export class CraftPickaxe implements BehaviorNode {
             if (!recipe) return false;
 
             await bot.craft(recipe, 1);
-            console.log(`[Landscaper] Crafted sticks`);
             await sleep(100);
             return true;
-        } catch (error) {
-            console.warn(`[Landscaper] Failed to craft sticks:`, error);
+        } catch {
             return false;
         }
     }
@@ -146,7 +142,7 @@ export class CraftPickaxe implements BehaviorNode {
 
         if (!tableItem) {
             if (bb.plankCount < 4) {
-                console.log('[Landscaper] Not enough planks to craft crafting table');
+                bb.log?.debug('[Landscaper] Not enough planks to craft crafting table');
                 return null;
             }
 
@@ -158,10 +154,10 @@ export class CraftPickaxe implements BehaviorNode {
 
             try {
                 await bot.craft(recipe, 1);
-                console.log(`[Landscaper] Crafted crafting table`);
+                bb.log?.debug(`[Landscaper] Crafted crafting table`);
                 await sleep(100);
             } catch (error) {
-                console.warn(`[Landscaper] Failed to craft crafting table:`, error);
+                bb.log?.warn({ err: error }, 'Failed to craft crafting table');
                 return null;
             }
         }
@@ -202,7 +198,7 @@ export class CraftPickaxe implements BehaviorNode {
                     await sleep(50);
 
                     await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
-                    console.log(`[Landscaper] Placed crafting table at ${placePos}`);
+                    bb.log?.debug(`[Landscaper] Placed crafting table at ${placePos}`);
                     await sleep(200);
 
                     const placedTable = bot.blockAt(placePos);
@@ -214,7 +210,7 @@ export class CraftPickaxe implements BehaviorNode {
                         return placedTable;
                     }
                 } catch (error) {
-                    console.warn(`[Landscaper] Failed to place crafting table:`, error);
+                    bb.log?.warn({ err: error }, 'Failed to place crafting table');
                 }
             }
         }
@@ -225,7 +221,7 @@ export class CraftPickaxe implements BehaviorNode {
     private async craftPickaxeAtTable(bot: Bot, bb: LandscaperBlackboard, pickaxeType: string): Promise<BehaviorStatus> {
         const craftingTable = await this.findOrPlaceCraftingTable(bot, bb);
         if (!craftingTable) {
-            console.log('[Landscaper] Cannot craft pickaxe - no crafting table');
+            bb.log?.debug('[Landscaper] Cannot craft pickaxe - no crafting table');
             return 'failure';
         }
 
@@ -236,27 +232,27 @@ export class CraftPickaxe implements BehaviorNode {
                 { timeoutMs: 15000 }
             );
             if (!result.success) {
-                console.log(`[Landscaper] Failed to reach crafting table: ${result.failureReason}`);
+                bb.log?.debug(`[Landscaper] Failed to reach crafting table: ${result.failureReason}`);
                 return 'failure';
             }
 
             const pickaxeId = bot.registry.itemsByName[pickaxeType]?.id;
             if (!pickaxeId) {
-                console.log(`[Landscaper] Cannot find ${pickaxeType} in registry`);
+                bb.log?.debug(`[Landscaper] Cannot find ${pickaxeType} in registry`);
                 return 'failure';
             }
 
             const recipe = bot.recipesFor(pickaxeId, null, 1, craftingTable)[0];
             if (!recipe) {
-                console.log(`[Landscaper] No recipe found for ${pickaxeType}`);
+                bb.log?.debug(`[Landscaper] No recipe found for ${pickaxeType}`);
                 return 'failure';
             }
 
             await bot.craft(recipe, 1, craftingTable);
-            console.log(`[Landscaper] Crafted ${pickaxeType}!`);
+            bb.log?.debug(`[Landscaper] Crafted ${pickaxeType}!`);
             return 'success';
         } catch (error) {
-            console.warn(`[Landscaper] Failed to craft pickaxe:`, error);
+            bb.log?.warn({ err: error }, 'Failed to craft pickaxe');
             return 'failure';
         }
     }

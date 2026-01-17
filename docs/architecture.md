@@ -363,3 +363,96 @@ class FarmingRole extends ResourceMixin(CraftingMixin(KnowledgeMixin(Object))) {
 ### Limitation
 
 Can't easily override mixed-in methods. If two mixins provide same method name, last one wins. Design mixins with distinct responsibilities.
+
+## Why Pino for Logging?
+
+The system uses **Pino** for structured logging with dual output:
+
+```typescript
+const logger = createBotLogger({ botName: 'DevFarmer', role: 'goap-farming' });
+logger.info({ goal: 'HarvestCrops', utility: 75 }, 'Goal selected');
+```
+
+### Alternatives Considered
+
+1. **console.log**: No structure, no levels, no file output
+2. **Winston**: Popular but heavier, slower JSON serialization
+3. **Bunyan**: Similar to Pino but less actively maintained
+4. **Custom logger**: Reinventing the wheel
+
+### Why Pino?
+
+- **Fast**: 5x faster than Winston due to optimized JSON serialization
+- **JSON-native**: Logs are structured data, not strings
+- **pino-pretty**: Readable console output during development
+- **Child loggers**: Component isolation without config overhead
+- **Bun-compatible**: Works with Bun runtime without issues
+
+### Why Dual Output?
+
+Logs go to both console and files:
+
+```
+stdout → pino-pretty → colored, human-readable
+files  → JSON → grep-able, searchable
+```
+
+**Console for development**: You're watching the bot, you need readable output.
+
+**Files for debugging**: When something went wrong 2 hours ago, you need searchable structured logs.
+
+### Why Logger Per Bot?
+
+Each bot gets its own logger and log file:
+
+```
+logs/2024-01-15/
+  Emma_Farmer.log
+  Oscar_Lmbr.log
+  DevFarmer.log
+```
+
+Multi-bot runs would produce interleaved output. Separate files let you:
+- `tail -f logs/*/DevFarmer.log` to watch one bot
+- `grep "Goal selected" logs/*/Emma_Farmer.log` to analyze one bot
+- `cat logs/*/*.log | jq 'select(.goal == "HarvestCrops")'` to search all bots
+
+### Why `bb.log` in Behavior Actions?
+
+Behavior actions receive the logger via the blackboard:
+
+```typescript
+async tick(bot: Bot, bb: Blackboard): Promise<BehaviorStatus> {
+    bb.log?.debug({ action: 'harvest' }, 'Starting harvest');
+}
+```
+
+**Not constructor injection** because behavior nodes are instantiated once and reused.
+
+**Not global logger** because each bot needs its own logger instance.
+
+**Via blackboard** because it's already the shared context passed to every tick.
+
+### Why Optional Chaining (`bb.log?.`)?
+
+Loggers are optional throughout the codebase:
+
+```typescript
+bb.log?.debug('message');  // Not bb.log.debug('message')
+```
+
+This allows:
+- Running without logging (tests, minimal setups)
+- Gradual migration (not everything has logger access yet)
+- No crashes if logger initialization fails
+
+### Log Levels Strategy
+
+| Level | When to Use |
+|-------|-------------|
+| `error` | Unrecoverable failures, connection lost |
+| `warn` | Recoverable failures, action retries |
+| `info` | Goal changes, role start/stop, deposits |
+| `debug` | Action ticks, planner iterations |
+
+**Rule of thumb**: If you'd want to see it in production, use `info`. If it's only useful while actively debugging, use `debug`.

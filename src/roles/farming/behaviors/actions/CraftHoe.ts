@@ -53,11 +53,10 @@ async function ensureCraftingTable(bot: Bot): Promise<Block | null> {
                     await sleep(200);
                     const placedTable = bot.blockAt(placePos);
                     if (placedTable && placedTable.name === 'crafting_table') {
-                        console.log(`[BT] Placed crafting table at ${placePos}`);
                         return placedTable;
                     }
-                } catch (err) {
-                    console.log(`[BT] Failed to place crafting table: ${err}`);
+                } catch {
+                    // Failed to place, try next position
                 }
             }
         }
@@ -74,7 +73,7 @@ export class CraftHoe implements BehaviorNode {
 
         // Step 1: Convert logs to planks (2x2 recipe, no table needed)
         if (bb.logCount > 0 && bb.plankCount < 4) {
-            console.log(`[BT] Converting logs to planks...`);
+            bb.log?.debug('Converting logs to planks');
             const log = bot.inventory.items().find(i => i.name.includes('_log'));
             if (log) {
                 const plankName = log.name.replace('_log', '_planks');
@@ -87,7 +86,7 @@ export class CraftHoe implements BehaviorNode {
                             await bot.craft(recipe, 1);
                             return 'running';
                         } catch (err) {
-                            console.log(`[BT] Failed to craft planks: ${err}`);
+                            bb.log?.warn({ err }, 'Failed to craft planks');
                         }
                     }
                 }
@@ -105,7 +104,7 @@ export class CraftHoe implements BehaviorNode {
             const hasTableItem = bot.inventory.items().some(i => i.name === 'crafting_table');
 
             if (existingTable.length === 0 && !hasTableItem) {
-                console.log(`[BT] Crafting crafting table...`);
+                bb.log?.debug('Crafting crafting table');
                 const tableItem = bot.registry.itemsByName['crafting_table'];
                 if (tableItem) {
                     const recipes = bot.recipesFor(tableItem.id, null, 1, null);
@@ -115,7 +114,7 @@ export class CraftHoe implements BehaviorNode {
                             await bot.craft(recipe, 1);
                             return 'running';
                         } catch (err) {
-                            console.log(`[BT] Failed to craft crafting table: ${err}`);
+                            bb.log?.warn({ err }, 'Failed to craft crafting table');
                         }
                     }
                 }
@@ -125,7 +124,7 @@ export class CraftHoe implements BehaviorNode {
 
         // Step 3: Craft sticks if needed (2x2 recipe, no table needed)
         if (bb.plankCount >= 2 && bb.stickCount < 2) {
-            console.log(`[BT] Crafting sticks...`);
+            bb.log?.debug('Crafting sticks');
             const stickItem = bot.registry.itemsByName['stick'];
             if (stickItem) {
                 const recipes = bot.recipesFor(stickItem.id, null, 1, null);
@@ -135,7 +134,7 @@ export class CraftHoe implements BehaviorNode {
                         await bot.craft(recipe, 1);
                         return 'running';
                     } catch (err) {
-                        console.log(`[BT] Failed to craft sticks: ${err}`);
+                        bb.log?.warn({ err }, 'Failed to craft sticks');
                     }
                 }
             }
@@ -144,12 +143,12 @@ export class CraftHoe implements BehaviorNode {
 
         // Step 4: Craft wooden hoe (requires 3x3 crafting table!)
         if (bb.plankCount >= 2 && bb.stickCount >= 2) {
-            console.log(`[BT] Crafting wooden hoe...`);
+            bb.log?.debug('Crafting wooden hoe');
             bb.lastAction = 'craft_hoe';
 
             const craftingTable = await ensureCraftingTable(bot);
             if (!craftingTable) {
-                console.log(`[BT] No crafting table available`);
+                bb.log?.warn('No crafting table available');
                 return 'failure';
             }
 
@@ -159,16 +158,16 @@ export class CraftHoe implements BehaviorNode {
             const recipes = bot.recipesFor(hoeItem.id, null, 1, craftingTable);
             const recipe = recipes[0];
             if (!recipe) {
-                console.log(`[BT] No recipe found for wooden hoe`);
+                bb.log?.warn('No recipe found for wooden hoe');
                 return 'failure';
             }
 
             try {
                 await bot.craft(recipe, 1, craftingTable);
-                console.log(`[BT] Successfully crafted wooden hoe!`);
+                bb.log?.info('Successfully crafted wooden hoe');
                 return 'success';
             } catch (err) {
-                console.log(`[BT] Failed to craft hoe: ${err}`);
+                bb.log?.warn({ err }, 'Failed to craft hoe');
                 return 'failure';
             }
         }

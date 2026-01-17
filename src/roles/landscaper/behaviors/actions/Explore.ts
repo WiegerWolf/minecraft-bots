@@ -45,7 +45,7 @@ export class Explore implements BehaviorNode {
             // All areas explored, wait
             bb.consecutiveIdleTicks++;
             if (bb.consecutiveIdleTicks > 10) {
-                console.log(`[Landscaper] Waiting for terraform requests...`);
+                bb.log?.debug(`[Landscaper] Waiting for terraform requests...`);
                 await new Promise(resolve => setTimeout(resolve, 3000));
                 bb.consecutiveIdleTicks = 0;
             }
@@ -54,7 +54,7 @@ export class Explore implements BehaviorNode {
 
         bb.consecutiveIdleTicks = 0;
 
-        console.log(`[Landscaper] Exploring to ${target.pos.floored()} (score: ${target.score})`);
+        bb.log?.debug(`[Landscaper] Exploring to ${target.pos.floored()} (score: ${target.score})`);
 
         try {
             // Find safe Y level
@@ -84,12 +84,12 @@ export class Explore implements BehaviorNode {
                 recordExploredPosition(bb, bot.entity.position);
                 return 'success';
             } else {
-                console.log(`[Landscaper] Explore path failed: ${result.failureReason}`);
+                bb.log?.debug(`[Landscaper] Explore path failed: ${result.failureReason}`);
                 recordExploredPosition(bb, target.pos, 'unreachable');
                 return 'failure';
             }
         } catch (error) {
-            console.log(`[Landscaper] Explore error: ${error instanceof Error ? error.message : 'unknown'}`);
+            bb.log?.debug(`[Landscaper] Explore error: ${error instanceof Error ? error.message : 'unknown'}`);
             recordExploredPosition(bb, target.pos, 'unreachable');
             return 'failure';
         }

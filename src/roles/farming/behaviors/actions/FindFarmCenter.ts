@@ -51,18 +51,18 @@ export class FindFarmCenter implements BehaviorNode {
                 }
 
                 if (waterPositions.length > 0) {
-                    console.log(`[BT] Found ${waterPositions.length} water sources within ${maxDist} blocks`);
+                    bb.log?.debug({ count: waterPositions.length, maxDist }, 'Found water sources');
                     break;
                 }
             }
         }
 
         if (waterPositions.length === 0) {
-            console.log(`[BT] No water with clear sky found within 64 blocks`);
+            bb.log?.debug('No water with clear sky found within search range');
             return 'failure';
         }
 
-        console.log(`[BT] Found ${waterPositions.length} water sources, scoring...`);
+        bb.log?.debug({ count: waterPositions.length }, 'Scoring water sources');
 
         // Score each water source based on suitability as farm center
         const scoredWater: { pos: Vec3; score: number }[] = [];
@@ -75,7 +75,7 @@ export class FindFarmCenter implements BehaviorNode {
         }
 
         if (scoredWater.length === 0) {
-            console.log(`[BT] All ${waterPositions.length} water sources scored 0 (need land around water, not middle of ocean)`);
+            bb.log?.debug({ count: waterPositions.length }, 'All water sources scored 0 (need land around water)');
             return 'failure';
         }
 
@@ -87,7 +87,7 @@ export class FindFarmCenter implements BehaviorNode {
 
         const best = scoredWater[0]!;
         const dist = Math.round(bot.entity.position.distanceTo(best.pos));
-        console.log(`[BT] Found water source for farm at ${best.pos.floored()} (${dist} blocks away, score: ${best.score})`);
+        bb.log?.info({ pos: best.pos.floored().toString(), dist, score: best.score }, 'Found water source for farm');
 
         bb.lastAction = 'find_farm';
 
@@ -99,7 +99,7 @@ export class FindFarmCenter implements BehaviorNode {
         );
 
         if (!result.success) {
-            console.log(`[BT] Failed to reach water source: ${result.failureReason}`);
+            bb.log?.warn({ reason: result.failureReason }, 'Failed to reach water source');
             const currentDist = bot.entity.position.distanceTo(best.pos);
             if (currentDist >= 32) {
                 return 'failure';
@@ -108,11 +108,11 @@ export class FindFarmCenter implements BehaviorNode {
 
         // Set farm center to the WATER position - this is where the farm will be centered
         bb.farmCenter = best.pos.clone();
-        console.log(`[BT] Established farm center (water) at ${bb.farmCenter.floored()}`);
+        bb.log?.info({ pos: bb.farmCenter.floored().toString() }, 'Established farm center (water)');
 
         // Request terraforming at the water position
         if (bb.villageChat) {
-            console.log(`[Farmer] Requesting 9x9 farm around water at ${bb.farmCenter.floored()}`);
+            bb.log?.info({ pos: bb.farmCenter.floored().toString() }, 'Requesting 9x9 farm around water');
             bb.villageChat.requestTerraform(bb.farmCenter);
         }
 

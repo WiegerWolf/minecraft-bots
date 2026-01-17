@@ -51,7 +51,7 @@ export class ProcessWood implements BehaviorNode {
         }
 
         if (planksCreated > 0) {
-            console.log(`[Lumberjack] Processed logs into ${planksCreated} planks`);
+            bb.log?.debug(`[Lumberjack] Processed logs into ${planksCreated} planks`);
         }
 
         // If we have excess planks, make some sticks
@@ -73,7 +73,7 @@ export class ProcessWood implements BehaviorNode {
             }
 
             if (sticksCreated > 0) {
-                console.log(`[Lumberjack] Crafted ${sticksCreated} sticks`);
+                bb.log?.debug(`[Lumberjack] Crafted ${sticksCreated} sticks`);
             }
         }
 

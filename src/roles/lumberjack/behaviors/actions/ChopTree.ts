@@ -36,14 +36,14 @@ export class ChopTree implements BehaviorNode {
         if (bb.villageCenter) {
             const treeDistFromVillage = state.basePos.distanceTo(bb.villageCenter);
             if (treeDistFromVillage > 60) {
-                console.log(`[Lumberjack] Tree too far from village (${Math.round(treeDistFromVillage)} blocks), skipping`);
+                bb.log?.debug(`[Lumberjack] Tree too far from village (${Math.round(treeDistFromVillage)} blocks), skipping`);
                 return 'failure';
             }
         }
 
         bb.currentTreeHarvest = state;
         bb.lastAction = 'chop_tree';
-        console.log(`[Lumberjack] Starting tree harvest at ${state.basePos}`);
+        bb.log?.debug(`[Lumberjack] Starting tree harvest at ${state.basePos}`);
         return this.continueHarvest(bot, bb);
     }
 

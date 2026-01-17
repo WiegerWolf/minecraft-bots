@@ -26,14 +26,14 @@ export class HarvestCrops implements BehaviorNode {
                 // Get within 3 blocks (can dig from this distance)
                 const dist = bot.entity.position.distanceTo(crop.position);
                 if (dist > 4) {
-                    console.log(`[BT] Moving to crop at ${crop.position} (${Math.round(dist)} blocks away)`);
+                    bb.log?.debug(`[BT] Moving to crop at ${crop.position} (${Math.round(dist)} blocks away)`);
                     const result = await smartPathfinderGoto(
                         bot,
                         new GoalNear(crop.position.x, crop.position.y, crop.position.z, 3),
                         { timeoutMs: 10000 }  // Reduced from 15s to 10s
                     );
                     if (!result.success) {
-                        console.log(`[BT] Failed to reach crop: ${result.failureReason}`);
+                        bb.log?.debug(`[BT] Failed to reach crop: ${result.failureReason}`);
                         continue;
                     }
                     bot.pathfinder.stop();
@@ -44,7 +44,7 @@ export class HarvestCrops implements BehaviorNode {
                 const currentBlock = bot.blockAt(crop.position);
                 if (!currentBlock || !this.isMatureCrop(currentBlock)) continue;
 
-                console.log(`[BT] Harvesting ${currentBlock.name} at ${crop.position}`);
+                bb.log?.debug(`[BT] Harvesting ${currentBlock.name} at ${crop.position}`);
                 await bot.dig(currentBlock);
                 harvestedAny = true;
                 await sleep(100);

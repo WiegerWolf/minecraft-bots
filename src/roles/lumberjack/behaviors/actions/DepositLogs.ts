@@ -55,18 +55,18 @@ export class DepositLogs implements BehaviorNode {
 
         const chest = bot.blockAt(chestPos);
         if (!chest || !['chest', 'barrel'].includes(chest.name)) {
-            console.log(`[Lumberjack] Shared chest no longer exists at ${chestPos}`);
+            bb.log?.debug(`[Lumberjack] Shared chest no longer exists at ${chestPos}`);
             bb.sharedChest = null;
             return 'failure';
         }
 
         bb.lastAction = 'deposit_logs';
-        console.log(`[Lumberjack] Depositing items to chest at ${chestPos}`);
+        bb.log?.debug(`[Lumberjack] Depositing items to chest at ${chestPos}`);
 
         try {
             const success = await pathfinderGotoWithRetry(bot, new GoalLookAtBlock(chest.position, bot.world, { reach: 4 }));
             if (!success) {
-                console.warn(`[Lumberjack] Failed to reach chest after retries`);
+                bb.log?.warn(`[Lumberjack] Failed to reach chest after retries`);
                 return 'failure';
             }
 
@@ -93,13 +93,13 @@ export class DepositLogs implements BehaviorNode {
                     await sleep(50);
                 } catch (err) {
                     // Chest might be full
-                    console.log(`[Lumberjack] Failed to deposit ${item.name}: ${err}`);
+                    bb.log?.debug(`[Lumberjack] Failed to deposit ${item.name}: ${err}`);
                     break;
                 }
             }
 
             chestWindow.close();
-            console.log(`[Lumberjack] Deposited ${deposited} items (${logsDeposited} logs)`);
+            bb.log?.debug(`[Lumberjack] Deposited ${deposited} items (${logsDeposited} logs)`);
 
             // Announce deposit via chat so farmer knows materials are available
             if (logsDeposited > 0 && bb.villageChat) {
@@ -108,7 +108,7 @@ export class DepositLogs implements BehaviorNode {
 
             return 'success';
         } catch (error) {
-            console.warn(`[Lumberjack] Error depositing items:`, error);
+            bb.log?.warn({ err: error }, 'Error depositing items');
             return 'failure';
         }
     }

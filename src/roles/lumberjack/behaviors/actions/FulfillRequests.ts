@@ -26,7 +26,7 @@ export class FulfillRequests implements BehaviorNode {
         if (requests.length === 0) return 'failure';
 
         const request = requests[0]!; // Oldest first
-        console.log(`[Lumberjack] Fulfilling request: ${request.from} needs ${request.quantity}x ${request.item}`);
+        bb.log?.debug(`[Lumberjack] Fulfilling request: ${request.from} needs ${request.quantity}x ${request.item}`);
 
         // Map requested item to what we can provide
         const itemNeeded = this.normalizeItemName(request.item);
@@ -36,7 +36,7 @@ export class FulfillRequests implements BehaviorNode {
             // Try to craft it
             const crafted = await this.craftItem(bot, bb, itemNeeded, request.quantity);
             if (!crafted) {
-                console.log(`[Lumberjack] Cannot fulfill request for ${request.item} yet - need more materials`);
+                bb.log?.debug(`[Lumberjack] Cannot fulfill request for ${request.item} yet - need more materials`);
                 return 'failure';
             }
         }
@@ -49,7 +49,7 @@ export class FulfillRequests implements BehaviorNode {
                 bb.villageChat.setSharedChest(bb.sharedChest);
                 bb.villageChat.announceSharedChest(bb.sharedChest);
             } else {
-                console.log(`[Lumberjack] No chest available for deposit`);
+                bb.log?.debug(`[Lumberjack] No chest available for deposit`);
                 return 'failure';
             }
         }
@@ -59,7 +59,7 @@ export class FulfillRequests implements BehaviorNode {
         try {
             const chest = bot.blockAt(bb.sharedChest);
             if (!chest) {
-                console.log(`[Lumberjack] Cannot find chest at ${bb.sharedChest}`);
+                bb.log?.debug(`[Lumberjack] Cannot find chest at ${bb.sharedChest}`);
                 bb.sharedChest = null;
                 return 'failure';
             }
@@ -70,7 +70,7 @@ export class FulfillRequests implements BehaviorNode {
                 { timeoutMs: 15000 }
             );
             if (!result.success) {
-                console.log(`[Lumberjack] Failed to reach chest: ${result.failureReason}`);
+                bb.log?.debug(`[Lumberjack] Failed to reach chest: ${result.failureReason}`);
                 return 'failure';
             }
 
@@ -89,7 +89,7 @@ export class FulfillRequests implements BehaviorNode {
                     await chestWindow.deposit(item.type, null, toDeposit);
                     deposited += toDeposit;
                 } catch (err) {
-                    console.log(`[Lumberjack] Failed to deposit ${item.name}: ${err}`);
+                    bb.log?.debug(`[Lumberjack] Failed to deposit ${item.name}: ${err}`);
                 }
             }
 
@@ -98,14 +98,14 @@ export class FulfillRequests implements BehaviorNode {
             if (deposited >= request.quantity) {
                 // Announce fulfillment via chat
                 bb.villageChat.announceFulfillment(request.item, deposited, request.from);
-                console.log(`[Lumberjack] Deposited ${deposited}x ${request.item} for ${request.from}`);
+                bb.log?.debug(`[Lumberjack] Deposited ${deposited}x ${request.item} for ${request.from}`);
                 return 'success';
             } else {
-                console.log(`[Lumberjack] Only deposited ${deposited}/${request.quantity} ${request.item}`);
+                bb.log?.debug(`[Lumberjack] Only deposited ${deposited}/${request.quantity} ${request.item}`);
                 return 'running';
             }
         } catch (error) {
-            console.warn(`[Lumberjack] Error fulfilling request:`, error);
+            bb.log?.warn({ err: error }, 'Error fulfilling request');
             return 'failure';
         }
     }
@@ -155,20 +155,15 @@ export class FulfillRequests implements BehaviorNode {
 
             const plankName = logItem.name.replace('_log', '_planks');
             const recipe = bot.recipesFor(bot.registry.itemsByName[plankName]?.id ?? 0, null, 1, null)[0];
-            if (!recipe) {
-                console.log(`[Lumberjack] No recipe found for ${plankName}`);
-                return false;
-            }
+            if (!recipe) return false;
 
             const craftCount = Math.min(logsNeeded, Math.floor(logItem.count));
             for (let i = 0; i < craftCount; i++) {
                 await bot.craft(recipe, 1);
                 await sleep(100);
             }
-            console.log(`[Lumberjack] Crafted ${craftCount * 4} planks`);
             return true;
-        } catch (error) {
-            console.warn(`[Lumberjack] Failed to craft planks:`, error);
+        } catch {
             return false;
         }
     }
@@ -179,20 +174,15 @@ export class FulfillRequests implements BehaviorNode {
             if (!stickId) return false;
 
             const recipe = bot.recipesFor(stickId, null, 1, null)[0];
-            if (!recipe) {
-                console.log(`[Lumberjack] No recipe found for sticks`);
-                return false;
-            }
+            if (!recipe) return false;
 
             const craftCount = Math.ceil(quantity / 4);
             for (let i = 0; i < craftCount; i++) {
                 await bot.craft(recipe, 1);
                 await sleep(100);
             }
-            console.log(`[Lumberjack] Crafted ${craftCount * 4} sticks`);
             return true;
-        } catch (error) {
-            console.warn(`[Lumberjack] Failed to craft sticks:`, error);
+        } catch {
             return false;
         }
     }

@@ -63,8 +63,8 @@ export async function clearPath(bot: any): Promise<void> {
                     await bot.dig(block);
                     await sleep(200);
                 }
-            } catch (err) {
-                console.log(`Failed to break block at ${blockPos}: ${err}`);
+            } catch {
+                // Ignore break failures
             }
         }
     }
@@ -91,22 +91,17 @@ export async function pathfinderGotoWithRetry(
 ): Promise<boolean> {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
-            console.log(`Pathfinding attempt ${attempt + 1} of ${maxRetries + 1}`);
             await pathfinderGotoWithTimeout(bot, goal, timeoutMs);
             return true; // Success
         } catch (err) {
-            console.log(`Pathfinding attempt ${attempt + 1} failed: ${err}`);
-
             // If this was a timeout, try to clear path before retrying
             if (isPathfinderTimeoutError(err) && attempt < maxRetries) {
-                console.log('Pathfinding timed out, attempting to clear path...');
                 await clearPath(bot);
                 await sleep(1000); // Wait for dust to settle
             }
 
             // If we've reached max retries, give up
             if (attempt === maxRetries) {
-                console.log('All pathfinding attempts failed');
                 return false;
             }
         }

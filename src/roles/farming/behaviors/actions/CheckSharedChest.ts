@@ -60,7 +60,7 @@ export class CheckSharedChest implements BehaviorNode {
         }
 
         bb.lastAction = 'check_shared_chest';
-        console.log('[Farmer] Checking shared chest for materials...');
+        bb.log?.debug('[Farmer] Checking shared chest for materials...');
 
         try {
             const result = await smartPathfinderGoto(
@@ -69,7 +69,7 @@ export class CheckSharedChest implements BehaviorNode {
                 { timeoutMs: 15000 }
             );
             if (!result.success) {
-                console.log(`[Farmer] Failed to reach shared chest: ${result.failureReason}`);
+                bb.log?.debug(`[Farmer] Failed to reach shared chest: ${result.failureReason}`);
                 return 'failure';
             }
 
@@ -87,10 +87,10 @@ export class CheckSharedChest implements BehaviorNode {
                     const toWithdraw = Math.min(logItem.count, 4); // 4 logs = 16 planks
                     try {
                         await chestWindow.withdraw(logItem.type, null, toWithdraw);
-                        console.log(`[Farmer] Withdrew ${toWithdraw} logs from shared chest`);
+                        bb.log?.debug(`[Farmer] Withdrew ${toWithdraw} logs from shared chest`);
                         withdrew = true;
                     } catch (err) {
-                        console.log(`[Farmer] Failed to withdraw logs: ${err}`);
+                        bb.log?.debug(`[Farmer] Failed to withdraw logs: ${err}`);
                     }
                 }
             }
@@ -102,10 +102,10 @@ export class CheckSharedChest implements BehaviorNode {
                     const toWithdraw = Math.min(plankItem.count, 8);
                     try {
                         await chestWindow.withdraw(plankItem.type, null, toWithdraw);
-                        console.log(`[Farmer] Withdrew ${toWithdraw} planks from shared chest`);
+                        bb.log?.debug(`[Farmer] Withdrew ${toWithdraw} planks from shared chest`);
                         withdrew = true;
                     } catch (err) {
-                        console.log(`[Farmer] Failed to withdraw planks: ${err}`);
+                        bb.log?.debug(`[Farmer] Failed to withdraw planks: ${err}`);
                     }
                 }
             }
@@ -117,10 +117,10 @@ export class CheckSharedChest implements BehaviorNode {
                     const toWithdraw = Math.min(stickItem.count, 8);
                     try {
                         await chestWindow.withdraw(stickItem.type, null, toWithdraw);
-                        console.log(`[Farmer] Withdrew ${toWithdraw} sticks from shared chest`);
+                        bb.log?.debug(`[Farmer] Withdrew ${toWithdraw} sticks from shared chest`);
                         withdrew = true;
                     } catch (err) {
-                        console.log(`[Farmer] Failed to withdraw sticks: ${err}`);
+                        bb.log?.debug(`[Farmer] Failed to withdraw sticks: ${err}`);
                     }
                 }
             }
@@ -128,7 +128,7 @@ export class CheckSharedChest implements BehaviorNode {
             chestWindow.close();
             return withdrew ? 'success' : 'failure';
         } catch (error) {
-            console.warn('[Farmer] Error checking shared chest:', error);
+            bb.log?.warn({ err: error }, 'Error checking shared chest');
             return 'failure';
         }
     }

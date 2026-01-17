@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
 import type { VillageChat } from '../../shared/VillageChat';
+import type { Logger } from '../../shared/logger';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -56,6 +57,9 @@ export interface FarmingBlackboard {
     // Village communication (set by role)
     villageChat: VillageChat | null;
 
+    // Logging (set by role)
+    log: Logger | null;
+
     // Computed booleans for easy decision making
     canTill: boolean;
     canPlant: boolean;
@@ -102,6 +106,7 @@ export function createBlackboard(): FarmingBlackboard {
         currentTreeHarvest: null,
 
         villageChat: null,
+        log: null,
 
         canTill: false,
         canPlant: false,
@@ -212,7 +217,7 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         }
 
         if (bb.nearbyFarmland.length === 0) {
-            console.log(`[Blackboard] Found ${rawFarmland.length} farmland (${correctYBlocks.length} at correct Y): ${withAir} empty, ${withCrops} planted`);
+            bb.log?.debug({ total: rawFarmland.length, atCorrectY: correctYBlocks.length, empty: withAir, planted: withCrops }, 'Farmland analysis');
         }
     }
 
@@ -234,9 +239,9 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     if (allCrops.length > 0 && bb.nearbyMatureCrops.length === 0) {
         const sample = allCrops.slice(0, 3).map(b => {
             const props = b.getProperties();
-            return `${b.name}:age${props.age ?? '?'}`;
-        }).join(', ');
-        console.log(`[Blackboard] Found ${allCrops.length} crops, ${bb.nearbyMatureCrops.length} mature: [${sample}]`);
+            return { name: b.name, age: props.age ?? '?' };
+        });
+        bb.log?.debug({ total: allCrops.length, mature: bb.nearbyMatureCrops.length, sample }, 'Crop status');
     }
 
     // Find grass (for seeds) - expanded list for different MC versions
@@ -333,7 +338,7 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         // Check terraform status
         if (bb.terraformRequestedAt) {
             if (bb.villageChat.isTerraformDoneAt(bb.terraformRequestedAt)) {
-                console.log(`[Blackboard] Terraform complete at ${bb.terraformRequestedAt.floored()}`);
+                bb.log?.info({ pos: bb.terraformRequestedAt.floored().toString() }, 'Terraform complete');
                 bb.waitingForTerraform = false;
                 bb.terraformRequestedAt = null;
             }
@@ -369,9 +374,9 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         if (best) {
             const tillable = countTillableAround(bot, best.position);
             bb.farmCenter = best.position.clone();
-            console.log(`[Blackboard] Established farm center at ${bb.farmCenter} (${tillable} tillable blocks nearby)`);
+            bb.log?.info({ pos: bb.farmCenter.toString(), tillable }, 'Established farm center');
         } else if (bb.nearbyWater.length > 0) {
-            console.log(`[Blackboard] Found ${bb.nearbyWater.length} water sources but none under clear sky`);
+            bb.log?.debug({ waterSources: bb.nearbyWater.length }, 'Found water but none under clear sky');
         }
     }
 
@@ -379,7 +384,7 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     if (bb.farmCenter) {
         const block = bot.blockAt(bb.farmCenter);
         if (!block || (block.name !== 'water' && block.name !== 'flowing_water')) {
-            console.log(`[Blackboard] Farm center invalid (${block?.name || 'null'}), clearing...`);
+            bb.log?.warn({ blockName: block?.name ?? 'null' }, 'Farm center invalid, clearing');
             bb.farmCenter = null;
         }
     }
@@ -809,7 +814,7 @@ export function requestTerraformIfNeeded(bot: Bot, bb: FarmingBlackboard): boole
     }
 
     // Request terraform
-    console.log(`[Farmer] Requesting terraform at ${bb.farmCenter.floored()}`);
+    bb.log?.info({ pos: bb.farmCenter.floored().toString() }, 'Requesting terraform');
     bb.villageChat.requestTerraform(bb.farmCenter);
     bb.waitingForTerraform = true;
     bb.terraformRequestedAt = bb.farmCenter.clone();

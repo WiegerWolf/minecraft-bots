@@ -3,6 +3,7 @@ import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
 import type { VillageChat } from '../../shared/VillageChat';
 import { LOG_NAMES, LEAF_NAMES, SAPLING_NAMES, type TreeHarvestState } from '../shared/TreeHarvest';
+import type { Logger } from '../../shared/logger';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -35,6 +36,9 @@ export interface LumberjackBlackboard {
 
     // Village communication (set by role)
     villageChat: VillageChat | null;
+
+    // Logger (set by role)
+    log: Logger | null;
 
     // Exploration memory
     exploredPositions: ExplorationMemory[];
@@ -75,6 +79,7 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         currentTreeHarvest: null,
 
         villageChat: null,
+        log: null,
 
         exploredPositions: [],
         unreachableDrops: new Map(),
@@ -195,7 +200,7 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
 
     // Debug logging for tree detection
     if (bb.nearbyLogs.length > 0 && bb.nearbyTrees.length === 0) {
-        console.log(`[Lmbr] Found ${bb.nearbyLogs.length} logs but 0 reachable trees (bot Y: ${Math.floor(pos.y)})`);
+        bb.log?.debug({ logCount: bb.nearbyLogs.length, botY: Math.floor(pos.y) }, 'Found logs but 0 reachable trees');
     }
 
     // Find leaves (for clearing)

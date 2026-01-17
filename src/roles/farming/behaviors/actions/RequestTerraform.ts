@@ -23,7 +23,7 @@ export class RequestTerraform implements BehaviorNode {
             bb.lastAction = 'wait_terraform';
             // Check if done
             if (bb.terraformRequestedAt && bb.villageChat.isTerraformDoneAt(bb.terraformRequestedAt)) {
-                console.log(`[Farmer] Terraform complete, can start farming!`);
+                bb.log?.info(`[Farmer] Terraform complete, can start farming!`);
                 bb.waitingForTerraform = false;
                 bb.terraformRequestedAt = null;
                 return 'success';

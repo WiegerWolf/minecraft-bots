@@ -95,6 +95,10 @@ export abstract class GOAPRole implements Role {
     }
     if (this.logger) {
       this.log = createChildLogger(this.logger, 'GOAP');
+      // Pass logger to blackboard for behavior actions to use
+      if (this.blackboard && 'log' in this.blackboard) {
+        this.blackboard.log = this.log;
+      }
     }
 
     // Initialize planning components now that we have bot and blackboard

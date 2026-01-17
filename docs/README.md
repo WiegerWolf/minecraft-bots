@@ -46,6 +46,39 @@ How the system handles failures at every level:
 - Pathfinding timeouts and blacklisting
 - Zombie detection and graceful shutdown
 
+## Logging System
+
+The project uses **Pino** for structured logging with dual output:
+
+### Output Destinations
+- **Console**: Pretty-printed via `pino-pretty` during development
+- **Files**: JSON format in `logs/YYYY-MM-DD/BotName.log` for searchability
+
+### Log Levels
+| Level | Usage |
+|-------|-------|
+| `error` | Connection lost, uncaught exceptions |
+| `warn` | Recoverable failures, action retries |
+| `info` | Role start/stop, goal changes, status updates |
+| `debug` | Action ticks, planner iterations, blackboard updates |
+
+### Logger Access Patterns
+```typescript
+// In GOAP roles (via this.log)
+this.log?.info({ goal: goal.name, utility }, 'Goal selected');
+
+// In behavior actions (via bb.log)
+bb.log?.debug({ action: 'harvest', count: crops.length }, 'Harvesting crops');
+
+// Creating child loggers
+const plannerLog = createChildLogger(logger, 'Planner');
+```
+
+### Environment Control
+```bash
+LOG_LEVEL=debug bun run start farmer  # Set log level
+```
+
 ## Quick Reference
 
 ### Key Numbers to Remember
@@ -72,23 +105,35 @@ How the system handles failures at every level:
 | Farming Blackboard | `src/roles/farming/Blackboard.ts` |
 | GOAPRole base | `src/roles/GOAPRole.ts` |
 | VillageChat | `src/shared/VillageChat.ts` |
+| Logger | `src/shared/logger.ts` |
 | Process Manager | `src/index.ts` |
 
 ### Debug Commands
 
 Enable debug logging in role configuration:
 ```typescript
-new GOAPFarmingRole({ debug: true })
+new GOAPFarmingRole({ debug: true, logger })
 ```
 
-Get goal utilities:
+Get goal utilities (logged automatically at debug level):
 ```typescript
-console.log(arbiter.getGoalReport(worldState));
+// Logged via: this.log?.debug({ goals: report }, 'Goal utilities')
+const report = arbiter.getGoalReport(worldState);
 ```
 
 Get execution stats:
 ```typescript
-console.log(executor.getStats());
+// Logged via: this.log?.info(stats, 'Execution stats')
+const stats = executor.getStats();
+```
+
+Search log files:
+```bash
+# Find goal selections
+cat logs/*/DevFarmer.log | grep "Goal selected"
+
+# Find errors
+cat logs/*/*.log | jq 'select(.level >= 50)'
 ```
 
 ## Contributing to Docs

@@ -49,7 +49,6 @@ export class RepairField implements BehaviorNode {
                     // Verify there's a solid block below (not a natural pit)
                     const below = bot.blockAt(pos.offset(0, -1, 0));
                     if (below && !['air', 'cave_air', 'water', 'lava'].includes(below.name)) {
-                        console.log(`[BT] Found hole in farm at ${pos}`);
                         return pos;
                     }
                 }
@@ -59,7 +58,7 @@ export class RepairField implements BehaviorNode {
     }
 
     private async placeDirt(bot: Bot, bb: FarmingBlackboard, hole: Vec3, dirtItem: any): Promise<BehaviorStatus> {
-        console.log(`[BT] Repairing farm - placing dirt at ${hole}`);
+        bb.log?.debug(`[BT] Repairing farm - placing dirt at ${hole}`);
         bb.lastAction = 'repair';
 
         try {
@@ -71,7 +70,7 @@ export class RepairField implements BehaviorNode {
                 // Move to farm center first to get out of the hole
                 const farmCenter = bb.farmCenter;
                 if (farmCenter) {
-                    console.log(`[BT] Moving out of hole first...`);
+                    bb.log?.debug(`[BT] Moving out of hole first...`);
                     const outResult = await smartPathfinderGoto(
                         bot,
                         new GoalNear(farmCenter.x, farmCenter.y, farmCenter.z, 2),
@@ -102,10 +101,10 @@ export class RepairField implements BehaviorNode {
             await bot.placeBlock(below, new Vec3(0, 1, 0));
             await sleep(200);
 
-            console.log(`[BT] Successfully repaired hole at ${hole}`);
+            bb.log?.debug(`[BT] Successfully repaired hole at ${hole}`);
             return 'success';
         } catch (err) {
-            console.log(`[BT] Failed to place dirt: ${err}`);
+            bb.log?.debug(`[BT] Failed to place dirt: ${err}`);
             return 'failure';
         }
     }
@@ -153,7 +152,7 @@ export class RepairField implements BehaviorNode {
             const block = bot.blockAt(pos);
             if (!block) continue;
 
-            console.log(`[BT] Gathering dirt from ${pos} to repair farm`);
+            bb.log?.debug(`[BT] Gathering dirt from ${pos} to repair farm`);
             bb.lastAction = 'gather_dirt';
 
             try {
@@ -163,19 +162,19 @@ export class RepairField implements BehaviorNode {
                     { timeoutMs: 15000 }
                 );
                 if (!result.success) {
-                    console.log(`[BT] Failed to reach dirt: ${result.failureReason}`);
+                    bb.log?.debug(`[BT] Failed to reach dirt: ${result.failureReason}`);
                     return 'failure';
                 }
                 await bot.dig(block);
                 await sleep(300);
                 return 'success';
             } catch (err) {
-                console.log(`[BT] Failed to gather dirt: ${err}`);
+                bb.log?.debug(`[BT] Failed to gather dirt: ${err}`);
                 return 'failure';
             }
         }
 
-        console.log(`[BT] No accessible dirt found: ${dirtBlocks.length} total, ${insideFarm} inside farm, ${noAccessible} not accessible`);
+        bb.log?.debug(`[BT] No accessible dirt found: ${dirtBlocks.length} total, ${insideFarm} inside farm, ${noAccessible} not accessible`);
         return 'failure';
     }
 }

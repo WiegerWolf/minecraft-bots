@@ -45,14 +45,14 @@ export class PickupItems implements BehaviorNode {
 
         // If we've tried too many times, mark as unreachable in blackboard
         if (this.failedAttemptsAtTarget >= this.MAX_ATTEMPTS) {
-            console.log(`[BT] Item ${dropId} at ${drop.position.floored()} unreachable after ${this.MAX_ATTEMPTS} attempts`);
+            bb.log?.debug(`[BT] Item ${dropId} at ${drop.position.floored()} unreachable after ${this.MAX_ATTEMPTS} attempts`);
             bb.unreachableDrops.set(dropId, now + UNREACHABLE_COOLDOWN);
             this.lastTargetId = null;
             this.failedAttemptsAtTarget = 0;
             return 'failure';
         }
 
-        console.log(`[BT] Picking up item at ${drop.position.floored()}`);
+        bb.log?.debug(`[BT] Picking up item at ${drop.position.floored()}`);
         bb.lastAction = 'pickup';
 
         try {
@@ -64,7 +64,7 @@ export class PickupItems implements BehaviorNode {
             );
 
             if (!result.success) {
-                console.log(`[Farmer] Pickup path failed: ${result.failureReason}`);
+                bb.log?.debug(`[Farmer] Pickup path failed: ${result.failureReason}`);
                 return 'failure';
             }
 
@@ -84,7 +84,7 @@ export class PickupItems implements BehaviorNode {
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'unknown';
             if (!msg.includes('goal was changed') && !msg.includes('Path was stopped')) {
-                console.log(`[Farmer] Pickup path error: ${msg}`);
+                bb.log?.debug(`[Farmer] Pickup path error: ${msg}`);
             }
             return 'failure';
         }

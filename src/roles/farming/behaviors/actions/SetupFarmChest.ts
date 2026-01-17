@@ -50,7 +50,7 @@ export class SetupFarmChest implements BehaviorNode {
                 bb.villageChat.announceSharedChest(bb.farmChest);
                 bb.sharedChest = bb.farmChest;
             }
-            console.log(`[BT] Found existing farm chest at ${bb.farmChest}`);
+            bb.log?.debug(`[BT] Found existing farm chest at ${bb.farmChest}`);
             return 'success';
         }
 
@@ -102,13 +102,13 @@ export class SetupFarmChest implements BehaviorNode {
 
             // Place chest on top of this block
             const chestPos = pos.offset(0, 1, 0);
-            console.log(`[BT] Placing farm chest at ${chestPos}`);
+            bb.log?.debug(`[BT] Placing farm chest at ${chestPos}`);
             bb.lastAction = 'place_chest';
 
             try {
                 const success = await pathfinderGotoWithRetry(bot, new GoalNear(pos.x, pos.y, pos.z, 3));
                 if (!success) {
-                    console.log(`[BT] Failed to reach chest placement position after retries`);
+                    bb.log?.debug(`[BT] Failed to reach chest placement position after retries`);
                     continue;
                 }
                 bot.pathfinder.stop();
@@ -122,7 +122,7 @@ export class SetupFarmChest implements BehaviorNode {
                 await sleep(300);
 
                 bb.farmChest = chestPos;
-                console.log(`[BT] Farm chest placed at ${bb.farmChest}`);
+                bb.log?.debug(`[BT] Farm chest placed at ${bb.farmChest}`);
 
                 // Announce to village chat that we have a shared chest
                 if (bb.villageChat) {
@@ -132,7 +132,7 @@ export class SetupFarmChest implements BehaviorNode {
 
                 return 'success';
             } catch (err) {
-                console.log(`[BT] Failed to place chest: ${err}`);
+                bb.log?.debug(`[BT] Failed to place chest: ${err}`);
             }
         }
 
@@ -152,7 +152,7 @@ export class SetupFarmChest implements BehaviorNode {
 
         if (logCount >= 2) {
             // Convert logs to planks first
-            console.log(`[BT] Converting logs to planks for chest...`);
+            bb.log?.debug(`[BT] Converting logs to planks for chest...`);
             bb.lastAction = 'craft_planks';
             try {
                 const logItem = inv.find(i => i.name.includes('_log'));
@@ -168,13 +168,13 @@ export class SetupFarmChest implements BehaviorNode {
                     return 'success';  // Will craft chest next tick
                 }
             } catch (err) {
-                console.log(`[BT] Failed to craft planks: ${err}`);
+                bb.log?.debug(`[BT] Failed to craft planks: ${err}`);
             }
             return 'failure';
         }
 
         // Need more logs - gather wood ourselves
-        console.log(`[BT] Need 2 logs to craft chest, gathering wood...`);
+        bb.log?.debug(`[BT] Need 2 logs to craft chest, gathering wood...`);
         bb.lastAction = 'gather_wood_for_chest';
         return await this.gatherWoodForChest(bot);
     }
@@ -189,7 +189,6 @@ export class SetupFarmChest implements BehaviorNode {
         });
 
         if (logs.length === 0) {
-            console.log(`[BT] No logs found nearby for chest`);
             return 'failure';
         }
 
@@ -202,21 +201,18 @@ export class SetupFarmChest implements BehaviorNode {
         try {
             const success = await pathfinderGotoWithRetry(bot, new GoalLookAtBlock(logPos, bot.world));
             if (!success) {
-                console.log(`[BT] Failed to reach log for chest after retries`);
                 return 'failure';
             }
             await bot.dig(block);
             await sleep(300);
-            console.log(`[BT] Gathered log for chest`);
             return 'success';
-        } catch (err) {
-            console.log(`[BT] Failed to gather wood: ${err}`);
+        } catch {
             return 'failure';
         }
     }
 
     private async craftChestAtTable(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
-        console.log(`[BT] Crafting chest...`);
+        bb.log?.debug(`[BT] Crafting chest...`);
         bb.lastAction = 'craft_chest';
 
         // Find or place a crafting table
@@ -259,7 +255,7 @@ export class SetupFarmChest implements BehaviorNode {
                         tableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
                     }
                 } catch (err) {
-                    console.log(`[BT] Failed to craft crafting table: ${err}`);
+                    bb.log?.debug(`[BT] Failed to craft crafting table: ${err}`);
                     return 'failure';
                 }
             }
@@ -279,19 +275,19 @@ export class SetupFarmChest implements BehaviorNode {
                             await sleep(200);
                             const placedTable = bot.blockAt(placePos);
                             if (placedTable && placedTable.name === 'crafting_table') {
-                                console.log(`[BT] Placed crafting table at ${placePos}`);
+                                bb.log?.debug(`[BT] Placed crafting table at ${placePos}`);
                                 craftingTable = placePos;
                                 break;
                             }
                         } catch (err) {
-                            console.log(`[BT] Failed to place crafting table: ${err}`);
+                            bb.log?.debug(`[BT] Failed to place crafting table: ${err}`);
                         }
                     }
                 }
             }
 
             if (!craftingTable) {
-                console.log(`[BT] No crafting table available and failed to place one`);
+                bb.log?.debug(`[BT] No crafting table available and failed to place one`);
                 return 'failure';
             }
         }
@@ -303,7 +299,7 @@ export class SetupFarmChest implements BehaviorNode {
 
             const success = await pathfinderGotoWithRetry(bot, new GoalLookAtBlock(craftingTable, bot.world));
             if (!success) {
-                console.log(`[BT] Failed to reach crafting table for chest after retries`);
+                bb.log?.debug(`[BT] Failed to reach crafting table for chest after retries`);
                 return 'failure';
             }
 
@@ -312,15 +308,15 @@ export class SetupFarmChest implements BehaviorNode {
 
             const chestRecipe = bot.recipesFor(chestId, null, 1, tableBlock)[0];
             if (!chestRecipe) {
-                console.log(`[BT] No chest recipe found at crafting table`);
+                bb.log?.debug(`[BT] No chest recipe found at crafting table`);
                 return 'failure';
             }
 
             await bot.craft(chestRecipe, 1, tableBlock);
-            console.log(`[BT] Successfully crafted chest!`);
+            bb.log?.debug(`[BT] Successfully crafted chest!`);
             return 'success';
         } catch (err) {
-            console.log(`[BT] Failed to craft chest: ${err}`);
+            bb.log?.debug(`[BT] Failed to craft chest: ${err}`);
             return 'failure';
         }
     }

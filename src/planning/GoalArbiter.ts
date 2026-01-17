@@ -1,5 +1,6 @@
 import type { Goal } from './Goal';
 import { WorldState } from './WorldState';
+import type { Logger } from '../shared/logger';
 
 /**
  * Configuration for the GoalArbiter.
@@ -15,6 +16,11 @@ export interface GoalArbiterConfig {
    * Enable debug logging of goal selection.
    */
   debug: boolean;
+
+  /**
+   * Optional logger for structured logging.
+   */
+  logger?: Logger;
 }
 
 /**
@@ -34,7 +40,8 @@ export class GoalArbiter {
   private goals: Goal[];
   private currentGoal: Goal | null = null;
   private currentUtility: number = 0;
-  private config: GoalArbiterConfig;
+  private config: Omit<GoalArbiterConfig, 'logger'>;
+  private log: Logger | null = null;
 
   constructor(goals: Goal[], config?: Partial<GoalArbiterConfig>) {
     this.goals = goals;
@@ -42,6 +49,7 @@ export class GoalArbiter {
       hysteresisThreshold: config?.hysteresisThreshold ?? 0.2,
       debug: config?.debug ?? false,
     };
+    this.log = config?.logger ?? null;
   }
 
   /**
@@ -78,7 +86,7 @@ export class GoalArbiter {
     // No valid goals
     if (scoredGoals.length === 0) {
       if (this.config.debug) {
-        console.log('[GoalArbiter] No valid goals found');
+        this.log?.debug('No valid goals found');
       }
       this.currentGoal = null;
       this.currentUtility = 0;
@@ -114,8 +122,9 @@ export class GoalArbiter {
       // If current goal's utility has dropped to 0 or below, force switch
       if (currentUtilityNow <= 0) {
         if (this.config.debug) {
-          console.log(
-            `[GoalArbiter] Current goal ${this.currentGoal.name} utility dropped to ${currentUtilityNow.toFixed(1)}, switching to ${bestGoal.name}`
+          this.log?.debug(
+            { currentGoal: this.currentGoal.name, utility: currentUtilityNow.toFixed(1), newGoal: bestGoal.name },
+            'Current goal utility dropped, switching'
           );
         }
         // Fall through to select new goal
@@ -127,9 +136,9 @@ export class GoalArbiter {
         if (bestUtility < threshold) {
           // New goal isn't better enough, stick with current
           if (this.config.debug) {
-            console.log(
-              `[GoalArbiter] Sticking with ${this.currentGoal.name} (${currentUtilityNow.toFixed(1)}) ` +
-              `despite ${bestGoal.name} (${bestUtility.toFixed(1)}) due to hysteresis`
+            this.log?.debug(
+              { currentGoal: this.currentGoal.name, currentUtility: currentUtilityNow.toFixed(1), newGoal: bestGoal.name, newUtility: bestUtility.toFixed(1) },
+              'Sticking with current goal due to hysteresis'
             );
           }
 
@@ -149,11 +158,11 @@ export class GoalArbiter {
 
     if (this.config.debug) {
       const topGoals = scoredGoals.slice(0, 3).map(
-        g => `${g.goal.name}(${g.utility.toFixed(1)})`
-      ).join(', ');
-      console.log(
-        `[GoalArbiter] Selected: ${bestGoal.name} (utility: ${bestUtility.toFixed(1)}, reason: ${reason})` +
-        ` | Top 3: ${topGoals}`
+        g => ({ goal: g.goal.name, utility: g.utility.toFixed(1) })
+      );
+      this.log?.debug(
+        { selected: bestGoal.name, utility: bestUtility.toFixed(1), reason, topGoals },
+        'Goal selected'
       );
     }
 

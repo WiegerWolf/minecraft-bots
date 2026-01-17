@@ -28,13 +28,13 @@ export class DepositItems implements BehaviorNode {
         if (!chestBlock || chestBlock.name !== 'chest') {
             // Chest was destroyed, clear the POI
             if (bb.farmChest) {
-                console.log(`[BT] Farm chest missing, clearing POI`);
+                bb.log?.debug(`[BT] Farm chest missing, clearing POI`);
                 bb.farmChest = null;
             }
             return 'failure';
         }
 
-        console.log(`[BT] Depositing items at farm chest ${chestPos}`);
+        bb.log?.debug(`[BT] Depositing items at farm chest ${chestPos}`);
         bb.lastAction = 'deposit';
 
         try {
@@ -44,7 +44,7 @@ export class DepositItems implements BehaviorNode {
                 { timeoutMs: 15000 }
             );
             if (!result.success) {
-                console.log(`[BT] Failed to reach deposit chest: ${result.failureReason}`);
+                bb.log?.debug(`[BT] Failed to reach deposit chest: ${result.failureReason}`);
                 return 'failure';
             }
             bot.pathfinder.stop();
@@ -82,7 +82,7 @@ export class DepositItems implements BehaviorNode {
             container.close();
             return 'success';
         } catch (err) {
-            console.log(`[BT] Failed to deposit: ${err}`);
+            bb.log?.debug(`[BT] Failed to deposit: ${err}`);
             return 'failure';
         }
     }

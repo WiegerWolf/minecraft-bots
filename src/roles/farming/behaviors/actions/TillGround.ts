@@ -40,14 +40,14 @@ export class TillGround implements BehaviorNode {
         }
 
         if (!target) {
-            console.log(`[BT] No tillable blocks found near farm center ${bb.farmCenter}`);
+            bb.log?.debug({ farmCenter: bb.farmCenter?.toString() }, 'No tillable blocks found near farm center');
             return 'failure';
         }
 
         const hoe = bot.inventory.items().find(i => i.name.includes('hoe'));
         if (!hoe) return 'failure';
 
-        console.log(`[BT] Tilling ground at ${target.position}`);
+        bb.log?.debug({ pos: target.position.toString() }, 'Tilling ground');
         bb.lastAction = 'till';
 
         try {
@@ -59,11 +59,11 @@ export class TillGround implements BehaviorNode {
                     { timeoutMs: 15000 }
                 );
                 if (!result.success) {
-                    console.log(`[BT] Failed to reach till target: ${result.failureReason}`);
+                    bb.log?.warn({ reason: result.failureReason }, 'Failed to reach till target');
                     return 'failure';
                 }
             } else {
-                console.log(`[BT] Already within reach of ${target.position}, skipping movement`);
+                bb.log?.debug({ pos: target.position.toString() }, 'Already within reach, skipping movement');
             }
             bot.pathfinder.stop();
 
@@ -77,9 +77,9 @@ export class TillGround implements BehaviorNode {
                 // Verify tilling worked
                 const afterBlock = bot.blockAt(target.position);
                 if (afterBlock?.name === 'farmland') {
-                    console.log(`[BT] Successfully created farmland at ${target.position}`);
+                    bb.log?.debug({ pos: target.position.toString() }, 'Successfully created farmland');
                 } else {
-                    console.log(`[BT] Tilling may have failed - block is ${afterBlock?.name} not farmland`);
+                    bb.log?.warn({ pos: target.position.toString(), blockName: afterBlock?.name }, 'Tilling may have failed');
                 }
             }
             return 'success';

@@ -66,18 +66,8 @@ export class TerraformAreaAction extends BaseGOAPAction {
     const hasPickaxe = ws.getBool('has.pickaxe');
     const hasAnyTool = ws.getBool('derived.hasAnyTool');
 
-    // Debug logging
-    console.log(`[TerraformAreaAction] Precondition check: pending=${hasPending}, shovel=${hasShovel}, pickaxe=${hasPickaxe}, anyTool=${hasAnyTool}`);
-
-    if (!hasPending) {
-      console.log('[TerraformAreaAction] FAILED: no pending terraform request');
-      return false;
-    }
-
-    if (!hasShovel && !hasPickaxe && !hasAnyTool) {
-      console.log('[TerraformAreaAction] FAILED: no tools');
-      return false;
-    }
+    if (!hasPending) return false;
+    if (!hasShovel && !hasPickaxe && !hasAnyTool) return false;
 
     return true;
   }
@@ -116,15 +106,8 @@ export class CraftShovelAction extends BaseGOAPAction {
   override checkPreconditions(ws: WorldState): boolean {
     const hasShovel = ws.getBool('has.shovel');
     const logs = ws.getNumber('inv.logs');
-    console.log(`[CraftShovelAction] Precondition check: hasShovel=${hasShovel}, inv.logs=${logs}`);
-    if (hasShovel) {
-      console.log('[CraftShovelAction] FAILED: already has shovel');
-      return false;
-    }
-    if (logs < 2) {
-      console.log('[CraftShovelAction] FAILED: not enough logs');
-      return false;
-    }
+    if (hasShovel) return false;
+    if (logs < 2) return false;
     return true;
   }
 
@@ -303,15 +286,8 @@ export class CheckSharedChestAction extends BaseGOAPAction {
   override checkPreconditions(ws: WorldState): boolean {
     const hasStorageAccess = ws.getBool('derived.hasStorageAccess');
     const logs = ws.getNumber('inv.logs');
-    console.log(`[CheckSharedChestAction] Precondition check: hasStorageAccess=${hasStorageAccess}, inv.logs=${logs}`);
-    if (!hasStorageAccess) {
-      console.log('[CheckSharedChestAction] FAILED: no storage access');
-      return false;
-    }
-    if (logs >= 2) {
-      console.log('[CheckSharedChestAction] FAILED: already has enough logs');
-      return false;
-    }
+    if (!hasStorageAccess) return false;
+    if (logs >= 2) return false;
     return true;
   }
 

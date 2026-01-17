@@ -27,7 +27,7 @@ export class CraftChest implements BehaviorNode {
         if (!bb.villageCenter) {
             const pos = bot.entity.position.floored();
             bb.villageCenter = pos;
-            console.log(`[Lumberjack] Establishing village center at ${pos}`);
+            bb.log?.debug(`[Lumberjack] Establishing village center at ${pos}`);
             if (bb.villageChat) {
                 bb.villageChat.announceVillageCenter(pos);
             }
@@ -37,7 +37,7 @@ export class CraftChest implements BehaviorNode {
         if (bb.plankCount < 8) {
             // Try to craft more planks if we have logs
             if (bb.logCount < 2) {
-                console.log('[Lumberjack] Need more logs to craft planks for chest');
+                bb.log?.debug('[Lumberjack] Need more logs to craft planks for chest');
                 return 'failure';
             }
 
@@ -45,13 +45,13 @@ export class CraftChest implements BehaviorNode {
             if (!craftedPlanks) return 'failure';
         }
 
-        console.log('[Lumberjack] Crafting chest...');
+        bb.log?.debug('[Lumberjack] Crafting chest...');
         bb.lastAction = 'craft_chest';
 
         // Find or place a crafting table
         const craftingTable = await this.findOrPlaceCraftingTable(bot, bb);
         if (!craftingTable) {
-            console.log('[Lumberjack] Cannot craft chest - no crafting table');
+            bb.log?.debug('[Lumberjack] Cannot craft chest - no crafting table');
             return 'failure';
         }
 
@@ -61,7 +61,7 @@ export class CraftChest implements BehaviorNode {
             // Place the chest at village center
             const placed = await this.placeChestAtVillageCenter(bot, bb);
             if (placed) {
-                console.log(`[Lumberjack] Chest placed at ${bb.sharedChest}`);
+                bb.log?.debug(`[Lumberjack] Chest placed at ${bb.sharedChest}`);
                 return 'success';
             }
             return 'failure';
@@ -84,7 +84,7 @@ export class CraftChest implements BehaviorNode {
 
             // Craft 2 logs to get 8 planks (1 log = 4 planks)
             await bot.craft(recipe, 2);
-            console.log(`[Lumberjack] Crafted planks for chest`);
+            bb.log?.debug(`[Lumberjack] Crafted planks for chest`);
             await sleep(100);
 
             // Update counts
@@ -98,7 +98,7 @@ export class CraftChest implements BehaviorNode {
 
             return true;
         } catch (error) {
-            console.warn(`[Lumberjack] Failed to craft planks:`, error);
+            bb.log?.warn({ err: error }, 'Failed to craft planks');
             return false;
         }
     }
@@ -131,7 +131,7 @@ export class CraftChest implements BehaviorNode {
         if (!tableItem) {
             // Try to craft one (4 planks)
             if (bb.plankCount < 4) {
-                console.log('[Lumberjack] Not enough planks to craft crafting table');
+                bb.log?.debug('[Lumberjack] Not enough planks to craft crafting table');
                 return null;
             }
 
@@ -143,11 +143,11 @@ export class CraftChest implements BehaviorNode {
 
             try {
                 await bot.craft(recipe, 1);
-                console.log(`[Lumberjack] Crafted crafting table`);
+                bb.log?.debug(`[Lumberjack] Crafted crafting table`);
                 await sleep(100);
                 tableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
             } catch (error) {
-                console.warn(`[Lumberjack] Failed to craft crafting table:`, error);
+                bb.log?.warn({ err: error }, 'Failed to craft crafting table');
                 return null;
             }
         }
@@ -176,7 +176,7 @@ export class CraftChest implements BehaviorNode {
                             await sleep(200);
                             const placedTable = bot.blockAt(placePos);
                             if (placedTable && placedTable.name === 'crafting_table') {
-                                console.log(`[Lumberjack] Placed crafting table at ${placePos}`);
+                                bb.log?.debug(`[Lumberjack] Placed crafting table at ${placePos}`);
                                 if (bb.villageChat) {
                                     bb.villageChat.announceSharedCraftingTable(placePos);
                                     bb.sharedCraftingTable = placePos;
@@ -184,7 +184,7 @@ export class CraftChest implements BehaviorNode {
                                 return placedTable;
                             }
                         } catch (error) {
-                            console.warn(`[Lumberjack] Failed to place crafting table:`, error);
+                            bb.log?.warn({ err: error }, 'Failed to place crafting table');
                         }
                     }
                 }
@@ -204,7 +204,7 @@ export class CraftChest implements BehaviorNode {
                         await sleep(200);
                         const placedTable = bot.blockAt(fallbackPos);
                         if (placedTable && placedTable.name === 'crafting_table') {
-                            console.log(`[Lumberjack] Placed crafting table at ${fallbackPos}`);
+                            bb.log?.debug(`[Lumberjack] Placed crafting table at ${fallbackPos}`);
                             if (bb.villageChat && bb.villageCenter) {
                                 bb.villageChat.announceSharedCraftingTable(fallbackPos);
                                 bb.sharedCraftingTable = fallbackPos;
@@ -212,7 +212,7 @@ export class CraftChest implements BehaviorNode {
                             return placedTable;
                         }
                     } catch (error) {
-                        console.warn(`[Lumberjack] Failed to place crafting table:`, error);
+                        bb.log?.warn({ err: error }, 'Failed to place crafting table');
                     }
                 }
             }
@@ -230,28 +230,23 @@ export class CraftChest implements BehaviorNode {
                 { timeoutMs: 15000 }
             );
             if (!result.success) {
-                console.log(`[Lumberjack] Failed to reach crafting table: ${result.failureReason}`);
                 return 'failure';
             }
 
             // Get chest recipe
             const chestId = bot.registry.itemsByName['chest']?.id;
             if (!chestId) {
-                console.log('[Lumberjack] Cannot find chest in registry');
                 return 'failure';
             }
 
             const recipe = bot.recipesFor(chestId, null, 1, craftingTable)[0];
             if (!recipe) {
-                console.log('[Lumberjack] No recipe found for chest');
                 return 'failure';
             }
 
             await bot.craft(recipe, 1, craftingTable);
-            console.log(`[Lumberjack] Crafted chest!`);
             return 'success';
-        } catch (error) {
-            console.warn(`[Lumberjack] Failed to craft chest:`, error);
+        } catch {
             return 'failure';
         }
     }
@@ -294,7 +289,7 @@ export class CraftChest implements BehaviorNode {
                         return true;
                     }
                 } catch (error) {
-                    console.warn(`[Lumberjack] Failed to place chest:`, error);
+                    bb.log?.warn({ err: error }, 'Failed to place chest');
                 }
             }
         }
@@ -328,7 +323,7 @@ export class CraftChest implements BehaviorNode {
                             return true;
                         }
                     } catch (error) {
-                        console.warn(`[Lumberjack] Failed to place chest:`, error);
+                        bb.log?.warn({ err: error }, 'Failed to place chest');
                     }
                 }
             }

@@ -4,6 +4,7 @@ import { Movements } from 'mineflayer-pathfinder';
 import { createLumberjackBlackboard, updateLumberjackBlackboard, type LumberjackBlackboard } from './LumberjackBlackboard';
 import { createLumberjackBehaviorTree, type BehaviorNode } from './behaviors';
 import { VillageChat } from '../../shared/VillageChat';
+import { createChildLogger, type Logger } from '../../shared/logger';
 
 export class LumberjackRole implements Role {
     name = 'lumberjack';
@@ -12,16 +13,24 @@ export class LumberjackRole implements Role {
     private blackboard: LumberjackBlackboard;
     private behaviorTree: BehaviorNode;
     private villageChat: VillageChat | null = null;
+    private logger: Logger | null = null;
+    private log: Logger | null = null;
 
     constructor() {
         this.blackboard = createLumberjackBlackboard();
         this.behaviorTree = createLumberjackBehaviorTree();
     }
 
-    start(bot: Bot, options?: any) {
+    start(bot: Bot, options?: { logger?: Logger }) {
         if (this.active) return;
         this.active = true;
         this.bot = bot;
+
+        // Initialize logger
+        if (options?.logger) {
+            this.logger = options.logger;
+            this.log = createChildLogger(this.logger, 'Lumberjack');
+        }
 
         // Configure pathfinder
         const movements = new Movements(bot);
@@ -47,7 +56,7 @@ export class LumberjackRole implements Role {
                 message.includes('Path was stopped')) {
                 return;
             }
-            console.error('[Lumberjack] Unhandled rejection:', reason);
+            this.log?.error({ reason }, 'Unhandled rejection');
         });
 
         // Suppress unhandled exceptions
@@ -59,10 +68,10 @@ export class LumberjackRole implements Role {
                 return;
             }
             if (err.message?.includes('RangeError') || err.message?.includes('out of bounds')) {
-                console.warn('[Lumberjack] Protocol error (ignored):', err.message);
+                this.log?.warn({ err: err.message }, 'Protocol error (ignored)');
                 return;
             }
-            console.error('[Lumberjack] Uncaught exception:', err);
+            this.log?.error({ err }, 'Uncaught exception');
         });
 
         // Initialize blackboard
@@ -72,7 +81,7 @@ export class LumberjackRole implements Role {
         this.villageChat = new VillageChat(bot);
         this.blackboard.villageChat = this.villageChat;
 
-        console.log('[Lumberjack] Lumberjack Role started.');
+        this.log?.info('Lumberjack Role started');
         this.loop();
     }
 
@@ -80,7 +89,7 @@ export class LumberjackRole implements Role {
         this.active = false;
         this.bot = null;
         bot.pathfinder.stop();
-        console.log('[Lumberjack] Lumberjack Role stopped.');
+        this.log?.info('Lumberjack Role stopped');
     }
 
     private isBotConnected(): boolean {
@@ -101,7 +110,7 @@ export class LumberjackRole implements Role {
         while (this.active && this.bot) {
             // Check for zombie state
             if (!this.isBotConnected()) {
-                console.error('[Lumberjack] Connection lost - stopping role');
+                this.log?.error('Connection lost - stopping role');
                 this.active = false;
                 break;
             }
@@ -147,11 +156,11 @@ export class LumberjackRole implements Role {
                         continue;
                     }
                     if (msg.includes('RangeError') || msg.includes('out of bounds')) {
-                        console.warn('[Lumberjack] Protocol error (continuing):', msg);
+                        this.log?.warn({ err: msg }, 'Protocol error (continuing)');
                         continue;
                     }
                 }
-                console.error('[Lumberjack] Loop error:', error);
+                this.log?.error({ err: error }, 'Loop error');
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
         }
@@ -159,6 +168,14 @@ export class LumberjackRole implements Role {
 
     private logStatus() {
         const bb = this.blackboard;
-        console.log(`[Lumberjack Status] Axe:${bb.hasAxe} Logs:${bb.logCount} Planks:${bb.plankCount} Sticks:${bb.stickCount} Trees:${bb.nearbyTrees.length} Village:${bb.villageCenter || 'none'} Requests:${bb.hasPendingRequests}`);
+        this.log?.info({
+            hasAxe: bb.hasAxe,
+            logs: bb.logCount,
+            planks: bb.plankCount,
+            sticks: bb.stickCount,
+            trees: bb.nearbyTrees.length,
+            village: bb.villageCenter?.toString() || 'none',
+            requests: bb.hasPendingRequests,
+        }, 'Status');
     }
 }

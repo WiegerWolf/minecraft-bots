@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import type { Logger } from './logger';
 
 /**
  * Chat-based village communication system.
@@ -56,12 +57,14 @@ export class VillageChat {
     };
 
     private bot: Bot;
+    private log: Logger | null = null;
     private onRequestCallback: ((request: ResourceRequest) => void) | null = null;
     private onTerraformRequestCallback: ((request: TerraformRequest) => void) | null = null;
     private onTerraformDoneCallback: ((pos: Vec3) => void) | null = null;
 
-    constructor(bot: Bot) {
+    constructor(bot: Bot, logger?: Logger) {
         this.bot = bot;
+        this.log = logger ?? null;
         this.setupChatListener();
     }
 
@@ -72,7 +75,7 @@ export class VillageChat {
 
             // Debug: log all received village-related chat
             if (message.startsWith('[')) {
-                console.log(`[VillageChat] ${this.bot.username} received from ${username}: ${message}`);
+                this.log?.debug({ from: username, message }, 'Received village chat');
             }
 
             // Parse village messages
@@ -82,7 +85,7 @@ export class VillageChat {
                     const pos = new Vec3(parseInt(match[1]!), parseInt(match[2]!), parseInt(match[3]!));
                     if (!this.state.villageCenter) {
                         this.state.villageCenter = pos;
-                        console.log(`[VillageChat] Learned village center from ${username}: ${pos}`);
+                        this.log?.info({ from: username, pos: pos.toString() }, 'Learned village center');
                     }
                 }
             }
@@ -93,7 +96,7 @@ export class VillageChat {
                 if (match) {
                     const pos = new Vec3(parseInt(match[1]!), parseInt(match[2]!), parseInt(match[3]!));
                     this.state.sharedChest = pos;
-                    console.log(`[VillageChat] Learned shared chest from ${username}: ${pos}`);
+                    this.log?.info({ from: username, pos: pos.toString() }, 'Learned shared chest');
                 }
             }
 
@@ -103,7 +106,7 @@ export class VillageChat {
                 if (match) {
                     const pos = new Vec3(parseInt(match[1]!), parseInt(match[2]!), parseInt(match[3]!));
                     this.state.sharedCraftingTable = pos;
-                    console.log(`[VillageChat] Learned shared crafting table from ${username}: ${pos}`);
+                    this.log?.info({ from: username, pos: pos.toString() }, 'Learned shared crafting table');
                 }
             }
 
@@ -123,7 +126,7 @@ export class VillageChat {
                     );
                     if (!isDupe) {
                         this.state.pendingRequests.push(request);
-                        console.log(`[VillageChat] ${username} requested ${request.quantity}x ${request.item}`);
+                        this.log?.info({ from: username, item: request.item, quantity: request.quantity }, 'Resource request received');
                         if (this.onRequestCallback) {
                             this.onRequestCallback(request);
                         }
@@ -141,7 +144,7 @@ export class VillageChat {
                     this.state.pendingRequests = this.state.pendingRequests.filter(r =>
                         !(r.from === forBot && r.item === item)
                     );
-                    console.log(`[VillageChat] ${username} fulfilled ${item} request for ${forBot}`);
+                    this.log?.info({ from: username, item, forBot }, 'Request fulfilled');
                 }
             }
 
@@ -156,7 +159,7 @@ export class VillageChat {
                         timestamp: Date.now()
                     };
                     this.state.lastDepositNotification = notification;
-                    console.log(`[VillageChat] ${username} deposited ${notification.quantity}x ${notification.item} to shared chest`);
+                    this.log?.info({ from: username, item: notification.item, quantity: notification.quantity }, 'Deposit notification received');
                 }
             }
 
@@ -177,7 +180,7 @@ export class VillageChat {
                             status: 'pending'
                         };
                         this.state.pendingTerraformRequests.push(request);
-                        console.log(`[VillageChat] ${username} requested terraform at ${pos}`);
+                        this.log?.info({ from: username, pos: pos.toString() }, 'Terraform request received');
                         if (this.onTerraformRequestCallback) {
                             this.onTerraformRequestCallback(request);
                         }
@@ -196,7 +199,7 @@ export class VillageChat {
                     if (request) {
                         request.status = 'claimed';
                         request.claimedBy = username;
-                        console.log(`[VillageChat] ${username} claimed terraform at ${pos}`);
+                        this.log?.info({ from: username, pos: pos.toString() }, 'Terraform claimed');
                     }
                 }
             }
@@ -211,7 +214,7 @@ export class VillageChat {
                     );
                     if (request) {
                         request.status = 'done';
-                        console.log(`[VillageChat] ${username} completed terraform at ${pos}`);
+                        this.log?.info({ from: username, pos: pos.toString() }, 'Terraform completed');
                         if (this.onTerraformDoneCallback) {
                             this.onTerraformDoneCallback(pos);
                         }
@@ -230,7 +233,7 @@ export class VillageChat {
                     if (request) {
                         request.status = 'pending';
                         request.claimedBy = undefined;
-                        console.log(`[VillageChat] ${username} released terraform claim at ${pos}`);
+                        this.log?.info({ from: username, pos: pos.toString() }, 'Terraform claim released');
                     }
                 }
             }

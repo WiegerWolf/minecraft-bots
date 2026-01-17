@@ -21,18 +21,18 @@ export class GOAPLumberjackRole extends GOAPRole {
 
   constructor(config?: GOAPRoleConfig) {
     super(config);
-    console.log('[GOAPLumberjackRole] Initialized with GOAP planning system');
+    this.log?.info('Initialized with GOAP planning system');
   }
 
   protected getActions(): GOAPAction[] {
     const actions = createLumberjackActions();
-    console.log(`[GOAPLumberjackRole] Actions: ${actions.map(a => a.name).join(', ')}`);
+    this.log?.debug({ actions: actions.map(a => a.name) }, 'Registered actions');
     return actions;
   }
 
   protected getGoals(): Goal[] {
     const goals = createLumberjackGoals();
-    console.log(`[GOAPLumberjackRole] Goals: ${goals.map(g => g.name).join(', ')}`);
+    this.log?.debug({ goals: goals.map(g => g.name) }, 'Registered goals');
     return goals;
   }
 
@@ -53,7 +53,7 @@ export class GOAPLumberjackRole extends GOAPRole {
     movements.digCost = 10;
     bot.pathfinder.setMovements(movements);
 
-    console.log('[GOAPLumberjackRole] Starting GOAP lumberjack bot');
+    this.log?.info('Starting GOAP lumberjack bot');
     super.start(bot, options);
 
     // Initialize village chat if blackboard was created
@@ -64,7 +64,7 @@ export class GOAPLumberjackRole extends GOAPRole {
   }
 
   override stop(bot: Bot): void {
-    console.log('[GOAPLumberjackRole] Stopping GOAP lumberjack bot');
+    this.log?.info('Stopping GOAP lumberjack bot');
     super.stop(bot);
   }
 }

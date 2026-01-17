@@ -3,9 +3,13 @@ import { watch } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { faker } from '@faker-js/faker';
+import { createManagerLogger } from './shared/logger';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Manager logger
+const log = createManagerLogger();
 
 const BOT_PATH = resolve(__dirname, "bot.ts");
 
@@ -42,8 +46,7 @@ function parseBotSelection(): typeof ALL_BOT_CONFIGS {
     );
 
     if (!matchedConfig) {
-        console.error(`Unknown bot: "${alias}"`);
-        console.error(`Available bots: ${ALL_BOT_CONFIGS.map(c => c.aliases.join('/')).join(', ')}`);
+        log.error({ alias, available: ALL_BOT_CONFIGS.map(c => c.aliases.join('/')) }, 'Unknown bot');
         process.exit(1);
     }
 
@@ -90,7 +93,7 @@ async function startBot(config: { role: string; roleLabel: string }, isRestart =
     // Kill existing bot if restarting
     const existingProcess = botProcesses.get(configKey);
     if (existingProcess) {
-        console.log(`♻️ Restarting ${config.roleLabel} bot due to file change...`);
+        log.info({ bot: config.roleLabel }, 'Restarting bot due to file change');
         existingProcess.kill();
 
         if (existingProcess.exited) {
@@ -98,7 +101,7 @@ async function startBot(config: { role: string; roleLabel: string }, isRestart =
         }
         reconnectAttempts.set(configKey, 0);
     } else if (!isRestart) {
-        console.log(`🚀 Starting ${config.roleLabel} bot...`);
+        log.info({ bot: config.roleLabel }, 'Starting bot');
     }
 
     const botName = generateBotName(config.roleLabel);
@@ -135,7 +138,7 @@ async function startBot(config: { role: string; roleLabel: string }, isRestart =
             if (text.includes("✅ Bot has spawned!")) {
                 const attempts = reconnectAttempts.get(configKey) || 0;
                 if (attempts > 0) {
-                    console.log(`✨ ${config.roleLabel} bot reconnected successfully! Resetting backoff.`);
+                    log.info({ bot: config.roleLabel }, 'Bot reconnected successfully, resetting backoff');
                 }
                 reconnectAttempts.set(configKey, 0);
             }
@@ -151,7 +154,7 @@ async function startBot(config: { role: string; roleLabel: string }, isRestart =
         if (exitCode !== 0 && exitCode !== null) {
             const attempts = reconnectAttempts.get(configKey) || 0;
             const delay = Math.min(INITIAL_BACKOFF * Math.pow(2, attempts), MAX_BACKOFF);
-            console.log(`⚠️ ${config.roleLabel} bot exited with code ${exitCode}. Reconnecting in ${delay / 1000}s...`);
+            log.warn({ bot: config.roleLabel, exitCode, delaySeconds: delay / 1000 }, 'Bot exited, reconnecting');
             reconnectAttempts.set(configKey, attempts + 1);
 
             const timeout = setTimeout(() => {
@@ -160,7 +163,7 @@ async function startBot(config: { role: string; roleLabel: string }, isRestart =
             }, delay);
             retryTimeouts.set(configKey, timeout);
         } else {
-            console.log(`✅ ${config.roleLabel} bot exited cleanly (or was killed for restart).`);
+            log.info({ bot: config.roleLabel }, 'Bot exited cleanly');
         }
     });
 }
@@ -182,7 +185,7 @@ startAllBots();
 
 const botCount = BOT_CONFIGS.length;
 const botNames = BOT_CONFIGS.map(c => c.roleLabel).join(', ');
-console.log(`👀 Watching ${__dirname} for changes... (${botCount} bot${botCount > 1 ? 's' : ''}: ${botNames})`);
+log.info({ directory: __dirname, botCount, bots: botNames }, 'Watching for changes');
 let watchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 watch(__dirname, { recursive: true }, (event, filename) => {
@@ -193,7 +196,7 @@ watch(__dirname, { recursive: true }, (event, filename) => {
         if (watchTimeout) clearTimeout(watchTimeout);
 
         watchTimeout = setTimeout(async () => {
-            console.log(`📝 Change detected in ${filename}`);
+            log.info({ filename }, 'Change detected');
             // Restart all bots on file change
             for (const config of BOT_CONFIGS) {
                 await startBot(config);
@@ -204,10 +207,10 @@ watch(__dirname, { recursive: true }, (event, filename) => {
 });
 
 process.on("SIGINT", () => {
-    console.log("\n🛑 Stopping hot-reload manager...");
-    for (const [role, process] of botProcesses) {
-        console.log(`  Killing ${role} bot...`);
-        process.kill();
+    log.info('Stopping hot-reload manager');
+    for (const [role, proc] of botProcesses) {
+        log.info({ role }, 'Killing bot');
+        proc.kill();
     }
     process.exit();
 });

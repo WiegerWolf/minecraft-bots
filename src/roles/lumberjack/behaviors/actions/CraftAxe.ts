@@ -27,7 +27,7 @@ export class CraftAxe implements BehaviorNode {
         if (bb.plankCount < 3) {
             // Try to craft planks from logs
             if (bb.logCount < 1) {
-                console.log('[Lumberjack] Need logs to craft planks for axe');
+                bb.log?.debug('[Lumberjack] Need logs to craft planks for axe');
                 return 'failure';
             }
 
@@ -43,7 +43,7 @@ export class CraftAxe implements BehaviorNode {
         // Now ensure we have sticks
         if (bb.stickCount < 2) {
             if (bb.plankCount < 2) {
-                console.log('[Lumberjack] Need more planks for sticks');
+                bb.log?.debug('[Lumberjack] Need more planks for sticks');
                 return 'failure';
             }
 
@@ -63,7 +63,7 @@ export class CraftAxe implements BehaviorNode {
             // Find or place crafting table
             const craftingTable = await this.findOrPlaceCraftingTable(bot, bb);
             if (!craftingTable) {
-                console.log('[Lumberjack] Cannot craft axe - no crafting table');
+                bb.log?.debug('[Lumberjack] Cannot craft axe - no crafting table');
                 return 'failure';
             }
 
@@ -87,11 +87,9 @@ export class CraftAxe implements BehaviorNode {
             if (!recipe) return false;
 
             await bot.craft(recipe, 1);
-            console.log(`[Lumberjack] Crafted planks`);
             await sleep(100);
             return true;
-        } catch (error) {
-            console.warn(`[Lumberjack] Failed to craft planks:`, error);
+        } catch {
             return false;
         }
     }
@@ -105,11 +103,9 @@ export class CraftAxe implements BehaviorNode {
             if (!recipe) return false;
 
             await bot.craft(recipe, 1);
-            console.log(`[Lumberjack] Crafted sticks`);
             await sleep(100);
             return true;
-        } catch (error) {
-            console.warn(`[Lumberjack] Failed to craft sticks:`, error);
+        } catch {
             return false;
         }
     }
@@ -143,7 +139,7 @@ export class CraftAxe implements BehaviorNode {
         if (!tableItem) {
             // Try to craft one (4 planks)
             if (bb.plankCount < 4) {
-                console.log('[Lumberjack] Not enough planks to craft crafting table');
+                bb.log?.debug('[Lumberjack] Not enough planks to craft crafting table');
                 return null;
             }
 
@@ -155,10 +151,10 @@ export class CraftAxe implements BehaviorNode {
 
             try {
                 await bot.craft(recipe, 1);
-                console.log(`[Lumberjack] Crafted crafting table`);
+                bb.log?.debug(`[Lumberjack] Crafted crafting table`);
                 await sleep(100);
             } catch (error) {
-                console.warn(`[Lumberjack] Failed to craft crafting table:`, error);
+                bb.log?.warn({ err: error }, 'Failed to craft crafting table');
                 return null;
             }
         }
@@ -202,7 +198,7 @@ export class CraftAxe implements BehaviorNode {
                     await sleep(50);
 
                     await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
-                    console.log(`[Lumberjack] Placed crafting table at ${placePos}`);
+                    bb.log?.debug(`[Lumberjack] Placed crafting table at ${placePos}`);
                     await sleep(200);
 
                     const placedTable = bot.blockAt(placePos);
@@ -215,7 +211,7 @@ export class CraftAxe implements BehaviorNode {
                         return placedTable;
                     }
                 } catch (error) {
-                    console.warn(`[Lumberjack] Failed to place crafting table at ${placePos}:`, error);
+                    bb.log?.warn({ err: error, pos: placePos.toString() }, 'Failed to place crafting table');
                     // Continue trying other positions
                 }
             }
@@ -233,28 +229,23 @@ export class CraftAxe implements BehaviorNode {
                 { timeoutMs: 15000 }
             );
             if (!result.success) {
-                console.log(`[Lumberjack] Failed to reach crafting table: ${result.failureReason}`);
                 return 'failure';
             }
 
             // Get wooden axe recipe
             const axeId = bot.registry.itemsByName['wooden_axe']?.id;
             if (!axeId) {
-                console.log('[Lumberjack] Cannot find wooden axe in registry');
                 return 'failure';
             }
 
             const recipe = bot.recipesFor(axeId, null, 1, craftingTable)[0];
             if (!recipe) {
-                console.log('[Lumberjack] No recipe found for wooden axe');
                 return 'failure';
             }
 
             await bot.craft(recipe, 1, craftingTable);
-            console.log(`[Lumberjack] Crafted wooden axe!`);
             return 'success';
-        } catch (error) {
-            console.warn(`[Lumberjack] Failed to craft axe:`, error);
+        } catch {
             return 'failure';
         }
     }

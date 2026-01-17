@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import type { Logger } from './logger';
 
 // ============================================================================
 // Types
@@ -105,9 +106,9 @@ function isStuck(samples: PositionSample[], config: StuckDetectionConfig): boole
 /**
  * Attempt a recovery action to free a stuck bot.
  */
-async function attemptRecovery(bot: Bot, action: RecoveryAction, debug: boolean): Promise<boolean> {
+async function attemptRecovery(bot: Bot, action: RecoveryAction, debug: boolean, log?: Logger | null): Promise<boolean> {
     if (debug) {
-        console.log(`[Pathfinder] Attempting recovery: ${action}`);
+        log?.debug({ action }, 'Attempting recovery');
     }
 
     try {
@@ -140,7 +141,7 @@ async function attemptRecovery(bot: Bot, action: RecoveryAction, debug: boolean)
                 return true;
 
             case 'clear_path':
-                await clearPath(bot);
+                await clearPath(bot, log);
                 await sleep(300);
                 return true;
 
@@ -158,7 +159,7 @@ async function attemptRecovery(bot: Bot, action: RecoveryAction, debug: boolean)
         }
     } catch (err) {
         if (debug) {
-            console.log(`[Pathfinder] Recovery action ${action} failed: ${err}`);
+            log?.debug({ action, err }, 'Recovery action failed');
         }
         return false;
     }
@@ -250,11 +251,13 @@ export async function smartPathfinderGoto(
         stuckDetection?: Partial<StuckDetectionConfig>;  // Kept for API compatibility
         knightMoveRecovery?: boolean;  // Enable knight's move recovery (default: true)
         debug?: boolean;
+        logger?: Logger | null;
     }
 ): Promise<PathfindingResult> {
     const timeoutMs = options?.timeoutMs ?? 30000;
     const knightMoveRecovery = options?.knightMoveRecovery ?? true;
     const debug = options?.debug ?? false;
+    const log = options?.logger;
     const startTime = Date.now();
 
     // First attempt: direct pathfinding
@@ -314,14 +317,14 @@ export async function smartPathfinderGoto(
     // ========================================================================
     // Knight's Move Recovery
     // ========================================================================
-    if (debug) console.log(`[Pathfinder] Direct path failed, attempting knight's move recovery`);
+    if (debug) log?.debug('Direct path failed, attempting knight\'s move recovery');
 
     const botPos = bot.entity.position;
     const toGoal = goalPos.minus(botPos);
     const distToGoal = toGoal.norm();
 
     // Step 1: Back out - walk opposite direction
-    if (debug) console.log(`[Pathfinder] Step 1: Backing out`);
+    if (debug) log?.debug('Step 1: Backing out');
     const backDirection = toGoal.scaled(-1 / distToGoal); // Normalize and reverse
     await walkDirection(bot, backDirection, 4);
 
@@ -331,11 +334,11 @@ export async function smartPathfinderGoto(
     // Randomly pick left or right
     const sideDirection = Math.random() > 0.5 ? perpendicular : perpendicular.scaled(-1);
 
-    if (debug) console.log(`[Pathfinder] Step 2: Moving sideways`);
+    if (debug) log?.debug('Step 2: Moving sideways');
     await walkDirection(bot, sideDirection, 5);
 
     // Step 3: Try pathfinding again from new position
-    if (debug) console.log(`[Pathfinder] Step 3: Attempting path from new angle`);
+    if (debug) log?.debug('Step 3: Attempting path from new angle');
     const recoveryTimeoutMs = Math.max(timeoutMs - (Date.now() - startTime), 5000);
     const recoveryResult = await pathfindWithTimeout(bot, goal, recoveryTimeoutMs);
 
@@ -343,7 +346,7 @@ export async function smartPathfinderGoto(
     const elapsedMs = Date.now() - startTime;
 
     if (recoveryResult.success) {
-        if (debug) console.log(`[Pathfinder] Knight's move recovery succeeded!`);
+        if (debug) log?.debug('Knight\'s move recovery succeeded');
         return {
             success: true,
             recoveryAttempts: 1,
@@ -354,7 +357,7 @@ export async function smartPathfinderGoto(
 
     // Recovery failed - check if we at least got closer
     if (finalDistance < currentDist * 0.7) {
-        if (debug) console.log(`[Pathfinder] Recovery partial success - got closer (${currentDist.toFixed(1)} -> ${finalDistance.toFixed(1)})`);
+        if (debug) log?.debug({ fromDist: currentDist.toFixed(1), toDist: finalDistance.toFixed(1) }, 'Recovery partial success - got closer');
         // Consider it a success if we got significantly closer
         return {
             success: true,
@@ -364,7 +367,7 @@ export async function smartPathfinderGoto(
         };
     }
 
-    if (debug) console.log(`[Pathfinder] Knight's move recovery failed`);
+    if (debug) log?.debug('Knight\'s move recovery failed');
     return {
         success: false,
         failureReason: isTimeout ? 'timeout' : 'unreachable',
@@ -404,7 +407,7 @@ export async function pathfinderGotoWithTimeout(
 /**
  * Attempts to clear a path by breaking nearby blocks that might be obstructing the bot.
  */
-export async function clearPath(bot: Bot): Promise<void> {
+export async function clearPath(bot: Bot, log?: Logger | null): Promise<void> {
     // Check for blocks around the bot that might be obstructing movement
     const searchPositions = [
         { x: 0, y: 0, z: 1 },  // Front
@@ -431,7 +434,7 @@ export async function clearPath(bot: Bot): Promise<void> {
                     await sleep(200);
                 }
             } catch (err) {
-                console.log(`Failed to break block at ${blockPos}: ${err}`);
+                log?.warn({ pos: blockPos.toString(), err }, 'Failed to break block');
             }
         }
     }
@@ -471,26 +474,27 @@ export async function pathfinderGotoWithRetry(
     bot: Bot,
     goal: any,
     maxRetries: number = 2,
-    timeoutMs: number = 5000
+    timeoutMs: number = 5000,
+    log?: Logger | null
 ): Promise<boolean> {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
-            console.log(`Pathfinding attempt ${attempt + 1} of ${maxRetries + 1}`);
+            log?.debug({ attempt: attempt + 1, maxRetries: maxRetries + 1 }, 'Pathfinding attempt');
             await pathfinderGotoWithTimeout(bot, goal, timeoutMs);
             return true; // Success
         } catch (err) {
-            console.log(`Pathfinding attempt ${attempt + 1} failed: ${err}`);
+            log?.debug({ attempt: attempt + 1, err }, 'Pathfinding attempt failed');
 
             // If this was a timeout, try to clear path before retrying
             if (isPathfinderTimeoutError(err) && attempt < maxRetries) {
-                console.log('Pathfinding timed out, attempting to clear path...');
-                await clearPath(bot);
+                log?.debug('Pathfinding timed out, attempting to clear path');
+                await clearPath(bot, log);
                 await sleep(1000); // Wait for dust to settle
             }
 
             // If we've reached max retries, give up
             if (attempt === maxRetries) {
-                console.log('All pathfinding attempts failed');
+                log?.warn('All pathfinding attempts failed');
                 return false;
             }
         }

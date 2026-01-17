@@ -54,7 +54,7 @@ export class PickupItems implements BehaviorNode {
 
         // If we've tried too many times, mark as unreachable in blackboard
         if (this.failedAttemptsAtTarget >= this.MAX_ATTEMPTS) {
-            console.log(`[Lumberjack] Item ${drop.id} at ${drop.position.floored()} unreachable after ${this.MAX_ATTEMPTS} attempts`);
+            bb.log?.debug(`[Lumberjack] Item ${drop.id} at ${drop.position.floored()} unreachable after ${this.MAX_ATTEMPTS} attempts`);
             // Mark in blackboard so it affects nearbyDrops count and goal utility
             bb.unreachableDrops.set(drop.id, now + UNREACHABLE_COOLDOWN);
             this.lastTargetId = null;
@@ -82,7 +82,7 @@ export class PickupItems implements BehaviorNode {
 
         // Move to pickup
         bb.lastAction = 'pickup_moving';
-        console.log(`[Lumberjack] Moving to pickup item at ${drop.position.floored()} (dist: ${dist.toFixed(1)})`);
+        bb.log?.debug(`[Lumberjack] Moving to pickup item at ${drop.position.floored()} (dist: ${dist.toFixed(1)})`);
 
         try {
             const result = await smartPathfinderGoto(
@@ -92,7 +92,7 @@ export class PickupItems implements BehaviorNode {
             );
 
             if (!result.success) {
-                console.log(`[Lumberjack] Pickup path failed: ${result.failureReason}`);
+                bb.log?.debug(`[Lumberjack] Pickup path failed: ${result.failureReason}`);
                 return 'failure';
             }
             return 'success';
@@ -100,7 +100,7 @@ export class PickupItems implements BehaviorNode {
             const msg = error instanceof Error ? error.message : 'unknown';
             // Don't log common pathfinding interruptions
             if (!msg.includes('goal was changed') && !msg.includes('Path was stopped')) {
-                console.log(`[Lumberjack] Pickup path error: ${msg}`);
+                bb.log?.debug(`[Lumberjack] Pickup path error: ${msg}`);
             }
             // Pathfinding failed counts as an attempt
             return 'failure';

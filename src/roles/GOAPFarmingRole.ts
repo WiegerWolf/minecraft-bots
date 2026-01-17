@@ -17,18 +17,18 @@ export class GOAPFarmingRole extends GOAPRole {
 
   constructor(config?: GOAPRoleConfig) {
     super(config);
-    console.log('[GOAPFarmingRole] Initialized with GOAP planning system');
+    this.log?.info('Initialized with GOAP planning system');
   }
 
   protected getActions(): GOAPAction[] {
     const actions = createFarmingActions();
-    console.log(`[GOAPFarmingRole] Actions: ${actions.map(a => a.name).join(', ')}`);
+    this.log?.debug({ actions: actions.map(a => a.name) }, 'Registered actions');
     return actions;
   }
 
   protected getGoals(): Goal[] {
     const goals = createFarmingGoals();
-    console.log(`[GOAPFarmingRole] Goals: ${goals.map(g => g.name).join(', ')}`);
+    this.log?.debug({ goals: goals.map(g => g.name) }, 'Registered goals');
     return goals;
   }
 
@@ -49,7 +49,7 @@ export class GOAPFarmingRole extends GOAPRole {
     movements.digCost = 10;
     bot.pathfinder.setMovements(movements);
 
-    console.log('[GOAPFarmingRole] Starting GOAP farming bot');
+    this.log?.info('Starting GOAP farming bot');
     super.start(bot, options);
 
     // Initialize village chat if blackboard was created
@@ -60,7 +60,7 @@ export class GOAPFarmingRole extends GOAPRole {
   }
 
   override stop(bot: Bot): void {
-    console.log('[GOAPFarmingRole] Stopping GOAP farming bot');
+    this.log?.info('Stopping GOAP farming bot');
     super.stop(bot);
   }
 }

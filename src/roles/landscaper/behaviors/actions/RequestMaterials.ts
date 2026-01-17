@@ -50,7 +50,7 @@ export class RequestMaterials implements BehaviorNode {
         this.lastRequestTime = now;
 
         // Request logs - 2 logs = 8 planks, enough for both tools
-        console.log('[Landscaper] Requesting 2 logs from lumberjack for tool crafting');
+        bb.log?.debug('[Landscaper] Requesting 2 logs from lumberjack for tool crafting');
         bb.villageChat.requestResource('log', 2);
 
         return 'success'; // Request made, next action should check chest for logs

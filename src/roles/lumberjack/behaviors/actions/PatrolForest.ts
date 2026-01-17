@@ -64,7 +64,7 @@ export class PatrolForest implements BehaviorNode {
             // All areas well-explored, wait
             bb.consecutiveIdleTicks++;
             if (bb.consecutiveIdleTicks > 10) {
-                console.log(`[Lumberjack] Waiting for trees to grow...`);
+                bb.log?.debug(`[Lumberjack] Waiting for trees to grow...`);
                 await new Promise(resolve => setTimeout(resolve, 5000));
                 bb.consecutiveIdleTicks = 0;
             }
@@ -74,7 +74,7 @@ export class PatrolForest implements BehaviorNode {
         bb.consecutiveIdleTicks = 0;
 
         // Move to target
-        console.log(`[Lumberjack] Patrolling to ${target.pos.floored()} (score: ${target.score})`);
+        bb.log?.debug(`[Lumberjack] Patrolling to ${target.pos.floored()} (score: ${target.score})`);
 
         try {
             // Find a safe Y level - search from target Y downward to find ground
@@ -109,13 +109,13 @@ export class PatrolForest implements BehaviorNode {
                 return 'success';
             } else {
                 // Path failed, record as explored anyway
-                console.log(`[Lumberjack] Patrol path failed: ${result.failureReason}`);
+                bb.log?.debug(`[Lumberjack] Patrol path failed: ${result.failureReason}`);
                 recordExploredPosition(bb, target.pos, 'unreachable');
                 return 'failure';
             }
         } catch (error) {
             // Unexpected error
-            console.log(`[Lumberjack] Patrol error: ${error instanceof Error ? error.message : 'unknown'}`);
+            bb.log?.debug(`[Lumberjack] Patrol error: ${error instanceof Error ? error.message : 'unknown'}`);
             recordExploredPosition(bb, target.pos, 'unreachable');
             return 'failure';
         }
@@ -132,7 +132,7 @@ export class WaitForVillage implements BehaviorNode {
         if (bb.villageCenter) return 'failure'; // Have village, don't wait
 
         bb.lastAction = 'wait_for_village';
-        console.log(`[Lumberjack] Waiting for village center to be established...`);
+        bb.log?.debug(`[Lumberjack] Waiting for village center to be established...`);
 
         // Wander randomly while waiting
         const angle = Math.random() * Math.PI * 2;

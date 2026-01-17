@@ -49,7 +49,7 @@ export class RequestMaterials implements BehaviorNode {
 
         // Request logs (lumberjack deposits these naturally)
         // Request 2 logs = 8 planks, enough for hoe crafting
-        console.log('[Farmer] Requesting 2 logs from lumberjack');
+        bb.log?.info('[Farmer] Requesting 2 logs from lumberjack');
         bb.villageChat.requestResource('log', 2);
 
         return 'running'; // Wait for fulfillment

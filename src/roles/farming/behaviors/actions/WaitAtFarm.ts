@@ -21,7 +21,7 @@ export class WaitAtFarm implements BehaviorNode {
         // Check if we're already near the farm
         const dist = bot.entity.position.distanceTo(bb.farmCenter);
         if (dist > 8) {
-            console.log(`[BT] Returning to farm center to wait for crops`);
+            bb.log?.debug(`[BT] Returning to farm center to wait for crops`);
             await smartPathfinderGoto(
                 bot,
                 new GoalNear(bb.farmCenter.x, bb.farmCenter.y, bb.farmCenter.z, 4),
@@ -35,7 +35,7 @@ export class WaitAtFarm implements BehaviorNode {
         await bot.look(randomYaw, 0, false);
 
         bb.lastAction = 'wait';
-        console.log(`[BT] Waiting at farm for crops to grow...`);
+        bb.log?.debug(`[BT] Waiting at farm for crops to grow...`);
         await sleep(2000);  // Wait a bit longer between checks
 
         return 'success';

@@ -86,7 +86,7 @@ export class Explore implements BehaviorNode {
         }
 
         if (candidates.length === 0) {
-            console.log(`[BT] No valid exploration targets found`);
+            bb.log?.debug(`[BT] No valid exploration targets found`);
             return 'failure';
         }
 
@@ -95,11 +95,11 @@ export class Explore implements BehaviorNode {
         const best = candidates[0];
 
         if (!best || best.score < -50) {
-            console.log(`[BT] All exploration targets have poor scores, waiting...`);
+            bb.log?.debug(`[BT] All exploration targets have poor scores, waiting...`);
             return 'failure';
         }
 
-        console.log(`[BT] Exploring to ${best.pos.floored()} (score: ${best.score.toFixed(0)})`);
+        bb.log?.debug(`[BT] Exploring to ${best.pos.floored()} (score: ${best.score.toFixed(0)})`);
 
         const result = await smartPathfinderGoto(
             bot,

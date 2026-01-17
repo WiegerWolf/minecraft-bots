@@ -1,6 +1,7 @@
 import type { GOAPAction } from '../Action';
 import { WorldState } from '../WorldState';
 import type { HTNTask, CompoundTask, PrimitiveTask } from './HTNTask';
+import type { Logger } from '../../shared/logger';
 
 /**
  * Result of HTN decomposition.
@@ -18,19 +19,22 @@ export interface HTNDecompositionResult {
 export interface HTNDecomposerConfig {
   maxDepth: number; // Maximum recursion depth
   debug: boolean;
+  logger?: Logger;
 }
 
 /**
  * HTN Decomposer - recursively decomposes compound tasks into primitive actions.
  */
 export class HTNDecomposer {
-  private config: HTNDecomposerConfig;
+  private config: Omit<HTNDecomposerConfig, 'logger'>;
+  private log: Logger | null = null;
 
   constructor(config?: Partial<HTNDecomposerConfig>) {
     this.config = {
       maxDepth: config?.maxDepth ?? 10,
       debug: config?.debug ?? false,
     };
+    this.log = config?.logger ?? null;
   }
 
   /**
@@ -41,7 +45,7 @@ export class HTNDecomposer {
 
     if (!task.isApplicable(initialState)) {
       if (this.config.debug) {
-        console.log(`[HTNDecomposer] Task ${task.name} not applicable`);
+        this.log?.debug({ task: task.name }, 'Task not applicable');
       }
       return {
         success: false,
@@ -56,14 +60,14 @@ export class HTNDecomposer {
 
     if (this.config.debug) {
       if (result.success) {
-        console.log(
-          `[HTNDecomposer] Decomposed ${task.name}: ` +
-          `${result.actions.map(a => a.name).join(' → ')} ` +
-          `(depth: ${result.depth}, cost: ${result.cost.toFixed(1)}, time: ${elapsed}ms)`
+        this.log?.debug(
+          { task: task.name, plan: result.actions.map(a => a.name), depth: result.depth, cost: result.cost.toFixed(1), timeMs: elapsed },
+          'Task decomposed'
         );
       } else {
-        console.log(
-          `[HTNDecomposer] Failed to decompose ${task.name} (time: ${elapsed}ms)`
+        this.log?.debug(
+          { task: task.name, timeMs: elapsed },
+          'Failed to decompose task'
         );
       }
     }
@@ -82,7 +86,7 @@ export class HTNDecomposer {
     // Check depth limit
     if (depth >= this.config.maxDepth) {
       if (this.config.debug) {
-        console.log(`[HTNDecomposer] Max depth reached for ${task.name}`);
+        this.log?.debug({ task: task.name, depth }, 'Max depth reached');
       }
       return { success: false, actions: [], cost: 0, depth };
     }

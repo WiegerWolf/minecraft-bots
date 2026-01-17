@@ -22,13 +22,13 @@ export class DepositItems implements BehaviorNode {
         // Need a chest to deposit
         const chestPos = bb.sharedChest || (bb.nearbyChests.length > 0 ? bb.nearbyChests[0]!.position : null);
         if (!chestPos) {
-            console.log('[Landscaper] No chest available for deposit');
+            bb.log?.debug('[Landscaper] No chest available for deposit');
             return 'failure';
         }
 
         const chest = bot.blockAt(chestPos);
         if (!chest || !['chest', 'barrel'].includes(chest.name)) {
-            console.log('[Landscaper] Chest not found at expected position');
+            bb.log?.debug('[Landscaper] Chest not found at expected position');
             return 'failure';
         }
 
@@ -39,7 +39,7 @@ export class DepositItems implements BehaviorNode {
             { timeoutMs: 15000 }
         );
         if (!result.success) {
-            console.log(`[Landscaper] Path to chest failed: ${result.failureReason}`);
+            bb.log?.debug(`[Landscaper] Path to chest failed: ${result.failureReason}`);
             return 'failure';
         }
 
@@ -48,7 +48,7 @@ export class DepositItems implements BehaviorNode {
         try {
             container = await bot.openContainer(chest);
         } catch (error) {
-            console.log(`[Landscaper] Failed to open chest: ${error instanceof Error ? error.message : 'unknown'}`);
+            bb.log?.debug(`[Landscaper] Failed to open chest: ${error instanceof Error ? error.message : 'unknown'}`);
             return 'failure';
         }
 
@@ -72,7 +72,7 @@ export class DepositItems implements BehaviorNode {
         container.close();
 
         if (deposited > 0) {
-            console.log(`[Landscaper] Deposited ${deposited} items to chest`);
+            bb.log?.debug(`[Landscaper] Deposited ${deposited} items to chest`);
             if (bb.villageChat) {
                 bb.villageChat.announceDeposit('materials', deposited);
             }

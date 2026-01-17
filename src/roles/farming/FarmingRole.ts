@@ -4,6 +4,7 @@ import { Movements } from 'mineflayer-pathfinder';
 import { createBlackboard, updateBlackboard, type FarmingBlackboard } from './Blackboard';
 import { createFarmingBehaviorTree, type BehaviorNode } from './behaviors';
 import { VillageChat } from '../../shared/VillageChat';
+import { createChildLogger, type Logger } from '../../shared/logger';
 
 export class FarmingRole implements Role {
     name = 'farming';
@@ -12,16 +13,24 @@ export class FarmingRole implements Role {
     private blackboard: FarmingBlackboard;
     private behaviorTree: BehaviorNode;
     private villageChat: VillageChat | null = null;
+    private logger: Logger | null = null;
+    private log: Logger | null = null;
 
     constructor() {
         this.blackboard = createBlackboard();
         this.behaviorTree = createFarmingBehaviorTree();
     }
 
-    start(bot: Bot, options?: { center?: any }) {
+    start(bot: Bot, options?: { center?: any; logger?: Logger }) {
         if (this.active) return;
         this.active = true;
         this.bot = bot;
+
+        // Initialize logger
+        if (options?.logger) {
+            this.logger = options.logger;
+            this.log = createChildLogger(this.logger, 'Farming');
+        }
 
         // Configure pathfinder
         const movements = new Movements(bot);
@@ -49,7 +58,7 @@ export class FarmingRole implements Role {
                 // Normal pathfinder interruptions, ignore
                 return;
             }
-            console.error('[Farming] Unhandled rejection:', reason);
+            this.log?.error({ reason }, 'Unhandled rejection');
         });
 
         // Suppress unhandled exceptions
@@ -63,10 +72,10 @@ export class FarmingRole implements Role {
             }
             // Ignore protocol errors from chat serialization (MC version issues)
             if (err.message?.includes('RangeError') || err.message?.includes('out of bounds')) {
-                console.warn('[Farming] Protocol error (ignored):', err.message);
+                this.log?.warn({ err: err.message }, 'Protocol error (ignored)');
                 return;
             }
-            console.error('[Farming] Uncaught exception:', err);
+            this.log?.error({ err }, 'Uncaught exception');
         });
 
         // Initialize blackboard
@@ -81,14 +90,15 @@ export class FarmingRole implements Role {
             const centerPos = options.center;
             const block = bot.blockAt(centerPos);
             if (block && (block.name === 'water' || block.name === 'flowing_water')) {
-                this.blackboard.farmCenter = centerPos.clone ? centerPos.clone() : centerPos;
-                console.log(`[Farming] Initial farm center set to water at ${this.blackboard.farmCenter}`);
+                const clonedCenter = centerPos.clone ? centerPos.clone() : centerPos;
+                this.blackboard.farmCenter = clonedCenter;
+                this.log?.info({ center: clonedCenter.toString() }, 'Initial farm center set to water');
             } else {
-                console.log(`[Farming] Provided center is not water, will discover naturally`);
+                this.log?.debug('Provided center is not water, will discover naturally');
             }
         }
 
-        console.log('[Farming] Behavior Tree Farming Role started.');
+        this.log?.info('Behavior Tree Farming Role started');
         this.loop();
     }
 
@@ -96,7 +106,7 @@ export class FarmingRole implements Role {
         this.active = false;
         this.bot = null;
         bot.pathfinder.stop();
-        console.log('[Farming] Farming Role stopped.');
+        this.log?.info('Farming Role stopped');
     }
 
     private isBotConnected(): boolean {
@@ -118,7 +128,7 @@ export class FarmingRole implements Role {
         while (this.active && this.bot) {
             // Check for zombie state - bot object exists but connection is dead
             if (!this.isBotConnected()) {
-                console.error('[Farming] Connection lost - stopping role');
+                this.log?.error('Connection lost - stopping role');
                 this.active = false;
                 break;
             }
@@ -134,7 +144,7 @@ export class FarmingRole implements Role {
                     const chatCenter = this.villageChat.getVillageCenter();
                     if (chatCenter && !this.blackboard.farmCenter) {
                         this.blackboard.farmCenter = chatCenter;
-                        console.log(`[Farming] Learned village center from chat: ${chatCenter}`);
+                        this.log?.info({ center: chatCenter.toString() }, 'Learned village center from chat');
                     }
 
                     const sharedChest = this.villageChat.getSharedChest();
@@ -188,11 +198,11 @@ export class FarmingRole implements Role {
                     }
                     // Protocol errors from chat - log but continue
                     if (msg.includes('RangeError') || msg.includes('out of bounds')) {
-                        console.warn('[Farming] Protocol error (continuing):', msg);
+                        this.log?.warn({ err: msg }, 'Protocol error (continuing)');
                         continue;
                     }
                 }
-                console.error('[Farming] Loop error:', error);
+                this.log?.error({ err: error }, 'Loop error');
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
         }
@@ -200,6 +210,15 @@ export class FarmingRole implements Role {
 
     private logStatus() {
         const bb = this.blackboard;
-        console.log(`[Farming Status] Hoe:${bb.hasHoe} Seeds:${bb.seedCount} Produce:${bb.produceCount} Farmland:${bb.nearbyFarmland.length} Crops:${bb.nearbyMatureCrops.length} Water:${bb.nearbyWater.length} Center:${bb.farmCenter || 'none'} Chest:${bb.farmChest || 'none'}`);
+        this.log?.info({
+            hasHoe: bb.hasHoe,
+            seeds: bb.seedCount,
+            produce: bb.produceCount,
+            farmland: bb.nearbyFarmland.length,
+            crops: bb.nearbyMatureCrops.length,
+            water: bb.nearbyWater.length,
+            center: bb.farmCenter?.toString() || 'none',
+            chest: bb.farmChest?.toString() || 'none',
+        }, 'Status');
     }
 }

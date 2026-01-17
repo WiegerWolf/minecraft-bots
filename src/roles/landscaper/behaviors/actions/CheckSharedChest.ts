@@ -28,7 +28,7 @@ export class CheckSharedChest implements BehaviorNode {
         if (bb.sharedChest) {
             chestBlock = bot.blockAt(bb.sharedChest);
             if (!chestBlock || !['chest', 'barrel'].includes(chestBlock.name)) {
-                console.log(`[Landscaper] Shared chest at ${bb.sharedChest} no longer exists`);
+                bb.log?.debug(`[Landscaper] Shared chest at ${bb.sharedChest} no longer exists`);
                 chestBlock = null;
             }
         }
@@ -36,11 +36,11 @@ export class CheckSharedChest implements BehaviorNode {
         // Try nearby chests as fallback
         if (!chestBlock && bb.nearbyChests.length > 0) {
             chestBlock = bb.nearbyChests[0];
-            console.log(`[Landscaper] Using nearby chest at ${chestBlock?.position}`);
+            bb.log?.debug(`[Landscaper] Using nearby chest at ${chestBlock?.position}`);
         }
 
         if (!chestBlock) {
-            console.log('[Landscaper] No chest available');
+            bb.log?.debug('[Landscaper] No chest available');
             return 'failure';
         }
 
@@ -49,14 +49,14 @@ export class CheckSharedChest implements BehaviorNode {
 
         try {
             // Navigate to chest
-            console.log(`[Landscaper] Going to chest at ${chestPos}`);
+            bb.log?.debug(`[Landscaper] Going to chest at ${chestPos}`);
             const result = await smartPathfinderGoto(
                 bot,
                 new GoalNear(chestPos.x, chestPos.y, chestPos.z, 2),
                 { timeoutMs: 15000 }
             );
             if (!result.success) {
-                console.log(`[Landscaper] Failed to reach chest: ${result.failureReason}`);
+                bb.log?.debug(`[Landscaper] Failed to reach chest: ${result.failureReason}`);
                 return 'failure';
             }
             await sleep(200);
@@ -64,7 +64,7 @@ export class CheckSharedChest implements BehaviorNode {
             // Re-fetch block in case it changed
             const currentChestBlock = bot.blockAt(chestPos);
             if (!currentChestBlock || !['chest', 'barrel'].includes(currentChestBlock.name)) {
-                console.log(`[Landscaper] Chest at ${chestPos} disappeared`);
+                bb.log?.debug(`[Landscaper] Chest at ${chestPos} disappeared`);
                 return 'failure';
             }
 
@@ -83,10 +83,10 @@ export class CheckSharedChest implements BehaviorNode {
                     try {
                         await chest.withdraw(item.type, null, toWithdraw);
                         withdrawnLogs += toWithdraw;
-                        console.log(`[Landscaper] Withdrew ${toWithdraw} ${item.name} from chest`);
+                        bb.log?.debug(`[Landscaper] Withdrew ${toWithdraw} ${item.name} from chest`);
                         await sleep(100);
                     } catch (err) {
-                        console.warn(`[Landscaper] Failed to withdraw ${item.name}:`, err);
+                        bb.log?.warn({ err, item: item.name }, 'Failed to withdraw item');
                     }
                 }
             }
@@ -99,10 +99,10 @@ export class CheckSharedChest implements BehaviorNode {
                         try {
                             await chest.withdraw(item.type, null, toWithdraw);
                             withdrawnPlanks += toWithdraw;
-                            console.log(`[Landscaper] Withdrew ${toWithdraw} ${item.name} from chest`);
+                            bb.log?.debug(`[Landscaper] Withdrew ${toWithdraw} ${item.name} from chest`);
                             await sleep(100);
                         } catch (err) {
-                            console.warn(`[Landscaper] Failed to withdraw ${item.name}:`, err);
+                            bb.log?.warn({ err, item: item.name }, 'Failed to withdraw item');
                         }
                     }
                 }
@@ -118,19 +118,19 @@ export class CheckSharedChest implements BehaviorNode {
             bb.plankCount = inv.filter(i => i.name.endsWith('_planks')).reduce((s, i) => s + i.count, 0);
 
             if (withdrawnLogs > 0 || withdrawnPlanks > 0) {
-                console.log(`[Landscaper] Retrieved materials from chest - logs: ${bb.logCount}, planks: ${bb.plankCount}`);
+                bb.log?.debug(`[Landscaper] Retrieved materials from chest - logs: ${bb.logCount}, planks: ${bb.plankCount}`);
                 return 'success';
             } else {
                 // No materials in chest - request from lumberjack
-                console.log(`[Landscaper] Chest had no logs or planks available`);
+                bb.log?.debug(`[Landscaper] Chest had no logs or planks available`);
                 if (bb.villageChat && !bb.villageChat.hasPendingRequestFor('log')) {
-                    console.log('[Landscaper] Requesting 2 logs from lumberjack');
+                    bb.log?.debug('[Landscaper] Requesting 2 logs from lumberjack');
                     bb.villageChat.requestResource('log', 2);
                 }
                 return 'failure';
             }
         } catch (err) {
-            console.warn(`[Landscaper] Failed to check shared chest:`, err);
+            bb.log?.warn({ err }, 'Failed to check shared chest');
             return 'failure';
         }
     }

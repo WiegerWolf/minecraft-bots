@@ -20,9 +20,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-- **Run bot with hot-reload**: `bun run start` (uses `src/index.ts` manager)
-- **Run bot directly (no hot-reload)**: `bun run dev` (uses `bun --watch src/bot.ts`)
+- **Run all bots**: `bun run start` (uses `src/index.ts` manager)
+- **Run single bot**: `bun run start farmer` / `lumberjack` / `landscaper`
+- **Development mode**: `bun run dev:farmer` / `dev:lumberjack` / `dev:landscaper`
 - **Type check**: `bunx tsc --noEmit`
+
+## Logging
+
+The project uses **Pino** for structured logging:
+
+- **Console output**: Pretty-printed via `pino-pretty`
+- **File output**: JSON logs in `logs/YYYY-MM-DD/BotName.log`
+- **Log levels**: `error`, `warn`, `info`, `debug` (controlled via `LOG_LEVEL` env var)
+
+### Logger Patterns
+
+```typescript
+// In GOAP roles - use this.log
+this.log?.info({ goal: goal.name }, 'Goal selected');
+
+// In behavior actions - use bb.log (from blackboard)
+bb.log?.debug({ action: 'harvest' }, 'Starting harvest');
+
+// Create child loggers for components
+const plannerLog = createChildLogger(logger, 'Planner');
+```
+
+### Searching Logs
+
+```bash
+# Find specific events
+cat logs/*/DevFarmer.log | grep "Goal selected"
+
+# Filter by log level (50 = error)
+cat logs/*/*.log | jq 'select(.level >= 50)'
+```
 
 ## Architecture
 

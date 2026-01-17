@@ -50,7 +50,7 @@ export class PlantSeeds implements BehaviorNode {
 
                 // Look at and plant
                 await bot.lookAt(farmland.position.offset(0.5, 1, 0.5), true);
-                console.log(`[BT] Planting at ${farmland.position}`);
+                bb.log?.debug(`[BT] Planting at ${farmland.position}`);
                 await bot.placeBlock(farmland, new Vec3(0, 1, 0));
                 plantedAny = true;
                 await sleep(50);

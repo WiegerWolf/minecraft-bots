@@ -20,11 +20,6 @@ export function KnowledgeMixin<TBase extends Constructor>(Base: TBase) {
         private pois: POI[] = [];
 
         // Changed to public so Tasks can call it
-        public log(message: string, ...args: any[]) {
-            console.log(`[Knowledge] ${message}`, ...args);
-        }
-
-        // Changed to public so Tasks can call it
         public rememberPOI(category: POICategory, position: Vec3, metadata?: any) {
             // Check if already exists nearby
             const existing = this.pois.find(p => p.category === category && p.position.distanceTo(position) < 1);
@@ -40,7 +35,6 @@ export function KnowledgeMixin<TBase extends Constructor>(Base: TBase) {
                 timestamp: Date.now(),
                 metadata
             });
-            this.log(`Remembered ${category} at ${position}`);
         }
 
         // Changed to public so Tasks can call it
@@ -62,7 +56,6 @@ export function KnowledgeMixin<TBase extends Constructor>(Base: TBase) {
         // Changed to public so Tasks can call it
         public forgetPOI(category: POICategory, position: Vec3) {
             this.pois = this.pois.filter(p => !(p.category === category && p.position.distanceTo(position) < 1));
-            this.log(`Forgot ${category} at ${position}`);
         }
     };
 }

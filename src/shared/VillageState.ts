@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir, rename, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { Vec3 } from 'vec3';
+import type { Logger } from './logger';
 
 export interface ResourceRequest {
     id: string;
@@ -39,9 +40,15 @@ function createEmptyState(): VillageState {
 export class VillageManager {
     private filePath: string;
     private writeLock: Promise<void> = Promise.resolve();
+    private log: Logger | null = null;
 
     constructor(filePath: string = './shared/village.json') {
         this.filePath = resolve(filePath);
+    }
+
+    /** Set a logger for this manager (useful for shared singleton) */
+    setLogger(logger: Logger): void {
+        this.log = logger;
     }
 
     private async ensureDir(): Promise<void> {
@@ -64,7 +71,7 @@ export class VillageManager {
             return JSON.parse(data) as VillageState;
         } catch (error) {
             // If file is corrupted, reset it
-            console.warn('[VillageManager] Failed to read state, resetting:', error);
+            this.log?.warn({ err: error }, 'Failed to read state, resetting');
             try {
                 await this.write(createEmptyState());
             } catch {
@@ -90,7 +97,7 @@ export class VillageManager {
                 } catch {
                     // Ignore
                 }
-                console.error('[VillageManager] Failed to write state:', error);
+                this.log?.error({ err: error }, 'Failed to write state');
             }
         });
         await this.writeLock;
@@ -121,7 +128,7 @@ export class VillageManager {
         }
         state.villageCenter = { x: pos.x, y: pos.y, z: pos.z };
         await this.write(state);
-        console.log(`[VillageManager] Village center established at ${pos}`);
+        this.log?.info({ pos: pos.toString() }, 'Village center established');
         return true;
     }
 
@@ -139,7 +146,7 @@ export class VillageManager {
         const state = await this.read();
         state.sharedChest = { x: pos.x, y: pos.y, z: pos.z };
         await this.write(state);
-        console.log(`[VillageManager] Shared chest registered at ${pos}`);
+        this.log?.info({ pos: pos.toString() }, 'Shared chest registered');
     }
 
     async getSharedChest(): Promise<Vec3 | null> {
@@ -165,7 +172,7 @@ export class VillageManager {
             fulfilled: false
         });
         await this.write(state);
-        console.log(`[VillageManager] Resource request created: ${from} needs ${quantity}x ${item}`);
+        this.log?.info({ from, item, quantity }, 'Resource request created');
         return id;
     }
 
@@ -189,7 +196,7 @@ export class VillageManager {
         if (request) {
             request.fulfilled = true;
             await this.write(state);
-            console.log(`[VillageManager] Request fulfilled: ${request.from}'s ${request.quantity}x ${request.item}`);
+            this.log?.info({ from: request.from, item: request.item, quantity: request.quantity }, 'Request fulfilled');
         }
     }
 
@@ -203,7 +210,7 @@ export class VillageManager {
         const removed = before - state.requests.length;
         if (removed > 0) {
             await this.write(state);
-            console.log(`[VillageManager] Cleaned up ${removed} stale requests`);
+            this.log?.debug({ removed }, 'Cleaned up stale requests');
         }
     }
 
@@ -228,7 +235,7 @@ export class VillageManager {
         const removed = before - Object.keys(state.bots).length;
         if (removed > 0) {
             await this.write(state);
-            console.log(`[VillageManager] Cleaned up ${removed} stale bot entries`);
+            this.log?.debug({ removed }, 'Cleaned up stale bot entries');
         }
     }
 }

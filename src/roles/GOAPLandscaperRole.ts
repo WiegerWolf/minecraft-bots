@@ -22,18 +22,18 @@ export class GOAPLandscaperRole extends GOAPRole {
   constructor(config?: GOAPRoleConfig) {
     // Enable debug mode for landscaper to troubleshoot planning issues
     super({ debug: true, ...config });
-    console.log('[GOAPLandscaperRole] Initialized with GOAP planning system (debug mode)');
+    this.log?.info('Initialized with GOAP planning system (debug mode)');
   }
 
   protected getActions(): GOAPAction[] {
     const actions = createLandscaperActions();
-    console.log(`[GOAPLandscaperRole] Actions: ${actions.map(a => a.name).join(', ')}`);
+    this.log?.debug({ actions: actions.map(a => a.name) }, 'Registered actions');
     return actions;
   }
 
   protected getGoals(): Goal[] {
     const goals = createLandscaperGoals();
-    console.log(`[GOAPLandscaperRole] Goals: ${goals.map(g => g.name).join(', ')}`);
+    this.log?.debug({ goals: goals.map(g => g.name) }, 'Registered goals');
     return goals;
   }
 
@@ -54,7 +54,7 @@ export class GOAPLandscaperRole extends GOAPRole {
     movements.digCost = 5; // Lower dig cost since digging is our job
     bot.pathfinder.setMovements(movements);
 
-    console.log('[GOAPLandscaperRole] Starting GOAP landscaper bot');
+    this.log?.info('Starting GOAP landscaper bot');
     super.start(bot, options);
 
     // Initialize village chat if blackboard was created
@@ -65,7 +65,7 @@ export class GOAPLandscaperRole extends GOAPRole {
   }
 
   override stop(bot: Bot): void {
-    console.log('[GOAPLandscaperRole] Stopping GOAP landscaper bot');
+    this.log?.info('Stopping GOAP landscaper bot');
     super.stop(bot);
   }
 }

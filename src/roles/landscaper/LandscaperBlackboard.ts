@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
 import type { VillageChat, TerraformRequest } from '../../shared/VillageChat';
+import type { Logger } from '../../shared/logger';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -44,6 +45,9 @@ export interface LandscaperBlackboard {
     // Village communication (set by role)
     villageChat: VillageChat | null;
 
+    // Logger (set by role)
+    log: Logger | null;
+
     // Exploration memory
     exploredPositions: ExplorationMemory[];
 
@@ -83,6 +87,7 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
         currentTerraformTask: null,
 
         villageChat: null,
+        log: null,
 
         exploredPositions: [],
         unreachableDrops: new Map(),
@@ -132,7 +137,7 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
         const myUsername = bot.username;
         for (const req of allRequests) {
             if (req.status === 'claimed' && req.claimedBy === myUsername && !bb.currentTerraformTask) {
-                console.log(`[Landscaper] Releasing stale claim at ${req.position.floored()}`);
+                bb.log?.debug({ pos: req.position.floored().toString() }, 'Releasing stale claim');
                 bb.villageChat.releaseTerraformClaim(req.position);
             }
         }

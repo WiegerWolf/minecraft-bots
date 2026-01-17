@@ -52,7 +52,7 @@ export class ClearFarmArea implements BehaviorNode {
         if (!blockToClear) {
             // Nothing to clear - area is ready
             if (this.clearedCount > 0) {
-                console.log(`[BT] Farm area cleared (${this.clearedCount} blocks removed)`);
+                bb.log?.debug(`[BT] Farm area cleared (${this.clearedCount} blocks removed)`);
                 this.clearedCount = 0;
             }
             return 'failure';
@@ -62,7 +62,7 @@ export class ClearFarmArea implements BehaviorNode {
         bb.lastAction = 'clear_farm';
 
         const blockType = this.getBlockCategory(blockToClear);
-        console.log(`[BT] Clearing ${blockType} at ${blockToClear.position} (${blockToClear.name})`);
+        bb.log?.debug(`[BT] Clearing ${blockType} at ${blockToClear.position} (${blockToClear.name})`);
 
         try {
             // Move close enough to break if we can't already
@@ -77,7 +77,7 @@ export class ClearFarmArea implements BehaviorNode {
                     }
                 }
             } else {
-                console.log(`[BT] Already within reach to clear ${blockToClear.position}, skipping movement`);
+                bb.log?.debug(`[BT] Already within reach to clear ${blockToClear.position}, skipping movement`);
             }
 
             // Break the block

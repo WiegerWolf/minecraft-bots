@@ -25,7 +25,7 @@ export class GatherSeeds implements BehaviorNode {
                 const now = Date.now();
                 if (now - this.lastMaterialRequestTime > this.MATERIAL_REQUEST_COOLDOWN) {
                     if (!bb.villageChat.hasPendingRequestFor('log')) {
-                        console.log('[Farmer] Requesting 2 logs from lumberjack');
+                        bb.log?.debug('[Farmer] Requesting 2 logs from lumberjack');
                         bb.villageChat.requestResource('log', 2);
                         this.lastMaterialRequestTime = now;
                     }
@@ -62,11 +62,11 @@ export class GatherSeeds implements BehaviorNode {
         }
 
         if (!grass) {
-            console.log(`[BT] No grass found nearby for seeds`);
+            bb.log?.debug(`[BT] No grass found nearby for seeds`);
             return 'failure';
         }
 
-        console.log(`[BT] Breaking ${grass.name} for seeds at ${grass.position}`);
+        bb.log?.debug(`[BT] Breaking ${grass.name} for seeds at ${grass.position}`);
         bb.lastAction = 'gather_seeds';
 
         try {
@@ -76,14 +76,14 @@ export class GatherSeeds implements BehaviorNode {
                 { timeoutMs: 15000 }
             );
             if (!result.success) {
-                console.log(`[BT] Failed to reach grass: ${result.failureReason}`);
+                bb.log?.debug(`[BT] Failed to reach grass: ${result.failureReason}`);
                 return 'failure';
             }
             await bot.dig(grass);
             await sleep(300);
             return 'success';
         } catch (err) {
-            console.log(`[BT] Failed to gather seeds: ${err}`);
+            bb.log?.debug(`[BT] Failed to gather seeds: ${err}`);
             return 'failure';
         }
     }

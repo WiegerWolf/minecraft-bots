@@ -13,11 +13,6 @@ export function ResourceMixin<TBase extends Constructor>(Base: TBase) {
         private visitedChunks: { x: number, z: number, time: number }[] = [];
         private readonly HISTORY_SIZE = 20;
 
-        // Helper to log from this mixin
-        protected logResource(msg: string) {
-            console.log(`[Resource] ${msg}`);
-        }
-
         /**
          * Efficiently finds natural blocks within a large radius.
          */
@@ -51,7 +46,7 @@ export function ResourceMixin<TBase extends Constructor>(Base: TBase) {
          * Finds a new chunk to explore, prioritizing unvisited areas.
          */
         public async wanderNewChunk(bot: Bot) {
-            this.logResource("Calculating exploration path...");
+            // logResource("Calculating exploration path...");
 
             // 1. Record current location in history
             const currentPos = bot.entity.position;
@@ -118,7 +113,7 @@ export function ResourceMixin<TBase extends Constructor>(Base: TBase) {
             }
 
             if (bestCandidate) {
-                this.logResource(`Exploration target found (Score: ${bestCandidate.score.toFixed(1)}). Moving to ${bestCandidate.pos.floored()}`);
+                // logResource(`Exploration target found (Score: ${bestCandidate.score.toFixed(1)}). Moving to ${bestCandidate.pos.floored()}`);
                 const result = await smartPathfinderGoto(
                     bot,
                     new GoalNear(bestCandidate.pos.x, bestCandidate.pos.y, bestCandidate.pos.z, 2),
@@ -127,11 +122,11 @@ export function ResourceMixin<TBase extends Constructor>(Base: TBase) {
                 if (result.success) {
                     return true;
                 } else {
-                    this.logResource("Exploration movement failed (pathfinding).");
+                    // logResource("Exploration movement failed (pathfinding).");
                     return false;
                 }
             } else {
-                this.logResource("No good exploration targets found. Staying put.");
+                // logResource("No good exploration targets found. Staying put.");
                 return false;
             }
         }

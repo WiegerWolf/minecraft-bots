@@ -51,14 +51,14 @@ export class TerraformArea implements BehaviorNode {
         // Move closer if needed (chunks must be loaded to scan)
         const distToRequest = bot.entity.position.distanceTo(waterPos);
         if (distToRequest > 32) {
-            console.log(`[Landscaper] Moving to terraform area at ${waterPos.floored()} (${Math.round(distToRequest)} blocks away)`);
+            bb.log?.debug(`[Landscaper] Moving to terraform area at ${waterPos.floored()} (${Math.round(distToRequest)} blocks away)`);
             const result = await smartPathfinderGoto(
                 bot,
                 new GoalNear(waterPos.x, waterPos.y, waterPos.z, 16),
                 { timeoutMs: 30000 }
             );
             if (!result.success) {
-                console.log(`[Landscaper] Failed to reach terraform area: ${result.failureReason}`);
+                bb.log?.debug(`[Landscaper] Failed to reach terraform area: ${result.failureReason}`);
                 bb.villageChat.releaseTerraformClaim(waterPos);
                 return 'failure';
             }
@@ -67,13 +67,13 @@ export class TerraformArea implements BehaviorNode {
         // Verify the center block is water
         const centerBlock = bot.blockAt(waterPos);
         if (!centerBlock || (centerBlock.name !== 'water' && centerBlock.name !== 'flowing_water')) {
-            console.log(`[Landscaper] Request position is not water (found: ${centerBlock?.name || 'null'}) at ${waterPos.floored()}`);
+            bb.log?.debug(`[Landscaper] Request position is not water (found: ${centerBlock?.name || 'null'}) at ${waterPos.floored()}`);
             bb.villageChat.releaseTerraformClaim(waterPos);
             return 'failure';
         }
 
         const targetY = Math.floor(waterPos.y);
-        console.log(`[Landscaper] Starting 9x9 terraform centered on water at ${waterPos.floored()}, target Y=${targetY}`);
+        bb.log?.debug(`[Landscaper] Starting 9x9 terraform centered on water at ${waterPos.floored()}, target Y=${targetY}`);
 
         // Initialize the terraform task
         bb.currentTerraformTask = {
@@ -127,7 +127,7 @@ export class TerraformArea implements BehaviorNode {
         const waterBlocksToFill: Vec3[] = [];  // Water blocks - fill FIRST to prevent spreading
         const blocksToFill: Vec3[] = [];       // Regular fills - after digging
 
-        console.log(`[Landscaper] Analyzing 9x9 area centered on water at (${centerX}, ${targetY}, ${centerZ})`);
+        bb.log?.debug(`[Landscaper] Analyzing 9x9 area centered on water at (${centerX}, ${targetY}, ${centerZ})`);
 
         // Scan the 9x9 area
         for (let dx = -radius; dx <= radius; dx++) {
@@ -226,9 +226,9 @@ export class TerraformArea implements BehaviorNode {
         // Log summary
         const totalWork = blocksToRemove.length + task.waterBlocksToFill.length + task.blocksToFill.length;
         if (totalWork > 0) {
-            console.log(`[Landscaper] Work needed: ${task.waterBlocksToFill.length} water to seal, ${blocksToRemove.length} to dig, ${task.blocksToFill.length} to fill`);
+            bb.log?.debug(`[Landscaper] Work needed: ${task.waterBlocksToFill.length} water to seal, ${blocksToRemove.length} to dig, ${task.blocksToFill.length} to fill`);
         } else {
-            console.log(`[Landscaper] Area already suitable - 9x9 dirt with water center`);
+            bb.log?.debug(`[Landscaper] Area already suitable - 9x9 dirt with water center`);
         }
 
         return 'running';
@@ -245,17 +245,17 @@ export class TerraformArea implements BehaviorNode {
         if (task.waterBlocksToFill.length === 0) {
             // Done sealing water, move to digging
             task.phase = task.blocksToRemove.length > 0 ? 'digging' : (task.blocksToFill.length > 0 ? 'filling' : 'finishing');
-            console.log(`[Landscaper] Water sealed, moving to ${task.phase} phase`);
+            bb.log?.debug(`[Landscaper] Water sealed, moving to ${task.phase} phase`);
             return 'running';
         }
 
         // Check if we have dirt
         const dirtItem = bot.inventory.items().find(i => i.name === 'dirt');
         if (!dirtItem) {
-            console.log(`[Landscaper] Need dirt to seal water - gathering from inland`);
+            bb.log?.debug(`[Landscaper] Need dirt to seal water - gathering from inland`);
             const gathered = await this.gatherDirtFromNearby(bot, bb, task);
             if (!gathered) {
-                console.log(`[Landscaper] No dirt found - skipping water seal (may cause water flow issues)`);
+                bb.log?.debug(`[Landscaper] No dirt found - skipping water seal (may cause water flow issues)`);
                 task.waterBlocksToFill = [];
                 task.phase = task.blocksToRemove.length > 0 ? 'digging' : 'finishing';
                 return 'running';
@@ -297,7 +297,7 @@ export class TerraformArea implements BehaviorNode {
         }
 
         if (!referenceBlock) {
-            console.log(`[Landscaper] No reference block to seal water at ${fillPos.floored()}, skipping`);
+            bb.log?.debug(`[Landscaper] No reference block to seal water at ${fillPos.floored()}, skipping`);
             task.waterBlocksToFill.shift();
             return 'running';
         }
@@ -326,12 +326,12 @@ export class TerraformArea implements BehaviorNode {
             await bot.equip(dirtToPlace, 'hand');
             await sleep(50);
             await bot.placeBlock(referenceBlock, faceVector!);
-            console.log(`[Landscaper] Sealed water at ${fillPos.floored()}`);
+            bb.log?.debug(`[Landscaper] Sealed water at ${fillPos.floored()}`);
             task.waterBlocksToFill.shift();
             task.progress++;
             await sleep(100);
         } catch (error) {
-            console.log(`[Landscaper] Failed to seal water at ${fillPos.floored()}: ${error instanceof Error ? error.message : 'unknown'}`);
+            bb.log?.debug(`[Landscaper] Failed to seal water at ${fillPos.floored()}: ${error instanceof Error ? error.message : 'unknown'}`);
             task.waterBlocksToFill.shift();
         }
 
@@ -349,7 +349,7 @@ export class TerraformArea implements BehaviorNode {
 
         // Check inventory - stop if full
         if (bb.inventoryFull) {
-            console.log(`[Landscaper] Inventory full, pausing terraform`);
+            bb.log?.debug(`[Landscaper] Inventory full, pausing terraform`);
             return 'failure'; // Let deposit action run
         }
 
@@ -367,12 +367,12 @@ export class TerraformArea implements BehaviorNode {
         const toolType = needPickaxe ? 'pickaxe' : 'shovel';
 
         if (needPickaxe && !bb.hasPickaxe) {
-            console.log(`[Landscaper] Need pickaxe for ${block.name}`);
+            bb.log?.debug(`[Landscaper] Need pickaxe for ${block.name}`);
             return 'failure';
         }
 
         if (!needPickaxe && !bb.hasShovel && !bb.hasPickaxe) {
-            console.log(`[Landscaper] Need shovel for ${block.name}`);
+            bb.log?.debug(`[Landscaper] Need shovel for ${block.name}`);
             return 'failure';
         }
 
@@ -401,12 +401,12 @@ export class TerraformArea implements BehaviorNode {
         // Dig the block
         try {
             await bot.dig(block);
-            console.log(`[Landscaper] Dug ${block.name} at ${blockPos.floored()}`);
+            bb.log?.debug(`[Landscaper] Dug ${block.name} at ${blockPos.floored()}`);
             task.blocksToRemove.shift();
             task.progress++;
             await sleep(100);
         } catch (error) {
-            console.log(`[Landscaper] Dig failed at ${blockPos.floored()}: ${error instanceof Error ? error.message : 'unknown'}`);
+            bb.log?.debug(`[Landscaper] Dig failed at ${blockPos.floored()}: ${error instanceof Error ? error.message : 'unknown'}`);
             task.blocksToRemove.shift();
         }
 
@@ -425,10 +425,10 @@ export class TerraformArea implements BehaviorNode {
         // Check if we have dirt
         const dirtItem = bot.inventory.items().find(i => i.name === 'dirt');
         if (!dirtItem) {
-            console.log(`[Landscaper] Need dirt - gathering from nearby`);
+            bb.log?.debug(`[Landscaper] Need dirt - gathering from nearby`);
             const gathered = await this.gatherDirtFromNearby(bot, bb, task);
             if (!gathered) {
-                console.log(`[Landscaper] No dirt found - completing with partial fill`);
+                bb.log?.debug(`[Landscaper] No dirt found - completing with partial fill`);
                 task.blocksToFill = [];
                 task.phase = 'finishing';
                 return 'running';
@@ -469,7 +469,7 @@ export class TerraformArea implements BehaviorNode {
         }
 
         if (!referenceBlock) {
-            console.log(`[Landscaper] No reference block to place dirt at ${fillPos.floored()}`);
+            bb.log?.debug(`[Landscaper] No reference block to place dirt at ${fillPos.floored()}`);
             task.blocksToFill.shift();
             return 'running';
         }
@@ -498,12 +498,12 @@ export class TerraformArea implements BehaviorNode {
             await bot.equip(dirtToPlace, 'hand');
             await sleep(50);
             await bot.placeBlock(referenceBlock, faceVector!);
-            console.log(`[Landscaper] Placed dirt at ${fillPos.floored()}`);
+            bb.log?.debug(`[Landscaper] Placed dirt at ${fillPos.floored()}`);
             task.blocksToFill.shift();
             task.progress++;
             await sleep(100);
         } catch (error) {
-            console.log(`[Landscaper] Place dirt failed at ${fillPos.floored()}: ${error instanceof Error ? error.message : 'unknown'}`);
+            bb.log?.debug(`[Landscaper] Place dirt failed at ${fillPos.floored()}: ${error instanceof Error ? error.message : 'unknown'}`);
             task.blocksToFill.shift();
         }
 
@@ -599,7 +599,7 @@ export class TerraformArea implements BehaviorNode {
 
         if (candidates.length === 0) {
             // Last resort: try to find any dirt underground even further away
-            console.log(`[Landscaper] No dirt in primary search, trying extended underground search`);
+            bb.log?.debug(`[Landscaper] No dirt in primary search, trying extended underground search`);
             for (let dx = -32; dx <= 32; dx += 2) {
                 for (let dz = -32; dz <= 32; dz += 2) {
                     if (Math.abs(dx) <= workRadius && Math.abs(dz) <= workRadius) continue;
@@ -676,7 +676,7 @@ export class TerraformArea implements BehaviorNode {
                 await bot.dig(block);
                 gathered++;
                 const source = candidate.isSurface ? 'surface' : (candidate.isUnderground ? 'underground' : 'subsurface');
-                console.log(`[Landscaper] Gathered ${block.name} ${gathered}/${neededDirt} from ${candidate.pos.floored()} (${source})`);
+                bb.log?.debug(`[Landscaper] Gathered ${block.name} ${gathered}/${neededDirt} from ${candidate.pos.floored()} (${source})`);
                 await sleep(100);
             } catch (error) {
                 // Skip
@@ -684,7 +684,7 @@ export class TerraformArea implements BehaviorNode {
         }
 
         if (gathered > 0) {
-            console.log(`[Landscaper] Gathered ${gathered} dirt blocks`);
+            bb.log?.debug(`[Landscaper] Gathered ${gathered} dirt blocks`);
             return true;
         }
 
@@ -700,7 +700,7 @@ export class TerraformArea implements BehaviorNode {
             bb.villageChat.announceTerraformDone(task.waterCenter);
         }
 
-        console.log(`[Landscaper] Terraform complete - 9x9 farm at ${task.waterCenter.floored()}`);
+        bb.log?.debug(`[Landscaper] Terraform complete - 9x9 farm at ${task.waterCenter.floored()}`);
 
         task.phase = 'done';
         bb.currentTerraformTask = null;
