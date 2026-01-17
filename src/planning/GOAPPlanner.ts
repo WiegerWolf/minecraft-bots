@@ -93,6 +93,11 @@ export class GOAPPlanner {
       const current = openSet.shift()!;
       nodesExplored++;
 
+      if (this.config.debug) {
+        const actionName = current.action?.name ?? 'START';
+        console.log(`[Planner] Iteration ${iterations}: popped ${actionName} (fCost=${current.fCost.toFixed(1)}, openSet size=${openSet.length})`);
+      }
+
       // Check if we've reached the goal
       if (this.isGoalSatisfied(current.state, goal)) {
         const plan = this.reconstructPlan(current);
@@ -162,8 +167,14 @@ export class GOAPPlanner {
           const existingNode = openSet[existingIdx];
           if (existingNode && gCost < existingNode.gCost) {
             // Found better path to this state
+            if (this.config.debug) {
+              console.log(`[Planner] Replacing ${action.name} in open set (gCost ${existingNode.gCost.toFixed(1)} -> ${gCost.toFixed(1)})`);
+            }
             openSet.splice(existingIdx, 1);
           } else {
+            if (this.config.debug) {
+              console.log(`[Planner] Skipping ${action.name}: already in open set with gCost=${existingNode.gCost.toFixed(1)} <= ${gCost.toFixed(1)}`);
+            }
             continue; // Existing path is better
           }
         }
@@ -182,6 +193,10 @@ export class GOAPPlanner {
           fCost,
         };
         openSet.push(newNode);
+      }
+
+      if (this.config.debug) {
+        console.log(`[Planner] After expansion: openSet size=${openSet.length}`);
       }
     }
 
