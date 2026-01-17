@@ -51,6 +51,9 @@ export type SignKnowledgeType = 'VILLAGE' | 'CRAFT' | 'CHEST' | 'FOREST' | 'MINE
 /** Types that are landmarks (informational, not critical infrastructure) */
 export const LANDMARK_TYPES: SignKnowledgeType[] = ['FOREST', 'MINE', 'FARM', 'WATER'];
 
+/** Search radius for finding signs near spawn (blocks) */
+export const SIGN_SEARCH_RADIUS = 25;
+
 export interface KnowledgeEntry {
     type: SignKnowledgeType;
     pos: Vec3;
@@ -128,7 +131,7 @@ export function getTypeName(type: SignKnowledgeType): string {
 /**
  * Find all signs within a radius of a position.
  */
-export function findSignsNear(bot: Bot, center: Vec3, radius: number = 10): Block[] {
+export function findSignsNear(bot: Bot, center: Vec3, radius: number = SIGN_SEARCH_RADIUS): Block[] {
     const signBlocks = bot.findBlocks({
         point: center,
         maxDistance: radius,
@@ -178,7 +181,7 @@ export interface ExtendedKnowledgeEntry extends KnowledgeEntry {
 export function readAllSignsNear(
     bot: Bot,
     center: Vec3,
-    radius: number = 15,
+    radius: number = SIGN_SEARCH_RADIUS,
     log?: Logger | null
 ): ExtendedKnowledgeEntry[] {
     const entries: ExtendedKnowledgeEntry[] = [];
@@ -216,7 +219,7 @@ export function readSignsAtSpawn(
     log?: Logger | null
 ): Map<SignKnowledgeType, Vec3> {
     const knowledge = new Map<SignKnowledgeType, Vec3>();
-    const entries = readAllSignsNear(bot, spawnPos, 15, log);
+    const entries = readAllSignsNear(bot, spawnPos, SIGN_SEARCH_RADIUS, log);
 
     for (const entry of entries) {
         knowledge.set(entry.type, entry.pos);
@@ -320,7 +323,7 @@ export function findExistingSignForType(
     spawnPos: Vec3,
     type: SignKnowledgeType
 ): Block | null {
-    const signs = findSignsNear(bot, spawnPos, 15);
+    const signs = findSignsNear(bot, spawnPos, SIGN_SEARCH_RADIUS);
 
     for (const sign of signs) {
         const lines = readSignText(sign);

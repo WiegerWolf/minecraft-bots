@@ -4,6 +4,7 @@ import { Vec3 } from 'vec3';
 import type { VillageChat } from '../../shared/VillageChat';
 import { LOG_NAMES, LEAF_NAMES, SAPLING_NAMES, type TreeHarvestState } from '../shared/TreeHarvest';
 import type { Logger } from '../../shared/logger';
+import { SIGN_SEARCH_RADIUS } from '../../shared/SignKnowledge';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -329,8 +330,8 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     // ═══════════════════════════════════════════════
     const nearbySigns = bot.findBlocks({
         point: pos,
-        maxDistance: 16,
-        count: 10,
+        maxDistance: SIGN_SEARCH_RADIUS,
+        count: 20,
         matching: b => b?.name?.includes('_sign') ?? false
     });
 

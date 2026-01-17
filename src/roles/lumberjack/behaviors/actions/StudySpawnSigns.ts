@@ -9,6 +9,7 @@ import {
     readSignText,
     parseSignText,
     getTypeName,
+    SIGN_SEARCH_RADIUS,
     type SignKnowledgeType
 } from '../../../../shared/SignKnowledge';
 
@@ -62,7 +63,7 @@ export class StudySpawnSigns implements BehaviorNode {
         }
 
         // Find all signs near spawn
-        const signs = findSignsNear(bot, bb.spawnPosition, 15);
+        const signs = findSignsNear(bot, bb.spawnPosition, SIGN_SEARCH_RADIUS);
 
         if (signs.length === 0) {
             bb.log?.info('No knowledge signs found near spawn');

@@ -103,7 +103,7 @@ LOG_LEVEL=debug bun run start farmer  # Set log level
 | World change threshold | 5 facts | Ignore minor fluctuations |
 | Backoff cap | 30 seconds | Don't wait forever |
 | Seed threshold | 10 | Comfortable farming buffer |
-| Sign search radius | 15 blocks | Area around spawn to find knowledge signs |
+| Sign search radius | 25 blocks | Area around spawn to find knowledge signs |
 | Sign types | VILLAGE, CRAFT, CHEST, FOREST, MINE, FARM, WATER | Infrastructure + landmarks |
 | WriteKnowledgeSign utility | 55-65 | Medium priority, after critical tasks |
 | StudySpawnSigns utility | 200 | High priority on spawn, before other work |
