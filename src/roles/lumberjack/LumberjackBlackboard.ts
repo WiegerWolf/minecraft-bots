@@ -132,24 +132,67 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 
-    // Find REACHABLE tree bases (logs below bot level with valid ground)
+    // Find REACHABLE tree bases (logs with valid ground AND walkable access)
     // Valid ground includes: dirt variants, mangrove roots, mud, or other logs (for tall trees)
     const VALID_TREE_BASE = [
         'dirt', 'grass_block', 'podzol', 'mycelium', 'coarse_dirt', 'rooted_dirt',
         'mangrove_roots', 'muddy_mangrove_roots', 'mud', // Mangrove swamp blocks
         'moss_block', 'clay', 'sand', // Additional valid surfaces
     ];
+
+    // Blocks that count as solid/walkable ground
+    const isWalkableGround = (blockName: string | undefined): boolean => {
+        if (!blockName) return false;
+        // Air, water, leaves are NOT walkable
+        if (blockName === 'air' || blockName === 'water' || blockName.includes('leaves')) return false;
+        // Most other solid blocks are walkable
+        return true;
+    };
+
     bb.nearbyTrees = bb.nearbyLogs.filter(log => {
-        // Only count trees BELOW bot or at same Y level (not in canopy above)
-        // This prevents the bot from seeing trees it's standing on top of as "reachable"
-        if (log.position.y > bot.entity.position.y) return false;
+        // Skip logs more than 5 blocks above bot (unreachable canopy)
+        if (log.position.y > bot.entity.position.y + 5) return false;
+
+        // Skip logs more than 10 blocks below bot (likely stuck on canopy, can't path down)
+        if (log.position.y < bot.entity.position.y - 10) return false;
 
         const below = bot.blockAt(log.position.offset(0, -1, 0));
         if (!below) return false;
 
-        // Valid if on ground blocks, roots, mud, or another log (part of tree trunk)
-        return VALID_TREE_BASE.includes(below.name) || LOG_NAMES.includes(below.name);
+        // Must be a valid tree base (on ground or another log)
+        const isValidBase = VALID_TREE_BASE.includes(below.name) || LOG_NAMES.includes(below.name);
+        if (!isValidBase) return false;
+
+        // Critical: Check if there's walkable ground adjacent to the tree base
+        // This ensures the bot can actually stand next to the tree to chop it
+        const adjacentOffsets = [
+            new Vec3(1, 0, 0), new Vec3(-1, 0, 0),
+            new Vec3(0, 0, 1), new Vec3(0, 0, -1),
+        ];
+
+        let hasWalkableAccess = false;
+        for (const offset of adjacentOffsets) {
+            const adjacentPos = log.position.plus(offset);
+            const groundBlock = bot.blockAt(adjacentPos.offset(0, -1, 0));
+            const feetBlock = bot.blockAt(adjacentPos);
+            const headBlock = bot.blockAt(adjacentPos.offset(0, 1, 0));
+
+            // Need: solid ground below, air at feet and head level
+            if (groundBlock && isWalkableGround(groundBlock.name) &&
+                feetBlock && (feetBlock.name === 'air' || feetBlock.name === 'water') &&
+                headBlock && (headBlock.name === 'air' || headBlock.name === 'water' || headBlock.name.includes('leaves'))) {
+                hasWalkableAccess = true;
+                break;
+            }
+        }
+
+        return hasWalkableAccess;
     });
+
+    // Debug logging for tree detection
+    if (bb.nearbyLogs.length > 0 && bb.nearbyTrees.length === 0) {
+        console.log(`[Lmbr] Found ${bb.nearbyLogs.length} logs but 0 reachable trees (bot Y: ${Math.floor(pos.y)})`);
+    }
 
     // Find leaves (for clearing)
     bb.nearbyLeaves = bot.findBlocks({
