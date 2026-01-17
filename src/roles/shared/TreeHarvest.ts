@@ -44,6 +44,12 @@ export interface TreeHarvestState {
     basePos: Vec3;
     logType: string;
     phase: 'chopping' | 'clearing_leaves' | 'replanting' | 'done';
+    /**
+     * Flag to prevent re-entry during async operations (pathfinding, digging).
+     * When true, subsequent calls to continueTreeHarvest should return 'success'
+     * immediately without starting new operations.
+     */
+    busy?: boolean;
 }
 
 export type TreeHarvestResult = 'success' | 'failure' | 'done';
@@ -120,17 +126,22 @@ export async function chopLogs(bot: Bot, state: TreeHarvestState): Promise<TreeH
 
             console.log(`[TreeHarvest] Chopping ${block.name} at ${block.position}`);
 
+            // Mark as busy before starting async operations
+            state.busy = true;
             try {
                 const goal = new GoalLookAtBlock(block.position, bot.world, { reach: 4 });
                 const success = await pathfinderGotoWithRetry(bot, goal);
                 if (!success) {
                     console.log(`[TreeHarvest] Failed to reach log after retries`);
+                    state.busy = false;
                     break;
                 }
                 await bot.dig(block);
                 await sleep(150);
+                state.busy = false;
                 return 'success';
             } catch {
+                state.busy = false;
                 // Try from current position if close
                 const dist = bot.entity.position.distanceTo(block.position);
                 if (dist < 5) {
@@ -201,18 +212,23 @@ export async function clearLeaves(bot: Bot, state: TreeHarvestState): Promise<Tr
 
     console.log(`[TreeHarvest] Breaking leaves at ${leafBlock.position}`);
 
+    // Mark as busy before starting async operations
+    state.busy = true;
     try {
         const goal = new GoalLookAtBlock(leafBlock.position, bot.world, { reach: 5 });
         const success = await pathfinderGotoWithRetry(bot, goal);
         if (!success) {
             console.log(`[TreeHarvest] Failed to reach leaf after retries`);
             state.phase = 'replanting';
+            state.busy = false;
             return 'success';
         }
         await bot.dig(leafBlock);
         await sleep(100);
+        state.busy = false;
         return 'success';
     } catch {
+        state.busy = false;
         // Try from current position
         const dist = bot.entity.position.distanceTo(leafBlock.position);
         if (dist < 6) {
@@ -303,11 +319,14 @@ export async function replantSapling(
         return { result: 'done', planted: false };
     }
 
+    // Mark as busy before starting async operations
+    state.busy = true;
     try {
         // Move close to the planting spot
         const success = await pathfinderGotoWithRetry(bot, new GoalNear(plantSpot.x, plantSpot.y, plantSpot.z, 3));
         if (!success) {
             console.log(`[TreeHarvest] Failed to reach planting spot after retries`);
+            state.busy = false;
             return { result: 'success', planted: false };
         }
 
@@ -324,9 +343,12 @@ export async function replantSapling(
             await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
             plantedPositions.push(plantSpot.clone());
             console.log(`[TreeHarvest] Planted sapling ${plantedPositions.length} at ${plantSpot}`);
+            state.busy = false;
             return { result: 'success', planted: true };
         }
+        state.busy = false;
     } catch (err) {
+        state.busy = false;
         console.log(`[TreeHarvest] Failed to plant sapling: ${err}`);
     }
 
@@ -342,6 +364,12 @@ export async function continueTreeHarvest(
     state: TreeHarvestState,
     plantedPositions: Vec3[]
 ): Promise<TreeHarvestResult> {
+    // Prevent re-entry during async operations (pathfinding, digging)
+    // This is critical because the GOAP executor calls this every tick
+    if (state.busy) {
+        return 'success'; // Still working, don't start new operations
+    }
+
     switch (state.phase) {
         case 'chopping':
             return chopLogs(bot, state);
