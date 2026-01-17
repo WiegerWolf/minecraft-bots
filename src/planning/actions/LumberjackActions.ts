@@ -17,6 +17,7 @@ import {
   WriteKnowledgeSign,
   StudySpawnSigns,
   WithdrawSupplies,
+  ReadUnknownSign,
 } from '../../roles/lumberjack/behaviors/actions';
 
 /**
@@ -491,6 +492,33 @@ export class WithdrawSuppliesAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Read an unknown sign (curious bot behavior)
+ * When the bot spots a sign it hasn't read, it investigates.
+ */
+export class ReadUnknownSignAction extends BaseGOAPAction {
+  name = 'ReadUnknownSign';
+  private impl = new ReadUnknownSign();
+
+  preconditions = [
+    numericPrecondition('nearby.unknownSigns', v => v > 0, 'unknown signs nearby'),
+  ];
+
+  effects = [
+    incrementEffect('nearby.unknownSigns', -1, 'read a sign'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Low cost - reading signs is quick and potentially valuable
+    return 2.0;
+  }
+
+  override async execute(bot: Bot, bb: LumberjackBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * Create all lumberjack actions for the planner.
  */
 export function createLumberjackActions(): BaseGOAPAction[] {
@@ -509,6 +537,7 @@ export function createLumberjackActions(): BaseGOAPAction[] {
     new CraftChestAction(),
     new CraftAndPlaceCraftingTableAction(),
     new WriteKnowledgeSignAction(),
+    new ReadUnknownSignAction(),   // Curious bot - read unknown signs
     new PatrolForestAction(),
   ];
 }

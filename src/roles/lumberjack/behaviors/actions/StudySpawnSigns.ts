@@ -8,6 +8,7 @@ import {
     findSignsNear,
     readSignText,
     parseSignText,
+    getTypeName,
     type SignKnowledgeType
 } from '../../../../shared/SignKnowledge';
 
@@ -73,7 +74,7 @@ export class StudySpawnSigns implements BehaviorNode {
         bb.log?.info({ signCount: signs.length }, 'Found signs to study');
 
         // Visit each sign
-        const learned: Array<{ type: SignKnowledgeType; pos: Vec3 }> = [];
+        const learned: Array<{ type: SignKnowledgeType; pos: Vec3; signPos: Vec3 }> = [];
 
         for (const sign of signs) {
             try {
@@ -90,12 +91,16 @@ export class StudySpawnSigns implements BehaviorNode {
                 await bot.lookAt(sign.position.offset(0.5, 0.5, 0.5));
                 await sleep(500); // Pause to "read" the sign
 
+                // Mark sign as read
+                const signKey = `${Math.floor(sign.position.x)},${Math.floor(sign.position.y)},${Math.floor(sign.position.z)}`;
+                bb.readSignPositions.add(signKey);
+
                 // Read and parse the sign
                 const lines = readSignText(sign);
                 const entry = parseSignText(lines);
 
                 if (entry) {
-                    learned.push(entry);
+                    learned.push({ ...entry, signPos: sign.position.clone() });
                     bb.log?.info(
                         { type: entry.type, pos: entry.pos.toString() },
                         'Studied sign'
@@ -111,22 +116,52 @@ export class StudySpawnSigns implements BehaviorNode {
         for (const entry of learned) {
             switch (entry.type) {
                 case 'VILLAGE':
-                    bb.villageCenter = entry.pos;
-                    if (bb.villageChat) {
-                        bb.villageChat.setVillageCenter(entry.pos);
+                    if (!bb.villageCenter) {
+                        bb.villageCenter = entry.pos;
+                        bb.villageChat?.setVillageCenter(entry.pos);
                     }
                     break;
+
                 case 'CRAFT':
-                    bb.sharedCraftingTable = entry.pos;
-                    if (bb.villageChat) {
-                        bb.villageChat.setSharedCraftingTable(entry.pos);
+                    if (!bb.sharedCraftingTable) {
+                        // Verify it still exists
+                        const block = bot.blockAt(entry.pos);
+                        if (block?.name === 'crafting_table') {
+                            bb.sharedCraftingTable = entry.pos;
+                            bb.villageChat?.setSharedCraftingTable(entry.pos);
+                        }
                     }
                     break;
+
                 case 'CHEST':
-                    bb.sharedChest = entry.pos;
-                    if (bb.villageChat) {
-                        bb.villageChat.setSharedChest(entry.pos);
+                    // Add to known chests array if not already known
+                    const chestExists = bb.knownChests.some(c => c.distanceTo(entry.pos) < 2);
+                    if (!chestExists) {
+                        const block = bot.blockAt(entry.pos);
+                        if (block?.name === 'chest' || block?.name === 'barrel') {
+                            bb.knownChests.push(entry.pos);
+                            // Set as primary if none set
+                            if (!bb.sharedChest) {
+                                bb.sharedChest = entry.pos;
+                                bb.villageChat?.setSharedChest(entry.pos);
+                            }
+                        }
                     }
+                    break;
+
+                case 'FOREST':
+                    // Add to known forests if not already known
+                    const forestExists = bb.knownForests.some(f => f.distanceTo(entry.pos) < 20);
+                    if (!forestExists) {
+                        bb.knownForests.push(entry.pos);
+                    }
+                    break;
+
+                // Other landmarks noted but not acted on yet
+                case 'MINE':
+                case 'FARM':
+                case 'WATER':
+                    bb.log?.debug({ type: entry.type, pos: entry.pos.toString() }, 'Noted landmark');
                     break;
             }
         }
@@ -134,8 +169,7 @@ export class StudySpawnSigns implements BehaviorNode {
         // Announce what was learned on village chat
         if (learned.length > 0) {
             const summaries = learned.map(e => {
-                const typeName = e.type === 'VILLAGE' ? 'village center' :
-                                 e.type === 'CRAFT' ? 'crafting table' : 'chest';
+                const typeName = getTypeName(e.type);
                 return `${typeName} at (${Math.floor(e.pos.x)}, ${Math.floor(e.pos.y)}, ${Math.floor(e.pos.z)})`;
             });
 

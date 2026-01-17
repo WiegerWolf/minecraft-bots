@@ -11,17 +11,73 @@ function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// How long to remember a chest is full (5 minutes)
+const FULL_CHEST_MEMORY_MS = 5 * 60 * 1000;
+
 /**
- * CraftChest - Craft a chest if we have materials and no chest available
+ * CraftChest - Craft a chest if we have materials and no chest available (or all are full)
  */
 export class CraftChest implements BehaviorNode {
     name = 'CraftChest';
 
+    private posToKey(pos: { x: number; y: number; z: number }): string {
+        return `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
+    }
+
+    private isChestFull(bb: LumberjackBlackboard, pos: { x: number; y: number; z: number }): boolean {
+        const key = this.posToKey(pos);
+        const expiry = bb.fullChests.get(key);
+        if (!expiry) return false;
+        if (Date.now() >= expiry) {
+            bb.fullChests.delete(key);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Check if there's any available (non-full) chest from known chests or nearby perception.
+     */
+    private hasNonFullChest(bot: Bot, bb: LumberjackBlackboard): boolean {
+        // Check shared chest first
+        if (bb.sharedChest && !this.isChestFull(bb, bb.sharedChest)) {
+            // Verify it still exists
+            const block = bot.blockAt(bb.sharedChest);
+            if (block && (block.name === 'chest' || block.name === 'barrel')) {
+                return true;
+            }
+        }
+
+        // Check all known chests from signs
+        for (const chestPos of bb.knownChests) {
+            if (!this.isChestFull(bb, chestPos)) {
+                const block = bot.blockAt(chestPos);
+                if (block && (block.name === 'chest' || block.name === 'barrel')) {
+                    return true;
+                }
+            }
+        }
+
+        // Check nearby perceived chests
+        for (const chest of bb.nearbyChests) {
+            if (!this.isChestFull(bb, chest.position)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     async tick(bot: Bot, bb: LumberjackBlackboard): Promise<BehaviorStatus> {
-        // If there's already a chest available, don't craft
-        if (bb.sharedChest !== null || bb.nearbyChests.length > 0) {
+        // Check if there's any available (non-full) chest
+        const hasAvailableChest = this.hasNonFullChest(bot, bb);
+
+        // If there's already an available chest, don't craft
+        if (hasAvailableChest) {
             return 'failure';
         }
+
+        bb.log?.info('All chests are full or no chests exist, crafting new chest');
 
         // Establish village center at current position if not set
         if (!bb.villageCenter) {
@@ -303,10 +359,13 @@ export class CraftChest implements BehaviorNode {
                     const placedChest = bot.blockAt(placePos);
 
                     if (placedChest && placedChest.name === 'chest') {
+                        // Add to known chests
+                        bb.knownChests.push(placePos.clone());
+                        bb.sharedChest = placePos;
+
                         // Announce to village
                         if (bb.villageChat) {
                             bb.villageChat.announceSharedChest(placePos);
-                            bb.sharedChest = placePos;
                         }
                         return true;
                     }
@@ -338,9 +397,13 @@ export class CraftChest implements BehaviorNode {
                         const placedChest = bot.blockAt(placePos);
 
                         if (placedChest && placedChest.name === 'chest') {
+                            // Add to known chests
+                            bb.knownChests.push(placePos.clone());
+                            bb.sharedChest = placePos;
+
+                            // Announce to village
                             if (bb.villageChat) {
                                 bb.villageChat.announceSharedChest(placePos);
-                                bb.sharedChest = placePos;
                             }
                             return true;
                         }

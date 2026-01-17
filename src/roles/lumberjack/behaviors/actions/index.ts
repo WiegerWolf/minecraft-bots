@@ -11,3 +11,4 @@ export { PlantSaplings } from './PlantSaplings';
 export { WriteKnowledgeSign } from './WriteKnowledgeSign';
 export { StudySpawnSigns } from './StudySpawnSigns';
 export { WithdrawSupplies } from './WithdrawSupplies';
+export { ReadUnknownSign } from './ReadUnknownSign';

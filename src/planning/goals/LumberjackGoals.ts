@@ -465,6 +465,36 @@ export class WithdrawSuppliesGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Read unknown signs spotted while exploring.
+ * CURIOUS BOT behavior - when the bot sees a sign it hasn't read,
+ * it will go investigate and potentially learn something useful.
+ *
+ * Lower priority than core work, but higher than patrol.
+ * The bot should finish important tasks before getting distracted by signs.
+ */
+export class ReadUnknownSignGoal extends BaseGoal {
+  name = 'ReadUnknownSign';
+  description = 'Investigate and read an unknown sign';
+
+  conditions = [
+    numericGoalCondition('nearby.unknownSigns', v => v === 0, 'no unknown signs'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const unknownCount = ws.getNumber('nearby.unknownSigns');
+    if (unknownCount === 0) return 0;
+
+    // Base utility of 45 - higher than patrol (35) but lower than most work
+    // Increases slightly with more signs to encourage batch reading
+    return 45 + Math.min(unknownCount * 5, 15);
+  }
+
+  override isValid(ws: WorldState): boolean {
+    return ws.getNumber('nearby.unknownSigns') > 0;
+  }
+}
+
+/**
  * Registry of all lumberjack goals.
  */
 export function createLumberjackGoals(): BaseGoal[] {
@@ -481,6 +511,7 @@ export function createLumberjackGoals(): BaseGoal[] {
     new WriteKnowledgeSignGoal(),
     new CraftInfrastructureGoal(),
     new ProcessWoodGoal(),
+    new ReadUnknownSignGoal(),    // Curious bot - read unknown signs
     new PatrolForestGoal(), // Always last - lowest priority fallback
   ];
 }

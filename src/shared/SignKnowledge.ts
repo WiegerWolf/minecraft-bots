@@ -12,18 +12,44 @@ import type { Logger } from './logger';
  * bots read these signs to recover knowledge.
  *
  * Sign text format (4 lines, ~15 chars each):
- * Line 1: [TYPE]
+ * Line 1: [TYPE] or [TYPE#] for numbered instances
  * Line 2: X: <number>
  * Line 3: Y: <number>
  * Line 4: Z: <number>
  *
- * Sign types:
+ * Infrastructure types (single instance):
  * - VILLAGE: Village center position
  * - CRAFT: Shared crafting table position
- * - CHEST: Shared chest position
+ *
+ * Infrastructure types (multiple instances):
+ * - CHEST, CHEST2, CHEST3: Storage locations
+ *
+ * Landmark types (multiple instances, for navigation):
+ * - FOREST, FOREST2: Good tree harvesting areas
+ * - MINE, MINE2: Mining locations
+ * - FARM, FARM2: Farming areas
+ * - WATER: Water sources
  */
 
-export type SignKnowledgeType = 'VILLAGE' | 'CRAFT' | 'CHEST';
+/**
+ * Sign types - simple, no numbering needed.
+ * Multiple signs of the same type are collected into arrays.
+ *
+ * Infrastructure:
+ * - VILLAGE: Village center (single)
+ * - CRAFT: Crafting table (single)
+ * - CHEST: Storage chest (can have multiple)
+ *
+ * Landmarks:
+ * - FOREST: Good tree area
+ * - MINE: Mining location
+ * - FARM: Farming area
+ * - WATER: Water source
+ */
+export type SignKnowledgeType = 'VILLAGE' | 'CRAFT' | 'CHEST' | 'FOREST' | 'MINE' | 'FARM' | 'WATER';
+
+/** Types that are landmarks (informational, not critical infrastructure) */
+export const LANDMARK_TYPES: SignKnowledgeType[] = ['FOREST', 'MINE', 'FARM', 'WATER'];
 
 export interface KnowledgeEntry {
     type: SignKnowledgeType;
@@ -43,6 +69,9 @@ export function formatSignText(type: SignKnowledgeType, pos: Vec3): string[] {
     ];
 }
 
+/** All valid type names for regex matching */
+const TYPE_PATTERN = 'VILLAGE|CRAFT|CHEST|FOREST|MINE|FARM|WATER';
+
 /**
  * Parse sign text back to a knowledge entry.
  * Returns null if the sign doesn't contain valid knowledge.
@@ -51,7 +80,7 @@ export function parseSignText(lines: string[]): KnowledgeEntry | null {
     if (!lines || lines.length < 4) return null;
 
     // Check first line for [TYPE] format
-    const typeMatch = lines[0]?.match(/^\[(VILLAGE|CRAFT|CHEST)\]$/);
+    const typeMatch = lines[0]?.match(new RegExp(`^\\[(${TYPE_PATTERN})\\]$`));
     if (!typeMatch) return null;
 
     const type = typeMatch[1] as SignKnowledgeType;
@@ -71,6 +100,29 @@ export function parseSignText(lines: string[]): KnowledgeEntry | null {
         type,
         pos: new Vec3(x, y, z)
     };
+}
+
+/**
+ * Check if a type is a landmark (informational, not infrastructure).
+ */
+export function isLandmarkType(type: SignKnowledgeType): boolean {
+    return LANDMARK_TYPES.includes(type);
+}
+
+/**
+ * Get a human-readable name for a sign type.
+ */
+export function getTypeName(type: SignKnowledgeType): string {
+    const names: Record<SignKnowledgeType, string> = {
+        VILLAGE: 'village center',
+        CRAFT: 'crafting table',
+        CHEST: 'chest',
+        FOREST: 'forest',
+        MINE: 'mine',
+        FARM: 'farm',
+        WATER: 'water source',
+    };
+    return names[type] || type.toLowerCase();
 }
 
 /**
@@ -113,8 +165,50 @@ export function readSignText(block: Block): string[] {
 }
 
 /**
+ * Extended knowledge entry with sign block position for tracking.
+ */
+export interface ExtendedKnowledgeEntry extends KnowledgeEntry {
+    signPos: Vec3;
+}
+
+/**
+ * Read all knowledge signs near a position.
+ * Returns all entries found (including multiple of same base type).
+ */
+export function readAllSignsNear(
+    bot: Bot,
+    center: Vec3,
+    radius: number = 15,
+    log?: Logger | null
+): ExtendedKnowledgeEntry[] {
+    const entries: ExtendedKnowledgeEntry[] = [];
+
+    const signs = findSignsNear(bot, center, radius);
+    log?.debug({ signCount: signs.length, center: center.toString() }, 'Found signs');
+
+    for (const sign of signs) {
+        const lines = readSignText(sign);
+        const entry = parseSignText(lines);
+
+        if (entry) {
+            entries.push({
+                ...entry,
+                signPos: sign.position.clone()
+            });
+            log?.debug(
+                { type: entry.type, pos: entry.pos.toString(), signPos: sign.position.toString() },
+                'Read knowledge from sign'
+            );
+        }
+    }
+
+    return entries;
+}
+
+/**
  * Read all knowledge signs near spawn position.
- * Returns a map of type -> position.
+ * Returns a map of type -> position (for single-instance types).
+ * For backwards compatibility with existing code.
  */
 export function readSignsAtSpawn(
     bot: Bot,
@@ -122,24 +216,30 @@ export function readSignsAtSpawn(
     log?: Logger | null
 ): Map<SignKnowledgeType, Vec3> {
     const knowledge = new Map<SignKnowledgeType, Vec3>();
+    const entries = readAllSignsNear(bot, spawnPos, 15, log);
 
-    const signs = findSignsNear(bot, spawnPos, 15);
-    log?.debug({ signCount: signs.length, spawnPos: spawnPos.toString() }, 'Found signs near spawn');
-
-    for (const sign of signs) {
-        const lines = readSignText(sign);
-        const entry = parseSignText(lines);
-
-        if (entry) {
-            knowledge.set(entry.type, entry.pos);
-            log?.info(
-                { type: entry.type, pos: entry.pos.toString(), signPos: sign.position.toString() },
-                'Read knowledge from sign'
-            );
-        }
+    for (const entry of entries) {
+        knowledge.set(entry.type, entry.pos);
+        log?.info(
+            { type: entry.type, pos: entry.pos.toString(), signPos: entry.signPos.toString() },
+            'Read knowledge from sign'
+        );
     }
 
     return knowledge;
+}
+
+/**
+ * Get all positions for a type from a list of entries.
+ * Useful for collecting all CHEST positions, for example.
+ */
+export function getPositionsForType(
+    entries: ExtendedKnowledgeEntry[],
+    type: SignKnowledgeType
+): Vec3[] {
+    return entries
+        .filter(e => e.type === type)
+        .map(e => e.pos);
 }
 
 /**
@@ -164,13 +264,22 @@ export function getSignPlacementPositions(spawnPos: Vec3): Vec3[] {
 
 /**
  * Get the preferred position for a sign type.
+ * Returns position from the grid near spawn.
  */
 export function getSignPositionForType(spawnPos: Vec3, type: SignKnowledgeType): Vec3 {
     const positions = getSignPlacementPositions(spawnPos);
+
+    // Primary infrastructure types get fixed slots
     switch (type) {
         case 'VILLAGE': return positions[0]!;
         case 'CRAFT': return positions[1]!;
         case 'CHEST': return positions[2]!;
+        case 'FOREST': return positions[3]!;
+        case 'MINE': return positions[4]!;
+        case 'FARM': return positions[5]!;
+        default:
+            // Overflow to first extra slot
+            return positions[3] || positions[0]!;
     }
 }
 

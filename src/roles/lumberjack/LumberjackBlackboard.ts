@@ -38,9 +38,13 @@ export interface LumberjackBlackboard {
 
     // Strategic state (persists across ticks)
     villageCenter: Vec3 | null;
-    sharedChest: Vec3 | null;
+    sharedChest: Vec3 | null;              // Primary chest (first discovered)
     sharedCraftingTable: Vec3 | null;
     currentTreeHarvest: TreeHarvestState | null;
+
+    // Multiple chests support
+    knownChests: Vec3[];                   // All known chest positions (from signs, chat, discovery)
+    knownForests: Vec3[];                  // Known good forest/tree areas (from signs)
 
     // Village communication (set by role)
     villageChat: VillageChat | null;
@@ -75,6 +79,10 @@ export interface LumberjackBlackboard {
     // Startup behaviors (one-time on spawn)
     hasStudiedSigns: boolean;             // Has bot walked to and read signs near spawn
     hasCheckedStorage: boolean;           // Has bot checked chest for startup supplies
+
+    // Curious bot - sign tracking
+    readSignPositions: Set<string>;       // Sign positions we've read (stringified: "x,y,z")
+    unknownSigns: Vec3[];                 // Signs spotted but not yet read
 }
 
 export function createLumberjackBlackboard(): LumberjackBlackboard {
@@ -97,6 +105,10 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         sharedChest: null,
         sharedCraftingTable: null,
         currentTreeHarvest: null,
+
+        // Multiple chests/landmarks
+        knownChests: [],
+        knownForests: [],
 
         villageChat: null,
         log: null,
@@ -123,6 +135,10 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         // Startup behaviors
         hasStudiedSigns: false,
         hasCheckedStorage: false,
+
+        // Curious bot - sign tracking
+        readSignPositions: new Set(),
+        unknownSigns: [],
     };
 }
 
@@ -307,6 +323,22 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
             return b.name === 'crafting_table';
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
+
+    // ═══════════════════════════════════════════════
+    // SIGN DETECTION (curious bot)
+    // ═══════════════════════════════════════════════
+    const nearbySigns = bot.findBlocks({
+        point: pos,
+        maxDistance: 16,
+        count: 10,
+        matching: b => b?.name?.includes('_sign') ?? false
+    });
+
+    // Find signs we haven't read yet
+    const posToKey = (p: Vec3) => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
+    bb.unknownSigns = nearbySigns
+        .filter(signPos => !bb.readSignPositions.has(posToKey(signPos)))
+        .map(p => new Vec3(p.x, p.y, p.z));
 
     // ═══════════════════════════════════════════════
     // COMPUTED DECISIONS

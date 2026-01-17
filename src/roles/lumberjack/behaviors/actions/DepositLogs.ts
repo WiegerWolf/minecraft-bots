@@ -83,25 +83,50 @@ export class DepositLogs implements BehaviorNode {
         }
 
         if (!chestPos) {
-            // Try to find a chest near village center that isn't full
-            const availableChest = bb.nearbyChests.find(c => !this.isChestFull(bb, c.position));
+            // Collect all known chest positions: from signs + nearby perception
+            const allChestPositions = [...bb.knownChests];
 
-            if (availableChest) {
-                chestPos = availableChest.position;
-                // Register it as shared chest
+            // Add nearby chests that aren't already in knownChests
+            for (const nearby of bb.nearbyChests) {
+                const alreadyKnown = allChestPositions.some(
+                    known => known.distanceTo(nearby.position) < 2
+                );
+                if (!alreadyKnown) {
+                    allChestPositions.push(nearby.position.clone());
+                }
+            }
+
+            // Sort by distance from bot and filter out full ones
+            const botPos = bot.entity.position;
+            const availableChests = allChestPositions
+                .filter(pos => !this.isChestFull(bb, pos))
+                .sort((a, b) => a.distanceTo(botPos) - b.distanceTo(botPos));
+
+            if (availableChests.length > 0) {
+                chestPos = availableChests[0]!;
+
+                // Add to knownChests if not already there
+                const alreadyInKnown = bb.knownChests.some(k => k.distanceTo(chestPos!) < 2);
+                if (!alreadyInKnown) {
+                    bb.knownChests.push(chestPos.clone());
+
+                    // Queue sign write for newly discovered chest
+                    if (bb.spawnPosition) {
+                        bb.pendingSignWrites.push({
+                            type: 'CHEST',
+                            pos: chestPos.clone()
+                        });
+                        bb.log?.debug({ type: 'CHEST', pos: chestPos.toString() }, 'Queued sign write for discovered chest');
+                    }
+                }
+
+                // Register as shared chest and announce
+                bb.sharedChest = chestPos;
                 if (bb.villageChat) {
                     bb.villageChat.announceSharedChest(chestPos);
-                    bb.sharedChest = chestPos;
                 }
 
-                // Queue sign write for discovered chest
-                if (bb.spawnPosition) {
-                    bb.pendingSignWrites.push({
-                        type: 'CHEST',
-                        pos: chestPos.clone()
-                    });
-                    bb.log?.debug({ type: 'CHEST', pos: chestPos.toString() }, 'Queued sign write for discovered chest');
-                }
+                bb.log?.info({ chestPos: chestPos.toString() }, 'Selected closest available chest');
             } else {
                 bb.log?.debug('No available (non-full) chests found');
                 return 'failure'; // No chest available

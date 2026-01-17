@@ -215,6 +215,11 @@ export class WorldStateBuilder {
     // Startup behaviors (one-time on spawn)
     ws.set('has.studiedSigns', bb.hasStudiedSigns);
     ws.set('has.checkedStorage', bb.hasCheckedStorage);
+
+    // Curious bot - sign discovery
+    ws.set('nearby.unknownSigns', bb.unknownSigns.length);
+    ws.set('known.chests', bb.knownChests.length);
+    ws.set('known.forests', bb.knownForests.length);
   }
 
   /**
