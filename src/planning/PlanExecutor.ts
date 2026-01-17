@@ -247,6 +247,12 @@ export class PlanExecutor {
     // Reset and try next action
     this.currentAction = null;
     this.currentActionIndex++;
+
+    // Check if we've exhausted the plan (no more actions to try)
+    if (this.currentActionIndex >= this.currentPlan.length) {
+      this.log?.info({ failures: this.consecutiveFailures }, 'Plan exhausted after failure');
+      this.requestReplan(ReplanReason.PLAN_EXHAUSTED);
+    }
   }
 
   /**
