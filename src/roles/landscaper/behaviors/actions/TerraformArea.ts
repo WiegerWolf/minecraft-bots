@@ -47,17 +47,56 @@ export class TerraformArea implements BehaviorNode {
         // Claim the request
         bb.villageChat.claimTerraformRequest(request.position);
 
+        // The request position is now a LAND position (farm center), not water
+        // Detect the ground level at the center
+        const centerX = Math.floor(request.position.x);
+        const centerZ = Math.floor(request.position.z);
+        let targetY = Math.floor(request.position.y);
+
+        // Verify/find ground level at center
+        for (let y = targetY + 3; y >= targetY - 3; y--) {
+            const block = bot.blockAt(new Vec3(centerX, y, centerZ));
+            const above = bot.blockAt(new Vec3(centerX, y + 1, centerZ));
+            if (block && block.boundingBox === 'block' && block.name !== 'water' &&
+                above && (above.name === 'air' || above.name.includes('grass'))) {
+                targetY = y;
+                break;
+            }
+        }
+
+        // Find water nearby (within irrigation range)
+        let waterPos: Vec3 | null = null;
+        const searchRadius = 6;
+        for (let dx = -searchRadius; dx <= searchRadius && !waterPos; dx++) {
+            for (let dz = -searchRadius; dz <= searchRadius && !waterPos; dz++) {
+                for (let dy = -2; dy <= 1; dy++) {
+                    const checkPos = new Vec3(centerX + dx, targetY + dy, centerZ + dz);
+                    const block = bot.blockAt(checkPos);
+                    if (block && block.name === 'water') {
+                        waterPos = checkPos.clone();
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!waterPos) {
+            console.log(`[Landscaper] No water found near farm center at ${request.position.floored()} - skipping`);
+            bb.villageChat.announceTerraformDone(request.position);
+            return 'failure';
+        }
+
+        console.log(`[Landscaper] Starting terraform at ${request.position.floored()}, target Y=${targetY}, water at ${waterPos.floored()}`);
+
         // Initialize the terraform task
         bb.currentTerraformTask = {
-            waterPos: request.position.clone(),
-            targetY: request.position.y, // Water Y level is target
+            waterPos: waterPos,
+            targetY: targetY,
             phase: 'analyzing',
             blocksToRemove: [],
             blocksToFill: [],
             progress: 0
         };
-
-        console.log(`[Landscaper] Starting terraform at ${request.position.floored()}`);
         bb.lastAction = 'terraform_start';
 
         return this.analyzeArea(bot, bb);
@@ -89,59 +128,74 @@ export class TerraformArea implements BehaviorNode {
 
         const waterPos = task.waterPos;
         const targetY = task.targetY;
-        const radius = 4; // 9x9 area (hydration range)
+        const radius = 4; // 9x9 area (hydration range from water)
+
+        // Use water position as center of the 9x9 area
+        const centerX = Math.floor(waterPos.x);
+        const centerZ = Math.floor(waterPos.z);
 
         const blocksToRemove: Vec3[] = [];
         const blocksToFill: Vec3[] = [];
 
-        // Scan the area
+        console.log(`[Landscaper] Analyzing 9x9 area centered at (${centerX}, ${targetY}, ${centerZ})`);
+
+        // Scan the 9x9 area
         for (let dx = -radius; dx <= radius; dx++) {
             for (let dz = -radius; dz <= radius; dz++) {
-                const x = Math.floor(waterPos.x) + dx;
-                const z = Math.floor(waterPos.z) + dz;
+                const x = centerX + dx;
+                const z = centerZ + dz;
 
-                // Check blocks above target level (need to dig)
-                for (let y = targetY; y <= targetY + 5; y++) {
-                    const pos = new Vec3(x, y, z);
-                    const block = bot.blockAt(pos);
-                    if (!block) continue;
+                // Skip the water source block itself
+                if (dx === 0 && dz === 0) continue;
 
-                    // Don't remove water
-                    if (block.name === 'water') continue;
-
-                    // Above target level - mark for removal
-                    if (y > targetY && block.name !== 'air') {
-                        // Only remove solid blocks that we can dig
-                        if (SOFT_BLOCKS.includes(block.name) || HARD_BLOCKS.includes(block.name) ||
-                            block.name.includes('_log') || block.name.includes('leaves')) {
-                            blocksToRemove.push(pos.clone());
-                        }
-                    }
-                }
-
-                // Check at target level (surface should be dirt)
+                // Check what's at the target surface level
                 const surfacePos = new Vec3(x, targetY, z);
                 const surfaceBlock = bot.blockAt(surfacePos);
-                if (surfaceBlock) {
-                    // Skip water blocks
-                    if (surfaceBlock.name === 'water') continue;
+                const abovePos = new Vec3(x, targetY + 1, z);
+                const aboveBlock = bot.blockAt(abovePos);
+                const belowPos = new Vec3(x, targetY - 1, z);
+                const belowBlock = bot.blockAt(belowPos);
 
-                    // Need to fill if it's air or needs to be replaced with dirt
-                    if (surfaceBlock.name === 'air') {
+                // Skip if this is water
+                if (surfaceBlock?.name === 'water') continue;
+
+                // Case 1: Surface is air - need to fill with dirt
+                if (!surfaceBlock || surfaceBlock.name === 'air') {
+                    // Check if there's support below or we need to build up
+                    if (belowBlock && belowBlock.boundingBox === 'block' && belowBlock.name !== 'water') {
                         blocksToFill.push(surfacePos.clone());
-                    } else if (!FARMABLE_BLOCKS.includes(surfaceBlock.name)) {
-                        // Non-farmable block at surface - dig and replace
+                    } else if (belowBlock?.name === 'water') {
+                        // Building over water - need to place dirt
+                        blocksToFill.push(surfacePos.clone());
+                    } else if (!belowBlock || belowBlock.name === 'air') {
+                        // Deep hole - fill from bottom
+                        // First fill below, then surface
+                        blocksToFill.push(belowPos.clone());
+                        blocksToFill.push(surfacePos.clone());
+                    }
+                }
+                // Case 2: Surface has non-farmable block - replace it
+                else if (!FARMABLE_BLOCKS.includes(surfaceBlock.name)) {
+                    if (SOFT_BLOCKS.includes(surfaceBlock.name) || HARD_BLOCKS.includes(surfaceBlock.name)) {
                         blocksToRemove.push(surfacePos.clone());
                         blocksToFill.push(surfacePos.clone());
                     }
                 }
+                // Case 3: Surface is good (dirt/grass) - just clear above
 
-                // Check below target level (need to fill holes)
-                const belowPos = new Vec3(x, targetY - 1, z);
-                const belowBlock = bot.blockAt(belowPos);
-                if (belowBlock && belowBlock.name === 'air') {
-                    // Hole that needs filling
-                    blocksToFill.push(belowPos.clone());
+                // Clear any blocks above the surface (obstacles)
+                for (let y = targetY + 1; y <= targetY + 4; y++) {
+                    const pos = new Vec3(x, y, z);
+                    const block = bot.blockAt(pos);
+                    if (!block || block.name === 'air') continue;
+
+                    // Remove obstacles
+                    if (SOFT_BLOCKS.includes(block.name) || HARD_BLOCKS.includes(block.name) ||
+                        block.name.includes('_log') || block.name.includes('leaves') ||
+                        block.name.includes('grass') || block.name.includes('flower') ||
+                        block.name.includes('fern') || block.name.includes('bush')) {
+                        blocksToRemove.push(pos.clone());
+                    }
                 }
             }
         }
@@ -150,11 +204,30 @@ export class TerraformArea implements BehaviorNode {
         blocksToRemove.sort((a, b) => b.y - a.y);
         blocksToFill.sort((a, b) => a.y - b.y);
 
-        task.blocksToRemove = blocksToRemove;
-        task.blocksToFill = blocksToFill;
-        task.phase = blocksToRemove.length > 0 ? 'digging' : (blocksToFill.length > 0 ? 'filling' : 'finishing');
+        // Remove duplicates from fill list
+        const uniqueFills = new Map<string, Vec3>();
+        for (const pos of blocksToFill) {
+            const key = `${pos.x},${pos.y},${pos.z}`;
+            if (!uniqueFills.has(key)) {
+                uniqueFills.set(key, pos);
+            }
+        }
+        task.blocksToFill = Array.from(uniqueFills.values()).sort((a, b) => a.y - b.y);
 
-        console.log(`[Landscaper] Analysis complete: ${blocksToRemove.length} to dig, ${blocksToFill.length} to fill`);
+        task.blocksToRemove = blocksToRemove;
+        task.phase = blocksToRemove.length > 0 ? 'digging' : (task.blocksToFill.length > 0 ? 'filling' : 'finishing');
+
+        // Log summary
+        const totalWork = blocksToRemove.length + task.blocksToFill.length;
+        if (totalWork > 0) {
+            console.log(`[Landscaper] Analysis: ${blocksToRemove.length} to dig, ${task.blocksToFill.length} to fill (total: ${totalWork} blocks)`);
+            if (blocksToRemove.length > 0) {
+                const yLevels = new Set(blocksToRemove.map(b => b.y));
+                console.log(`[Landscaper]   Dig at Y: ${[...yLevels].sort((a,b) => a-b).join(', ')}`);
+            }
+        } else {
+            console.log(`[Landscaper] Analysis: Area already suitable at Y=${targetY}`);
+        }
 
         return 'running';
     }
