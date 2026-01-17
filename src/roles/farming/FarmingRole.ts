@@ -99,8 +99,30 @@ export class FarmingRole implements Role {
         console.log('[Farming] Farming Role stopped.');
     }
 
+    private isBotConnected(): boolean {
+        if (!this.bot) return false;
+        try {
+            const client = (this.bot as any)._client;
+            if (!client || !client.socket || client.socket.destroyed) {
+                return false;
+            }
+            // Also check if entity exists (means we're spawned)
+            if (!this.bot.entity) return false;
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     private async loop() {
         while (this.active && this.bot) {
+            // Check for zombie state - bot object exists but connection is dead
+            if (!this.isBotConnected()) {
+                console.error('[Farming] Connection lost - stopping role');
+                this.active = false;
+                break;
+            }
+
             try {
                 // ═══════════════════════════════════════════════
                 // PHASE 1: PERCEIVE

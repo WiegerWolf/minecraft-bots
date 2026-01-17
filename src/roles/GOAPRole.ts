@@ -145,10 +145,35 @@ export abstract class GOAPRole implements Role {
   protected abstract updateBlackboard(): void | Promise<void>;
 
   /**
+   * Check if the bot is actually connected to the server.
+   */
+  private isBotConnected(): boolean {
+    if (!this.bot) return false;
+    try {
+      const client = (this.bot as any)._client;
+      if (!client || !client.socket || client.socket.destroyed) {
+        return false;
+      }
+      // Also check if entity exists (means we're spawned)
+      if (!this.bot.entity) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Main planning loop tick.
    */
   protected async tick(): Promise<void> {
     if (!this.running || !this.bot || !this.blackboard) return;
+
+    // Check for zombie state - bot object exists but connection is dead
+    if (!this.isBotConnected()) {
+      console.error(`[GOAP] Connection lost - stopping ${this.name}`);
+      this.stop(this.bot);
+      return;
+    }
 
     try {
       // PHASE 1: PERCEIVE

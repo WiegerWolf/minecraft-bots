@@ -119,9 +119,39 @@ bot.on('chat', (username: string, message: string) => {
     }
 });
 
-bot.on('kicked', (reason) => { console.log('❌ Kicked:', reason); process.exit(1); });
-bot.on('error', (err) => { console.error('❌ Error:', err); });
-bot.on('end', () => { console.log('🔌 Disconnected'); process.exit(1); });
+// Track connection state explicitly
+let isConnected = false;
+
+bot.on('spawn', () => { isConnected = true; });
+bot.on('kicked', (reason) => {
+    isConnected = false;
+    console.log('❌ Kicked:', reason);
+    process.exit(1);
+});
+bot.on('error', (err) => {
+    console.error('❌ Error:', err);
+    // Don't exit on error - might be recoverable
+});
+bot.on('end', () => {
+    isConnected = false;
+    console.log('🔌 Disconnected');
+    process.exit(1);
+});
+
+// Export connection check for roles to use
+export function isBotConnected(): boolean {
+    if (!isConnected) return false;
+    // Also check if the underlying socket is alive
+    try {
+        const client = (bot as any)._client;
+        if (!client || !client.socket || client.socket.destroyed) {
+            return false;
+        }
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 
 // --- GRACEFUL SHUTDOWN LOGIC ---

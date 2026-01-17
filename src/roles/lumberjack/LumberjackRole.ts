@@ -83,8 +83,29 @@ export class LumberjackRole implements Role {
         console.log('[Lumberjack] Lumberjack Role stopped.');
     }
 
+    private isBotConnected(): boolean {
+        if (!this.bot) return false;
+        try {
+            const client = (this.bot as any)._client;
+            if (!client || !client.socket || client.socket.destroyed) {
+                return false;
+            }
+            if (!this.bot.entity) return false;
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     private async loop() {
         while (this.active && this.bot) {
+            // Check for zombie state
+            if (!this.isBotConnected()) {
+                console.error('[Lumberjack] Connection lost - stopping role');
+                this.active = false;
+                break;
+            }
+
             try {
                 // ═══════════════════════════════════════════════
                 // PHASE 1: PERCEIVE
