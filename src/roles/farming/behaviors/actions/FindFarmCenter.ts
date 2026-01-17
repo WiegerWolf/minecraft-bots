@@ -11,6 +11,54 @@ import { Vec3 } from 'vec3';
 
 const { GoalNear } = goals;
 
+// Blocks that are good for farming
+const FARMABLE_GROUND = ['grass_block', 'dirt', 'farmland', 'coarse_dirt', 'rooted_dirt', 'podzol'];
+
+/**
+ * Calculate flatness score for a position.
+ * Higher score = flatter terrain = less terraforming needed.
+ */
+function calculateFlatnessScore(bot: Bot, center: Vec3): number {
+    const radius = 4; // Hydration range
+    const targetY = center.y;
+    let score = 100;
+
+    for (let dx = -radius; dx <= radius; dx++) {
+        for (let dz = -radius; dz <= radius; dz++) {
+            const x = Math.floor(center.x) + dx;
+            const z = Math.floor(center.z) + dz;
+
+            // Check surface level
+            const surfacePos = new Vec3(x, targetY, z);
+            const surfaceBlock = bot.blockAt(surfacePos);
+            if (!surfaceBlock) continue;
+
+            // Skip water
+            if (surfaceBlock.name === 'water' || surfaceBlock.name === 'flowing_water') continue;
+
+            // Penalize non-farmable surface blocks
+            if (!FARMABLE_GROUND.includes(surfaceBlock.name) && surfaceBlock.name !== 'air') {
+                score -= 2;
+            }
+
+            // Check for obstacles above target level
+            const aboveBlock = bot.blockAt(surfacePos.offset(0, 1, 0));
+            if (aboveBlock && aboveBlock.name !== 'air' &&
+                !aboveBlock.name.includes('grass') && !aboveBlock.name.includes('fern')) {
+                score -= 3;
+            }
+
+            // Check for holes below target level
+            const belowBlock = bot.blockAt(surfacePos.offset(0, -1, 0));
+            if (belowBlock && belowBlock.name === 'air') {
+                score -= 2;
+            }
+        }
+    }
+
+    return Math.max(0, score);
+}
+
 /**
  * Find and establish a farm center near water.
  * This action helps the bot locate a suitable farming location.
@@ -80,18 +128,27 @@ export class FindFarmCenter implements BehaviorNode {
         }
 
         if (suitablePositions.length > 0) {
-            // Sort by distance and prefer lower elevations (near sea level)
+            // Sort by distance, elevation, and flatness
             const SEA_LEVEL = 63;
             const sortedPositions = suitablePositions
-                .map(pos => ({
-                    pos,
-                    dist: bot.entity.position.distanceTo(pos),
-                    heightScore: Math.abs(pos.y - SEA_LEVEL)
-                }))
+                .map(pos => {
+                    // Calculate flatness score (fewer blocks to terraform = better)
+                    const flatnessScore = calculateFlatnessScore(bot, pos);
+                    return {
+                        pos,
+                        dist: bot.entity.position.distanceTo(pos),
+                        heightScore: Math.abs(pos.y - SEA_LEVEL),
+                        flatnessScore
+                    };
+                })
                 .sort((a, b) => {
-                    // Prefer positions near sea level, then closer ones
+                    // Prefer flatter terrain first
+                    const flatnessDiff = b.flatnessScore - a.flatnessScore;
+                    if (Math.abs(flatnessDiff) > 20) return flatnessDiff > 0 ? 1 : -1;
+                    // Then prefer positions near sea level
                     const heightDiff = a.heightScore - b.heightScore;
                     if (Math.abs(heightDiff) > 10) return heightDiff;
+                    // Then closer ones
                     return a.dist - b.dist;
                 });
 

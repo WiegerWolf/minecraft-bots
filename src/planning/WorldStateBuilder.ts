@@ -1,6 +1,7 @@
 import { WorldState } from './WorldState';
 import type { FarmingBlackboard } from '../roles/farming/Blackboard';
 import type { LumberjackBlackboard } from '../roles/lumberjack/LumberjackBlackboard';
+import type { LandscaperBlackboard } from '../roles/landscaper/LandscaperBlackboard';
 import type { Bot } from 'mineflayer';
 
 /**
@@ -35,9 +36,16 @@ export class WorldStateBuilder {
   }
 
   /**
+   * Type guard to check if blackboard is a LandscaperBlackboard.
+   */
+  private static isLandscaperBlackboard(bb: any): bb is LandscaperBlackboard {
+    return 'hasShovel' in bb && 'hasPickaxe' in bb && 'currentTerraformTask' in bb;
+  }
+
+  /**
    * Build a WorldState from the current Blackboard.
    */
-  static fromBlackboard(bot: Bot, bb: FarmingBlackboard | LumberjackBlackboard): WorldState {
+  static fromBlackboard(bot: Bot, bb: FarmingBlackboard | LumberjackBlackboard | LandscaperBlackboard): WorldState {
     const ws = new WorldState();
 
     // ═══════════════════════════════════════════════
@@ -64,8 +72,8 @@ export class WorldStateBuilder {
       ws.set('pos.sharedCraftingTable', bb.sharedCraftingTable.clone());
     }
 
-    // Tree harvesting state (used by both roles)
-    if (bb.currentTreeHarvest) {
+    // Tree harvesting state (used by farming and lumberjack roles)
+    if ('currentTreeHarvest' in bb && bb.currentTreeHarvest) {
       ws.set('tree.active', true);
       ws.set('tree.phase', bb.currentTreeHarvest.phase);
       ws.set('tree.basePos', bb.currentTreeHarvest.basePos.clone());
@@ -77,7 +85,9 @@ export class WorldStateBuilder {
     // ═══════════════════════════════════════════════
     // ROLE-SPECIFIC FACTS
     // ═══════════════════════════════════════════════
-    if (this.isFarmingBlackboard(bb)) {
+    if (this.isLandscaperBlackboard(bb)) {
+      this.addLandscaperFacts(bot, ws, bb);
+    } else if (this.isFarmingBlackboard(bb)) {
       this.addFarmingFacts(bot, ws, bb);
     } else if (this.isLumberjackBlackboard(bb)) {
       this.addLumberjackFacts(bot, ws, bb);
@@ -123,6 +133,43 @@ export class WorldStateBuilder {
     ws.set('derived.needsWood', bb.logCount === 0 && bb.plankCount < 4);
     ws.set('derived.hasFarmEstablished', bb.farmCenter !== null);
     ws.set('derived.hasStorageAccess', bb.sharedChest !== null || bb.nearbyChests.length > 0);
+  }
+
+  /**
+   * Add landscaper-specific facts to the world state.
+   */
+  private static addLandscaperFacts(bot: Bot, ws: WorldState, bb: LandscaperBlackboard): void {
+    // Inventory
+    ws.set('inv.dirt', bb.dirtCount);
+    ws.set('inv.cobblestone', bb.cobblestoneCount);
+
+    // Equipment
+    ws.set('has.shovel', bb.hasShovel);
+    ws.set('has.pickaxe', bb.hasPickaxe);
+    ws.set('derived.hasAnyTool', bb.hasShovel || bb.hasPickaxe);
+
+    // Positions
+    if (bb.villageCenter) {
+      ws.set('pos.villageCenter', bb.villageCenter.clone());
+    }
+
+    // Terraform state
+    ws.set('has.pendingTerraformRequest', bb.hasPendingTerraformRequest);
+    ws.set('terraform.active', bb.currentTerraformTask !== null);
+    if (bb.currentTerraformTask) {
+      ws.set('terraform.phase', bb.currentTerraformTask.phase);
+    }
+
+    // Computed decisions
+    ws.set('can.terraform', bb.canTerraform);
+    ws.set('needs.tools', bb.needsTools);
+    ws.set('needs.toDeposit', bb.needsToDeposit);
+
+    // Derived facts
+    ws.set('derived.hasStorageAccess', bb.sharedChest !== null || bb.nearbyChests.length > 0);
+    ws.set('derived.hasVillage', bb.villageCenter !== null);
+    ws.set('derived.canCraftShovel', this.canCraftShovel(bb));
+    ws.set('derived.canCraftPickaxe', this.canCraftPickaxe(bb));
   }
 
   /**
@@ -194,6 +241,28 @@ export class WorldStateBuilder {
     const hasPlanks = bb.plankCount >= 3;
     const hasSticks = bb.stickCount >= 2;
     const canMakeSticks = bb.plankCount >= 5; // 2 planks for sticks + 3 for axe head
+    return hasPlanks && (hasSticks || canMakeSticks);
+  }
+
+  /**
+   * Check if bot can craft a wooden shovel (has materials).
+   */
+  private static canCraftShovel(bb: LandscaperBlackboard): boolean {
+    // Need 1 plank and 2 sticks (or enough planks to make sticks)
+    const hasPlanks = bb.plankCount >= 1;
+    const hasSticks = bb.stickCount >= 2;
+    const canMakeSticks = bb.plankCount >= 3; // 2 planks for sticks + 1 for shovel head
+    return hasPlanks && (hasSticks || canMakeSticks);
+  }
+
+  /**
+   * Check if bot can craft a wooden pickaxe (has materials).
+   */
+  private static canCraftPickaxe(bb: LandscaperBlackboard): boolean {
+    // Need 3 planks and 2 sticks (or enough planks to make sticks)
+    const hasPlanks = bb.plankCount >= 3;
+    const hasSticks = bb.stickCount >= 2;
+    const canMakeSticks = bb.plankCount >= 5; // 2 planks for sticks + 3 for pickaxe head
     return hasPlanks && (hasSticks || canMakeSticks);
   }
 

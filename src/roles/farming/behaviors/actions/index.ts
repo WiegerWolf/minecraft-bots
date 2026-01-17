@@ -13,3 +13,4 @@ export { SetupFarmChest } from './SetupFarmChest';
 export { ClearFarmArea } from './ClearFarmArea';
 export { RequestMaterials } from './RequestMaterials';
 export { CheckSharedChest } from './CheckSharedChest';
+export { RequestTerraform } from './RequestTerraform';

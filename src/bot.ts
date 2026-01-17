@@ -5,6 +5,7 @@ import { FarmingRole } from './roles/farming/FarmingRole';
 import { LumberjackRole } from './roles/lumberjack/LumberjackRole';
 import { GOAPFarmingRole } from './roles/GOAPFarmingRole';
 import { GOAPLumberjackRole } from './roles/GOAPLumberjackRole';
+import { GOAPLandscaperRole } from './roles/GOAPLandscaperRole';
 import type { Role } from './roles/Role';
 const { GoalNear } = goals;
 
@@ -31,6 +32,7 @@ const roles: Record<string, Role> = {
     lumberjack: new LumberjackRole(),
     'goap-farming': new GOAPFarmingRole({ debug: true }),
     'goap-lumberjack': new GOAPLumberjackRole({ debug: true }),
+    'goap-landscaper': new GOAPLandscaperRole({ debug: true }),
 };
 
 let currentRole: Role | null = null;
@@ -86,6 +88,17 @@ bot.on('chat', (username: string, message: string) => {
         } else {
             setRole('lumberjack');
             bot.chat("Starting lumberjack logic.");
+        }
+    }
+
+    if (command === 'landscape' || command === 'landscaper') {
+        const sub = args[1]?.toLowerCase();
+        if (sub === 'stop') {
+            setRole(null);
+            bot.chat("Stopped landscaper.");
+        } else {
+            setRole('goap-landscaper');
+            bot.chat("Starting landscaper logic.");
         }
     }
 

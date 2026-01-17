@@ -63,6 +63,10 @@ export interface FarmingBlackboard {
     needsTools: boolean;
     needsSeeds: boolean;
     inventoryFull: boolean;
+
+    // Terraform state
+    waitingForTerraform: boolean;
+    terraformRequestedAt: Vec3 | null;
 }
 
 export function createBlackboard(): FarmingBlackboard {
@@ -105,6 +109,9 @@ export function createBlackboard(): FarmingBlackboard {
         needsTools: false,
         needsSeeds: false,
         inventoryFull: false,
+
+        waitingForTerraform: false,
+        terraformRequestedAt: null,
     };
 }
 
@@ -307,6 +314,15 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     if (bb.villageChat) {
         bb.sharedChest = bb.villageChat.getSharedChest();
         bb.sharedCraftingTable = bb.villageChat.getSharedCraftingTable();
+
+        // Check terraform status
+        if (bb.terraformRequestedAt) {
+            if (bb.villageChat.isTerraformDoneAt(bb.terraformRequestedAt)) {
+                console.log(`[Blackboard] Terraform complete at ${bb.terraformRequestedAt.floored()}`);
+                bb.waitingForTerraform = false;
+                bb.terraformRequestedAt = null;
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════
@@ -697,4 +713,89 @@ export function hasMaterialsForCrafting(bb: FarmingBlackboard, recipe: string): 
         default:
             return false;
     }
+}
+
+// ═══════════════════════════════════════════════
+// TERRAIN QUALITY HELPERS (for terraform)
+// ═══════════════════════════════════════════════
+
+/**
+ * Check terrain quality around a position.
+ * Returns true if the terrain needs terraforming to be farmable.
+ *
+ * @param bot - The bot instance
+ * @param center - Center position (usually water source)
+ * @returns true if terrain is rough and needs terraforming
+ */
+export function needsTerraforming(bot: Bot, center: Vec3): boolean {
+    const radius = 4; // Check hydration range
+    const targetY = center.y;
+
+    let badBlocks = 0;
+    let totalChecked = 0;
+
+    for (let dx = -radius; dx <= radius; dx++) {
+        for (let dz = -radius; dz <= radius; dz++) {
+            const x = Math.floor(center.x) + dx;
+            const z = Math.floor(center.z) + dz;
+
+            // Check surface level
+            const surfacePos = new Vec3(x, targetY, z);
+            const surfaceBlock = bot.blockAt(surfacePos);
+            if (!surfaceBlock) continue;
+
+            // Skip water
+            if (surfaceBlock.name === 'water' || surfaceBlock.name === 'flowing_water') continue;
+
+            totalChecked++;
+
+            // Check for obstacles above target level
+            const aboveBlock = bot.blockAt(surfacePos.offset(0, 1, 0));
+            if (aboveBlock && aboveBlock.name !== 'air' &&
+                !aboveBlock.name.includes('grass') && !aboveBlock.name.includes('fern')) {
+                badBlocks++;
+            }
+
+            // Check for non-farmable surface
+            if (!['grass_block', 'dirt', 'farmland', 'air'].includes(surfaceBlock.name)) {
+                badBlocks++;
+            }
+        }
+    }
+
+    // If more than 30% of the area needs work, request terraform
+    if (totalChecked === 0) return false;
+    const badRatio = badBlocks / totalChecked;
+    return badRatio > 0.3;
+}
+
+/**
+ * Request terraforming at the farm center.
+ * Only requests if not already requested and terrain needs work.
+ *
+ * @returns true if terraform was requested
+ */
+export function requestTerraformIfNeeded(bot: Bot, bb: FarmingBlackboard): boolean {
+    if (!bb.farmCenter || !bb.villageChat) return false;
+    if (bb.waitingForTerraform) return false;
+    if (bb.terraformRequestedAt) return false;
+
+    // Check if already has terraform request
+    if (bb.villageChat.hasTerraformRequestAt(bb.farmCenter)) {
+        bb.waitingForTerraform = true;
+        bb.terraformRequestedAt = bb.farmCenter.clone();
+        return false;
+    }
+
+    // Check if terrain actually needs terraforming
+    if (!needsTerraforming(bot, bb.farmCenter)) {
+        return false;
+    }
+
+    // Request terraform
+    console.log(`[Farmer] Requesting terraform at ${bb.farmCenter.floored()}`);
+    bb.villageChat.requestTerraform(bb.farmCenter);
+    bb.waitingForTerraform = true;
+    bb.terraformRequestedAt = bb.farmCenter.clone();
+    return true;
 }
