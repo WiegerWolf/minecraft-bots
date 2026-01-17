@@ -47,9 +47,39 @@ export class TerraformAreaAction extends BaseGOAPAction {
 
   preconditions = [
     booleanPrecondition('has.pendingTerraformRequest', true, 'terraform request pending'),
-    // Need at least one tool
-    booleanPrecondition('derived.hasAnyTool', true, 'has digging tool'),
+    // Need at least one tool - check both individual flags and derived
+    {
+      key: 'has.shovel',
+      check: (value: any) => {
+        // This action is applicable if we have shovel OR pickaxe
+        return true; // We'll check tools in a custom override
+      },
+      description: 'placeholder for tool check',
+    },
   ];
+
+  // Override to check for either shovel or pickaxe
+  override checkPreconditions(ws: WorldState): boolean {
+    const hasPending = ws.getBool('has.pendingTerraformRequest');
+    const hasShovel = ws.getBool('has.shovel');
+    const hasPickaxe = ws.getBool('has.pickaxe');
+    const hasAnyTool = ws.getBool('derived.hasAnyTool');
+
+    // Debug logging
+    console.log(`[TerraformAreaAction] Precondition check: pending=${hasPending}, shovel=${hasShovel}, pickaxe=${hasPickaxe}, anyTool=${hasAnyTool}`);
+
+    if (!hasPending) {
+      console.log('[TerraformAreaAction] FAILED: no pending terraform request');
+      return false;
+    }
+
+    if (!hasShovel && !hasPickaxe && !hasAnyTool) {
+      console.log('[TerraformAreaAction] FAILED: no tools');
+      return false;
+    }
+
+    return true;
+  }
 
   effects = [
     setEffect('has.pendingTerraformRequest', false, 'terraform complete'),
