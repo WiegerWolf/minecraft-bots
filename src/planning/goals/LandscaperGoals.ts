@@ -42,16 +42,30 @@ export class FulfillTerraformRequestGoal extends BaseGoal {
 
   getUtility(ws: WorldState): number {
     const hasPending = ws.getBool('has.pendingTerraformRequest');
-    const hasTools = ws.getBool('derived.hasAnyTool');
+    const hasShovel = ws.getBool('has.shovel');
+    const hasPickaxe = ws.getBool('has.pickaxe');
+    const hasAnyTool = ws.getBool('derived.hasAnyTool');
     const terraformActive = ws.getBool('terraform.active');
 
     if (!hasPending && !terraformActive) return 0;
 
-    // Continue active terraform - HIGHEST priority for landscaper
-    if (terraformActive) return 120;
+    // Continue active terraform - but ONLY if we have BOTH tools
+    // Terraforming needs shovel (for dirt/grass) AND pickaxe (for stone)
+    if (terraformActive) {
+      if (hasShovel && hasPickaxe) {
+        return 120; // Have both tools, highest priority
+      }
+      // Missing a tool - LOW priority so ObtainTools can craft it
+      // Must be low enough to overcome hysteresis (20% threshold)
+      // ObtainTools returns 70 with materials, so this needs to be < 70/1.2 = 58
+      return 50;
+    }
 
-    // Can start terraforming - have pending request and tools
-    if (hasTools) return 100;
+    // Can start terraforming - have pending request and both tools
+    if (hasShovel && hasPickaxe) return 100;
+
+    // Have at least one tool
+    if (hasAnyTool) return 80;
 
     // Have pending request but no tools - still important
     return 50;
