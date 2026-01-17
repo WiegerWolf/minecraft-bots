@@ -168,8 +168,8 @@ export class ObtainToolsGoal extends BaseGoal {
 
 /**
  * Goal: Gather seeds from grass.
- * Moderate-high priority when low on seeds or waiting for hoe.
- * Farmer can productively gather seeds while waiting for lumberjack to deposit materials.
+ * HIGH priority when waiting for hoe - farmer should gather seeds productively
+ * rather than exploring aimlessly while waiting for lumberjack to deposit materials.
  */
 export class GatherSeedsGoal extends BaseGoal {
   name = 'GatherSeeds';
@@ -184,22 +184,20 @@ export class GatherSeedsGoal extends BaseGoal {
   ];
 
   getUtility(ws: WorldState): number {
-    const grassCount = ws.getNumber('nearby.grass');
     const seedCount = ws.getNumber('inv.seeds');
     const hasHoe = ws.getBool('has.hoe');
     const hasFarm = ws.getBool('derived.hasFarmEstablished');
 
-    if (grassCount === 0) return 0;
-
     // Already have enough seeds
     if (seedCount >= 10) return 0;
 
-    // If we're waiting for hoe and have farm established, gathering seeds is productive
+    // If we have a farm but no hoe, gathering seeds is the most productive activity
+    // The action will search for grass up to 64 blocks away
     if (!hasHoe && hasFarm) {
-      // Higher priority when we have fewer seeds
-      if (seedCount === 0) return 60;
-      if (seedCount < 5) return 55;
-      return 45;
+      // Very high priority - better than exploring
+      if (seedCount === 0) return 70;
+      if (seedCount < 5) return 65;
+      return 55;
     }
 
     // Normal priority when we have hoe or don't have farm yet

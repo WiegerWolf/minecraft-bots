@@ -155,14 +155,14 @@ export class DepositItemsAction extends BaseGOAPAction {
 
 /**
  * GOAP Action: Gather seeds from grass
+ * No preconditions - the action searches for grass up to 64 blocks away
  */
 export class GatherSeedsAction extends BaseGOAPAction {
   name = 'GatherSeeds';
   private impl = new GatherSeeds();
 
-  preconditions = [
-    numericPrecondition('nearby.grass', v => v > 0, 'grass nearby'),
-  ];
+  // No preconditions - action finds grass on its own up to 64 blocks away
+  preconditions = [];
 
   effects = [
     incrementEffect('inv.seeds', 5, 'gathered seeds'),
@@ -170,7 +170,9 @@ export class GatherSeedsAction extends BaseGOAPAction {
   ];
 
   override getCost(ws: WorldState): number {
-    return 3.0;
+    // Lower cost if grass is visible nearby, higher if we need to search
+    const grassCount = ws.getNumber('nearby.grass');
+    return grassCount > 0 ? 2.0 : 4.0;
   }
 
   override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
