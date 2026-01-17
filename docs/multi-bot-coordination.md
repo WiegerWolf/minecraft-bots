@@ -521,6 +521,125 @@ villageChat.cleanupOldTerraformRequests(600000);
 - Resource requests: 60 seconds (fast operations)
 - Terraform requests: 10 minutes (slow operations)
 
+## Sign-Based Persistent Knowledge
+
+Chat-based coordination has a limitation: when bots disconnect or die, they lose all knowledge. The sign system solves this.
+
+### The Problem
+
+Without persistence:
+1. Lumberjack establishes village, places chest and crafting table
+2. Lumberjack dies or disconnects
+3. Lumberjack respawns with fresh state
+4. Lumberjack has no idea where infrastructure is
+5. Lumberjack creates duplicate chest/table elsewhere
+
+### The Solution: Signs at Spawn
+
+Minecraft signs persist in the world. Bots write infrastructure coordinates to signs near spawn:
+
+```
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│  [VILLAGE]  │  │   [CRAFT]   │  │   [CHEST]   │
+│   X: 142    │  │   X: 144    │  │   X: 146    │
+│   Y: 64     │  │   Y: 64     │  │   Y: 64     │
+│   Z: -89    │  │   Z: -87    │  │   Z: -88    │
+└─────────────┘  └─────────────┘  └─────────────┘
+```
+
+### How It Works
+
+**On Infrastructure Creation:**
+```typescript
+// After placing crafting table
+bb.pendingSignWrites.push({
+    type: 'CRAFT',
+    pos: craftingTablePos.clone()
+});
+```
+
+**GOAP Goal Activation:**
+- `WriteKnowledgeSignGoal` activates when `pendingSignWrites > 0`
+- Utility 55-65 (medium priority, after critical tasks)
+- Bot navigates to spawn, crafts signs if needed, places and writes
+
+**On Bot Spawn:**
+```typescript
+// In GOAPLumberjackRole.start()
+const knowledge = readSignsAtSpawn(bot, spawnPosition, this.log);
+
+if (knowledge.has('VILLAGE')) {
+    bb.villageCenter = knowledge.get('VILLAGE');
+}
+if (knowledge.has('CRAFT')) {
+    bb.sharedCraftingTable = knowledge.get('CRAFT');
+}
+```
+
+### Why Signs?
+
+**Alternative: External file**
+- Pro: Simple, reliable
+- Con: Not visible in-game, external dependency
+
+**Alternative: Named entities (armor stands)**
+- Pro: Could store in name
+- Con: Complex to place/read, might despawn
+
+**Signs**:
+- In-world: visible to players
+- Persistent: survive restarts
+- Simple API: `getSignText()`, `updateSign()`
+- Natural: players use signs for notes too
+
+### Sign Format
+
+```
+[TYPE]
+X: <integer>
+Y: <integer>
+Z: <integer>
+```
+
+**Why this format?**
+- 4 lines fit sign constraints (~15 chars each)
+- Parseable with simple regex
+- Human-readable for debugging
+- Type prefix enables multiple knowledge types
+
+### Verification on Load
+
+```typescript
+const craftingPos = knowledge.get('CRAFT');
+if (craftingPos) {
+    const block = bot.blockAt(craftingPos);
+    if (block && block.name === 'crafting_table') {
+        bb.sharedCraftingTable = craftingPos;
+    } else {
+        this.log?.warn('Crafting table from sign no longer exists');
+    }
+}
+```
+
+Signs might reference blocks that were destroyed. Bot verifies before trusting.
+
+### Sign Placement Strategy
+
+Signs are placed in a grid near spawn:
+```typescript
+const baseX = spawnPos.x + 2;  // Offset from spawn
+const positions = [
+    (baseX, Y, Z),      // VILLAGE
+    (baseX, Y, Z+1),    // CRAFT
+    (baseX, Y, Z+2),    // CHEST
+];
+```
+
+**Why offset from spawn?**
+- Don't block spawn point
+- Predictable location for reading
+- Grouped together for visibility
+
 ## Current Limitations
 
 ### No Real Conflict Resolution

@@ -103,6 +103,8 @@ LOG_LEVEL=debug bun run start farmer  # Set log level
 | World change threshold | 5 facts | Ignore minor fluctuations |
 | Backoff cap | 30 seconds | Don't wait forever |
 | Seed threshold | 10 | Comfortable farming buffer |
+| Sign search radius | 15 blocks | Area around spawn to find knowledge signs |
+| WriteKnowledgeSign utility | 55-65 | Medium priority, after critical tasks |
 
 ### File Locations
 
@@ -114,8 +116,10 @@ LOG_LEVEL=debug bun run start farmer  # Set log level
 | WorldState | `src/planning/WorldState.ts` |
 | WorldStateBuilder | `src/planning/WorldStateBuilder.ts` |
 | Farming Blackboard | `src/roles/farming/Blackboard.ts` |
+| Lumberjack Blackboard | `src/roles/lumberjack/LumberjackBlackboard.ts` |
 | GOAPRole base | `src/roles/GOAPRole.ts` |
 | VillageChat | `src/shared/VillageChat.ts` |
+| SignKnowledge | `src/shared/SignKnowledge.ts` |
 | Logger | `src/shared/logger.ts` |
 | Process Manager | `src/index.ts` |
 

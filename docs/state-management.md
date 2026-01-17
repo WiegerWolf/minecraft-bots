@@ -307,6 +307,44 @@ Conditions change. After 30 seconds:
 - Bot might approach from different angle
 - Item might have moved to accessible location
 
+### Sign-Based Persistence (Lumberjack)
+
+```typescript
+// Lumberjack-specific persistence fields
+bb.spawnPosition: Vec3 | null;           // Where bot spawned
+bb.pendingSignWrites: PendingSignWrite[]; // Queue of signs to write
+bb.signPositions: Map<string, Vec3>;     // type -> sign block position
+```
+
+**Why track spawn position?**
+
+Signs are placed near spawn as a predictable location. Without spawn position:
+- Bot wouldn't know WHERE to read/write signs
+- Signs could be scattered randomly
+- New bots couldn't find existing signs
+
+**Why a queue for sign writes?**
+
+Infrastructure creation (chest, crafting table) triggers sign writes:
+```typescript
+bb.pendingSignWrites.push({ type: 'CRAFT', pos: craftingTablePos });
+```
+
+The queue pattern allows:
+- Immediate return from infrastructure action
+- GOAP planner schedules sign writing separately
+- Multiple signs can queue up, written one at a time
+
+**Why track sign positions?**
+
+For updating existing signs rather than placing new ones:
+```typescript
+const existingSign = findExistingSignForType(bot, bb.spawnPosition, 'CRAFT');
+if (existingSign) {
+    await bot.updateSign(existingSign, newText);
+}
+```
+
 ## Farm Center: Critical Strategic State
 
 ```typescript
