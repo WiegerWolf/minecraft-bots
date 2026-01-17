@@ -3,6 +3,7 @@ import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 import { sleep } from './utils';
 
 const { GoalLookAtBlock } = goals;
@@ -37,7 +38,15 @@ export class DepositItems implements BehaviorNode {
         bb.lastAction = 'deposit';
 
         try {
-            await bot.pathfinder.goto(new GoalLookAtBlock(chestPos, bot.world));
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalLookAtBlock(chestPos, bot.world),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success) {
+                console.log(`[BT] Failed to reach deposit chest: ${result.failureReason}`);
+                return 'failure';
+            }
             bot.pathfinder.stop();
             await sleep(200);
 

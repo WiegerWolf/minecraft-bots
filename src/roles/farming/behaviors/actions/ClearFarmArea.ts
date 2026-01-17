@@ -4,6 +4,7 @@ import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 import { sleep } from './utils';
 
 const { GoalNear, GoalLookAtBlock } = goals;
@@ -67,7 +68,14 @@ export class ClearFarmArea implements BehaviorNode {
             // Move close enough to break if we can't already
             if (!bot.canDigBlock(blockToClear)) {
                 const goal = new GoalLookAtBlock(blockToClear.position, bot.world, { reach: 4 });
-                await bot.pathfinder.goto(goal);
+                const result = await smartPathfinderGoto(bot, goal, { timeoutMs: 15000 });
+                if (!result.success) {
+                    // Pathfinding failed, try from current position if close enough
+                    const dist = bot.entity.position.distanceTo(blockToClear.position);
+                    if (dist >= 5) {
+                        return 'failure';
+                    }
+                }
             } else {
                 console.log(`[BT] Already within reach to clear ${blockToClear.position}, skipping movement`);
             }
@@ -79,17 +87,6 @@ export class ClearFarmArea implements BehaviorNode {
             this.clearedCount++;
             return 'success';
         } catch (err) {
-            // Pathfinding failed, try from current position if close enough
-            const dist = bot.entity.position.distanceTo(blockToClear.position);
-            if (dist < 5) {
-                try {
-                    await bot.dig(blockToClear);
-                    this.clearedCount++;
-                    return 'success';
-                } catch {
-                    return 'failure';
-                }
-            }
             return 'failure';
         }
     }

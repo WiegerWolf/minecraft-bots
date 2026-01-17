@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 import { sleep } from './utils';
 
 const { GoalNear } = goals;
@@ -69,7 +70,15 @@ export class GatherSeeds implements BehaviorNode {
         bb.lastAction = 'gather_seeds';
 
         try {
-            await bot.pathfinder.goto(new GoalNear(grass.position.x, grass.position.y, grass.position.z, 2));
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(grass.position.x, grass.position.y, grass.position.z, 2),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success) {
+                console.log(`[BT] Failed to reach grass: ${result.failureReason}`);
+                return 'failure';
+            }
             await bot.dig(grass);
             await sleep(300);
             return 'success';

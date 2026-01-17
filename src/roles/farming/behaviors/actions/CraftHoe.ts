@@ -4,6 +4,7 @@ import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 import { sleep } from './utils';
 
 const { GoalNear } = goals;
@@ -26,7 +27,12 @@ async function ensureCraftingTable(bot: Bot): Promise<Block | null> {
         if (tablePos) {
             const tableBlock = bot.blockAt(tablePos);
             if (tableBlock) {
-                await bot.pathfinder.goto(new GoalNear(tableBlock.position.x, tableBlock.position.y, tableBlock.position.z, 2));
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(tableBlock.position.x, tableBlock.position.y, tableBlock.position.z, 2),
+                    { timeoutMs: 15000 }
+                );
+                if (!result.success) return null;
                 return tableBlock;
             }
         }

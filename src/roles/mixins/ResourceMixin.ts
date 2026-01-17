@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
+import { smartPathfinderGoto } from '../../shared/PathfindingUtils';
 
 const { GoalNear } = goals;
 
@@ -118,10 +119,14 @@ export function ResourceMixin<TBase extends Constructor>(Base: TBase) {
 
             if (bestCandidate) {
                 this.logResource(`Exploration target found (Score: ${bestCandidate.score.toFixed(1)}). Moving to ${bestCandidate.pos.floored()}`);
-                try {
-                    await bot.pathfinder.goto(new GoalNear(bestCandidate.pos.x, bestCandidate.pos.y, bestCandidate.pos.z, 2));
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(bestCandidate.pos.x, bestCandidate.pos.y, bestCandidate.pos.z, 2),
+                    { timeoutMs: 30000 }  // Longer timeout for exploration
+                );
+                if (result.success) {
                     return true;
-                } catch (e) {
+                } else {
                     this.logResource("Exploration movement failed (pathfinding).");
                     return false;
                 }

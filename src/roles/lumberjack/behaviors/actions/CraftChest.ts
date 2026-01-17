@@ -3,6 +3,7 @@ import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalLookAtBlock, GoalNear } = goals;
 
@@ -223,7 +224,15 @@ export class CraftChest implements BehaviorNode {
     private async craftChestAtTable(bot: Bot, craftingTable: any): Promise<BehaviorStatus> {
         try {
             // Move to crafting table
-            await bot.pathfinder.goto(new GoalLookAtBlock(craftingTable.position, bot.world, { reach: 4 }));
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalLookAtBlock(craftingTable.position, bot.world, { reach: 4 }),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success) {
+                console.log(`[Lumberjack] Failed to reach crafting table: ${result.failureReason}`);
+                return 'failure';
+            }
 
             // Get chest recipe
             const chestId = bot.registry.itemsByName['chest']?.id;
@@ -265,7 +274,12 @@ export class CraftChest implements BehaviorNode {
 
             if (groundBlock && groundBlock.boundingBox === 'block' && targetBlock && targetBlock.name === 'air') {
                 try {
-                    await bot.pathfinder.goto(new GoalNear(placePos.x, placePos.y, placePos.z, 3));
+                    const moveResult = await smartPathfinderGoto(
+                        bot,
+                        new GoalNear(placePos.x, placePos.y, placePos.z, 3),
+                        { timeoutMs: 15000 }
+                    );
+                    if (!moveResult.success) continue;
                     await bot.equip(chestItem, 'hand');
                     await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
                     await sleep(200);
@@ -295,7 +309,12 @@ export class CraftChest implements BehaviorNode {
 
                 if (groundBlock && groundBlock.boundingBox === 'block' && targetBlock && targetBlock.name === 'air') {
                     try {
-                        await bot.pathfinder.goto(new GoalNear(placePos.x, placePos.y, placePos.z, 3));
+                        const moveResult = await smartPathfinderGoto(
+                            bot,
+                            new GoalNear(placePos.x, placePos.y, placePos.z, 3),
+                            { timeoutMs: 15000 }
+                        );
+                        if (!moveResult.success) continue;
                         await bot.equip(chestItem, 'hand');
                         await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
                         await sleep(200);

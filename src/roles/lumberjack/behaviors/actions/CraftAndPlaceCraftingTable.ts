@@ -3,6 +3,7 @@ import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalLookAtBlock, GoalNear } = goals;
 
@@ -137,7 +138,12 @@ export class CraftAndPlaceCraftingTable implements BehaviorNode {
 
             if (groundBlock && groundBlock.boundingBox === 'block' && targetBlock && targetBlock.name === 'air') {
                 try {
-                    await bot.pathfinder.goto(new GoalNear(placePos.x, placePos.y, placePos.z, 3));
+                    const moveResult = await smartPathfinderGoto(
+                        bot,
+                        new GoalNear(placePos.x, placePos.y, placePos.z, 3),
+                        { timeoutMs: 15000 }
+                    );
+                    if (!moveResult.success) continue;
                     await bot.equip(tableItem, 'hand');
                     await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
                     await sleep(200);

@@ -4,6 +4,7 @@ import type { BehaviorNode, BehaviorStatus } from '../types';
 import { recordExploredPosition, getExplorationScore } from '../../LandscaperBlackboard';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalNear } = goals;
 
@@ -74,11 +75,21 @@ export class Explore implements BehaviorNode {
                 }
             }
 
-            await bot.pathfinder.goto(new GoalNear(target.pos.x, targetY, target.pos.z, 3));
-            recordExploredPosition(bb, bot.entity.position);
-            return 'success';
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(target.pos.x, targetY, target.pos.z, 3),
+                { timeoutMs: 30000 }  // Longer timeout for exploration
+            );
+            if (result.success) {
+                recordExploredPosition(bb, bot.entity.position);
+                return 'success';
+            } else {
+                console.log(`[Landscaper] Explore path failed: ${result.failureReason}`);
+                recordExploredPosition(bb, target.pos, 'unreachable');
+                return 'failure';
+            }
         } catch (error) {
-            console.log(`[Landscaper] Explore path failed: ${error instanceof Error ? error.message : 'unknown'}`);
+            console.log(`[Landscaper] Explore error: ${error instanceof Error ? error.message : 'unknown'}`);
             recordExploredPosition(bb, target.pos, 'unreachable');
             return 'failure';
         }

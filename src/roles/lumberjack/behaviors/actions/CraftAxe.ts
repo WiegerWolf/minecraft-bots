@@ -3,6 +3,7 @@ import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalNear, GoalLookAtBlock } = goals;
 
@@ -189,7 +190,12 @@ export class CraftAxe implements BehaviorNode {
 
                 try {
                     // CRITICAL: Move close to placement position BEFORE placing
-                    await bot.pathfinder.goto(new GoalNear(placePos.x, placePos.y, placePos.z, 3));
+                    const moveResult = await smartPathfinderGoto(
+                        bot,
+                        new GoalNear(placePos.x, placePos.y, placePos.z, 3),
+                        { timeoutMs: 15000 }
+                    );
+                    if (!moveResult.success) continue;
                     await sleep(100);
 
                     await bot.equip(tableItem, 'hand');
@@ -221,7 +227,15 @@ export class CraftAxe implements BehaviorNode {
     private async craftAxeAtTable(bot: Bot, craftingTable: any): Promise<BehaviorStatus> {
         try {
             // Move to crafting table
-            await bot.pathfinder.goto(new GoalLookAtBlock(craftingTable.position, bot.world, { reach: 4 }));
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalLookAtBlock(craftingTable.position, bot.world, { reach: 4 }),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success) {
+                console.log(`[Lumberjack] Failed to reach crafting table: ${result.failureReason}`);
+                return 'failure';
+            }
 
             // Get wooden axe recipe
             const axeId = bot.registry.itemsByName['wooden_axe']?.id;

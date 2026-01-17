@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { LandscaperBlackboard } from '../../LandscaperBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalNear } = goals;
 
@@ -49,7 +50,15 @@ export class CheckSharedChest implements BehaviorNode {
         try {
             // Navigate to chest
             console.log(`[Landscaper] Going to chest at ${chestPos}`);
-            await bot.pathfinder.goto(new GoalNear(chestPos.x, chestPos.y, chestPos.z, 2));
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(chestPos.x, chestPos.y, chestPos.z, 2),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success) {
+                console.log(`[Landscaper] Failed to reach chest: ${result.failureReason}`);
+                return 'failure';
+            }
             await sleep(200);
 
             // Re-fetch block in case it changed

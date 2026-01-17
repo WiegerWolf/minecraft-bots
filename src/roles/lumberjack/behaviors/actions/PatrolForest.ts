@@ -5,6 +5,7 @@ import { recordExploredPosition, getExplorationScore } from '../../LumberjackBla
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { LOG_NAMES } from '../../../shared/TreeHarvest';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalNear } = goals;
 
@@ -97,12 +98,24 @@ export class PatrolForest implements BehaviorNode {
                 }
             }
 
-            await bot.pathfinder.goto(new GoalNear(target.pos.x, targetY, target.pos.z, 3));
-            recordExploredPosition(bb, bot.entity.position);
-            return 'success';
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(target.pos.x, targetY, target.pos.z, 3),
+                { timeoutMs: 30000 }  // Longer timeout for patrol
+            );
+
+            if (result.success) {
+                recordExploredPosition(bb, bot.entity.position);
+                return 'success';
+            } else {
+                // Path failed, record as explored anyway
+                console.log(`[Lumberjack] Patrol path failed: ${result.failureReason}`);
+                recordExploredPosition(bb, target.pos, 'unreachable');
+                return 'failure';
+            }
         } catch (error) {
-            // Path failed, record as explored anyway and log the error
-            console.log(`[Lumberjack] Patrol path failed: ${error instanceof Error ? error.message : 'unknown'}`);
+            // Unexpected error
+            console.log(`[Lumberjack] Patrol error: ${error instanceof Error ? error.message : 'unknown'}`);
             recordExploredPosition(bb, target.pos, 'unreachable');
             return 'failure';
         }
@@ -130,11 +143,12 @@ export class WaitForVillage implements BehaviorNode {
             bot.entity.position.z + Math.sin(angle) * dist
         );
 
-        try {
-            await bot.pathfinder.goto(new GoalNear(target.x, target.y, target.z, 2));
-        } catch {
-            // Ignore path errors
-        }
+        await smartPathfinderGoto(
+            bot,
+            new GoalNear(target.x, target.y, target.z, 2),
+            { timeoutMs: 15000 }
+        );
+        // Ignore path errors
 
         await new Promise(resolve => setTimeout(resolve, 2000));
         return 'success';

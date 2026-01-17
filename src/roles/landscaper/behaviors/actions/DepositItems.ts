@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { LandscaperBlackboard } from '../../LandscaperBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalLookAtBlock } = goals;
 
@@ -32,10 +33,13 @@ export class DepositItems implements BehaviorNode {
         }
 
         // Move to chest
-        try {
-            await bot.pathfinder.goto(new GoalLookAtBlock(chestPos, bot.world, { reach: 4 }));
-        } catch (error) {
-            console.log(`[Landscaper] Path to chest failed: ${error instanceof Error ? error.message : 'unknown'}`);
+        const result = await smartPathfinderGoto(
+            bot,
+            new GoalLookAtBlock(chestPos, bot.world, { reach: 4 }),
+            { timeoutMs: 15000 }
+        );
+        if (!result.success) {
+            console.log(`[Landscaper] Path to chest failed: ${result.failureReason}`);
             return 'failure';
         }
 

@@ -3,6 +3,7 @@ import type { LandscaperBlackboard } from '../../LandscaperBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalNear, GoalLookAtBlock } = goals;
 
@@ -189,7 +190,12 @@ export class CraftPickaxe implements BehaviorNode {
                 if (!groundBlock || groundBlock.boundingBox !== 'block') continue;
 
                 try {
-                    await bot.pathfinder.goto(new GoalNear(placePos.x, placePos.y, placePos.z, 3));
+                    const moveResult = await smartPathfinderGoto(
+                        bot,
+                        new GoalNear(placePos.x, placePos.y, placePos.z, 3),
+                        { timeoutMs: 15000 }
+                    );
+                    if (!moveResult.success) continue;
                     await sleep(100);
 
                     await bot.equip(tableItem, 'hand');
@@ -224,7 +230,15 @@ export class CraftPickaxe implements BehaviorNode {
         }
 
         try {
-            await bot.pathfinder.goto(new GoalLookAtBlock(craftingTable.position, bot.world, { reach: 4 }));
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalLookAtBlock(craftingTable.position, bot.world, { reach: 4 }),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success) {
+                console.log(`[Landscaper] Failed to reach crafting table: ${result.failureReason}`);
+                return 'failure';
+            }
 
             const pickaxeId = bot.registry.itemsByName[pickaxeType]?.id;
             if (!pickaxeId) {

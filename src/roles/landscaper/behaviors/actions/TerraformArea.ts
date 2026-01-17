@@ -3,6 +3,7 @@ import type { LandscaperBlackboard, TerraformTask } from '../../LandscaperBlackb
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalNear, GoalLookAtBlock } = goals;
 
@@ -211,10 +212,13 @@ export class TerraformArea implements BehaviorNode {
         // Move close to the block
         const dist = bot.entity.position.distanceTo(blockPos);
         if (dist > 4) {
-            try {
-                await bot.pathfinder.goto(new GoalNear(blockPos.x, blockPos.y, blockPos.z, 3));
-            } catch (error) {
-                console.log(`[Landscaper] Path to dig block failed: ${error instanceof Error ? error.message : 'unknown'}`);
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(blockPos.x, blockPos.y, blockPos.z, 3),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success) {
+                console.log(`[Landscaper] Path to dig block failed: ${result.failureReason}`);
                 // Try digging anyway if we're somewhat close
                 if (dist > 6) {
                     return 'failure';
@@ -305,9 +309,13 @@ export class TerraformArea implements BehaviorNode {
         // Move close
         const dist = bot.entity.position.distanceTo(fillPos);
         if (dist > 4) {
-            try {
-                await bot.pathfinder.goto(new GoalNear(fillPos.x, fillPos.y, fillPos.z, 3));
-            } catch (error) {
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(fillPos.x, fillPos.y, fillPos.z, 3),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success) {
+                console.log(`[Landscaper] Path to fill block failed: ${result.failureReason}`);
                 // Try placing anyway
             }
         }
@@ -400,9 +408,12 @@ export class TerraformArea implements BehaviorNode {
             // Move to the dirt
             const dist = bot.entity.position.distanceTo(dirtPos);
             if (dist > 4) {
-                try {
-                    await bot.pathfinder.goto(new GoalNear(dirtPos.x, dirtPos.y, dirtPos.z, 3));
-                } catch (error) {
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(dirtPos.x, dirtPos.y, dirtPos.z, 3),
+                    { timeoutMs: 15000 }
+                );
+                if (!result.success) {
                     continue; // Skip unreachable dirt
                 }
             }

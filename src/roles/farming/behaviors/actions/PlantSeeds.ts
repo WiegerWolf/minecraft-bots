@@ -3,6 +3,7 @@ import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 import { sleep } from './utils';
 
 const { GoalNear } = goals;
@@ -34,7 +35,12 @@ export class PlantSeeds implements BehaviorNode {
                 // Get within 3 blocks (can place from this distance)
                 const dist = bot.entity.position.distanceTo(farmland.position);
                 if (dist > 4) {
-                    await bot.pathfinder.goto(new GoalNear(farmland.position.x, farmland.position.y, farmland.position.z, 3));
+                    const result = await smartPathfinderGoto(
+                        bot,
+                        new GoalNear(farmland.position.x, farmland.position.y, farmland.position.z, 3),
+                        { timeoutMs: 15000 }
+                    );
+                    if (!result.success) continue;
                     bot.pathfinder.stop();
                 }
 

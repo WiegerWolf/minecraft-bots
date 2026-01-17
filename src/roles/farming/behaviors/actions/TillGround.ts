@@ -3,6 +3,7 @@ import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 import { sleep } from './utils';
 
 const { GoalNear } = goals;
@@ -52,7 +53,15 @@ export class TillGround implements BehaviorNode {
         try {
             // Check if we are already close enough to till
             if (bot.entity.position.distanceTo(target.position) > 4.5) {
-                await bot.pathfinder.goto(new GoalNear(target.position.x, target.position.y, target.position.z, 4));
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(target.position.x, target.position.y, target.position.z, 4),
+                    { timeoutMs: 15000 }
+                );
+                if (!result.success) {
+                    console.log(`[BT] Failed to reach till target: ${result.failureReason}`);
+                    return 'failure';
+                }
             } else {
                 console.log(`[BT] Already within reach of ${target.position}, skipping movement`);
             }

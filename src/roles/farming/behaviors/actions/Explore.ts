@@ -7,6 +7,7 @@ import {
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalNear } = goals;
 
@@ -100,15 +101,18 @@ export class Explore implements BehaviorNode {
 
         console.log(`[BT] Exploring to ${best.pos.floored()} (score: ${best.score.toFixed(0)})`);
 
-        try {
-            await bot.pathfinder.goto(new GoalNear(best.pos.x, best.pos.y, best.pos.z, 3));
+        const result = await smartPathfinderGoto(
+            bot,
+            new GoalNear(best.pos.x, best.pos.y, best.pos.z, 3),
+            { timeoutMs: 30000 }  // Longer timeout for exploration
+        );
 
+        if (result.success) {
             // Record this position as explored
             recordExploredPosition(bb, bot.entity.position, 'visited');
-
             bb.consecutiveIdleTicks = 0;
             return 'success';
-        } catch {
+        } else {
             // Even if pathfinding fails, record we tried this area
             recordExploredPosition(bb, best.pos, 'failed');
             return 'failure';

@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalNear } = goals;
 
@@ -84,13 +85,22 @@ export class PickupItems implements BehaviorNode {
         console.log(`[Lumberjack] Moving to pickup item at ${drop.position.floored()} (dist: ${dist.toFixed(1)})`);
 
         try {
-            await bot.pathfinder.goto(new GoalNear(drop.position.x, drop.position.y, drop.position.z, 1));
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(drop.position.x, drop.position.y, drop.position.z, 1),
+                { timeoutMs: 15000 }
+            );
+
+            if (!result.success) {
+                console.log(`[Lumberjack] Pickup path failed: ${result.failureReason}`);
+                return 'failure';
+            }
             return 'success';
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'unknown';
             // Don't log common pathfinding interruptions
             if (!msg.includes('goal was changed') && !msg.includes('Path was stopped')) {
-                console.log(`[Lumberjack] Pickup path failed: ${msg}`);
+                console.log(`[Lumberjack] Pickup path error: ${msg}`);
             }
             // Pathfinding failed counts as an attempt
             return 'failure';

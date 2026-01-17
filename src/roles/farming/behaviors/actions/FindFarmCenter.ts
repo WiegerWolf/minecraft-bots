@@ -6,6 +6,7 @@ import {
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalNear } = goals;
 
@@ -81,38 +82,32 @@ export class FindFarmCenter implements BehaviorNode {
                 console.log(`[BT] Found surface water at ${best.pos} (${dist} blocks away, Y=${best.pos.y}), moving to establish farm`);
                 bb.lastAction = 'find_farm';
 
-                try {
-                    await bot.pathfinder.goto(new GoalNear(best.pos.x, best.pos.y, best.pos.z, 4));
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(best.pos.x, best.pos.y, best.pos.z, 4),
+                    { timeoutMs: 30000 }  // Longer timeout for exploration
+                );
 
-                    // Set farm center directly
-                    bb.farmCenter = new Vec3(best.pos.x, best.pos.y, best.pos.z);
-                    console.log(`[BT] Established farm center at ${bb.farmCenter}`);
-
-                    // Request terraforming from landscaper
-                    if (bb.villageChat) {
-                        console.log(`[Farmer] Requesting terraforming at ${bb.farmCenter}`);
-                        bb.villageChat.requestTerraform(bb.farmCenter);
-                    }
-
-                    return 'success';
-                } catch (err) {
-                    console.log(`[BT] Failed to reach water at ${best.pos}: ${err}`);
+                if (!result.success) {
+                    console.log(`[BT] Failed to reach water at ${best.pos}: ${result.failureReason}`);
                     // Don't give up - still set farm center if we're reasonably close
-                    const dist = bot.entity.position.distanceTo(best.pos);
-                    if (dist < 32) {
-                        bb.farmCenter = new Vec3(best.pos.x, best.pos.y, best.pos.z);
-                        console.log(`[BT] Set farm center anyway (${Math.round(dist)} blocks away)`);
-
-                        // Request terraforming from landscaper
-                        if (bb.villageChat) {
-                            console.log(`[Farmer] Requesting terraforming at ${bb.farmCenter}`);
-                            bb.villageChat.requestTerraform(bb.farmCenter);
-                        }
-
-                        return 'success';
+                    const currentDist = bot.entity.position.distanceTo(best.pos);
+                    if (currentDist >= 32) {
+                        return 'failure';
                     }
-                    return 'failure';
                 }
+
+                // Set farm center directly (even if pathfinding partially failed but we're close)
+                bb.farmCenter = new Vec3(best.pos.x, best.pos.y, best.pos.z);
+                console.log(`[BT] Established farm center at ${bb.farmCenter}`);
+
+                // Request terraforming from landscaper
+                if (bb.villageChat) {
+                    console.log(`[Farmer] Requesting terraforming at ${bb.farmCenter}`);
+                    bb.villageChat.requestTerraform(bb.farmCenter);
+                }
+
+                return 'success';
             }
         }
 

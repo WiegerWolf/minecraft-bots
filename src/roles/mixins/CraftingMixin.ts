@@ -3,6 +3,7 @@ import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import minecraftData from 'minecraft-data';
 import prismarineBlock from 'prismarine-block';
+import { smartPathfinderGoto } from '../../shared/PathfindingUtils';
 
 const { GoalNear } = goals;
 
@@ -130,10 +131,13 @@ export function CraftingMixin<TBase extends Constructor>(Base: TBase) {
             if (dist > 3) {
                 this.log(`Moving to crafting table at ${craftingTable.position} to craft ${itemName}...`);
                 if (onTargetSet) onTargetSet(craftingTable);
-                
-                try {
-                    await bot.pathfinder.goto(new GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 2));
-                } catch (e) {
+
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 2),
+                    { timeoutMs: 15000 }
+                );
+                if (!result.success) {
                     this.log("Movement to crafting table failed or interrupted.");
                     return false;
                 }

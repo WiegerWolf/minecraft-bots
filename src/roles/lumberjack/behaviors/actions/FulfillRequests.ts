@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 const { GoalLookAtBlock } = goals;
 
@@ -63,7 +64,15 @@ export class FulfillRequests implements BehaviorNode {
                 return 'failure';
             }
 
-            await bot.pathfinder.goto(new GoalLookAtBlock(chest.position, bot.world, { reach: 4 }));
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalLookAtBlock(chest.position, bot.world, { reach: 4 }),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success) {
+                console.log(`[Lumberjack] Failed to reach chest: ${result.failureReason}`);
+                return 'failure';
+            }
 
             const chestWindow = await bot.openContainer(chest);
             await sleep(100);

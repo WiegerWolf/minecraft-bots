@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 import { sleep } from './utils';
 
 const { GoalNear } = goals;
@@ -55,8 +56,18 @@ export class PickupItems implements BehaviorNode {
         bb.lastAction = 'pickup';
 
         try {
-            // Walk directly to the item (radius 0)
-            await bot.pathfinder.goto(new GoalNear(drop.position.x, drop.position.y, drop.position.z, 0));
+            // Walk directly to the item (radius 0) with timeout
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(drop.position.x, drop.position.y, drop.position.z, 0),
+                { timeoutMs: 15000 }
+            );
+
+            if (!result.success) {
+                console.log(`[Farmer] Pickup path failed: ${result.failureReason}`);
+                return 'failure';
+            }
+
             await sleep(500);
 
             // Check if item still exists (if it does, we failed to pick it up)
@@ -70,8 +81,11 @@ export class PickupItems implements BehaviorNode {
             this.lastTargetId = null;
             this.failedAttemptsAtTarget = 0;
             return 'success';
-        } catch {
-            // Pathfinding failed counts as an attempt
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : 'unknown';
+            if (!msg.includes('goal was changed') && !msg.includes('Path was stopped')) {
+                console.log(`[Farmer] Pickup path error: ${msg}`);
+            }
             return 'failure';
         }
     }

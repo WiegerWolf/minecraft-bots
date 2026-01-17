@@ -3,6 +3,7 @@ import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 import { sleep } from './utils';
 
 const { GoalNear, GoalLookAtBlock } = goals;
@@ -71,14 +72,24 @@ export class RepairField implements BehaviorNode {
                 const farmCenter = bb.farmCenter;
                 if (farmCenter) {
                     console.log(`[BT] Moving out of hole first...`);
-                    await bot.pathfinder.goto(new GoalNear(farmCenter.x, farmCenter.y, farmCenter.z, 2));
+                    const outResult = await smartPathfinderGoto(
+                        bot,
+                        new GoalNear(farmCenter.x, farmCenter.y, farmCenter.z, 2),
+                        { timeoutMs: 10000 }
+                    );
+                    if (!outResult.success) return 'failure';
                     bot.pathfinder.stop();
                     await sleep(200);
                 }
             }
 
             // Now move near the hole (but not in it)
-            await bot.pathfinder.goto(new GoalNear(hole.x, hole.y, hole.z, 2));
+            const moveResult = await smartPathfinderGoto(
+                bot,
+                new GoalNear(hole.x, hole.y, hole.z, 2),
+                { timeoutMs: 15000 }
+            );
+            if (!moveResult.success) return 'failure';
             bot.pathfinder.stop();
 
             // Find a block to place against (below the hole)
@@ -146,7 +157,15 @@ export class RepairField implements BehaviorNode {
             bb.lastAction = 'gather_dirt';
 
             try {
-                await bot.pathfinder.goto(new GoalLookAtBlock(pos, bot.world));
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalLookAtBlock(pos, bot.world),
+                    { timeoutMs: 15000 }
+                );
+                if (!result.success) {
+                    console.log(`[BT] Failed to reach dirt: ${result.failureReason}`);
+                    return 'failure';
+                }
                 await bot.dig(block);
                 await sleep(300);
                 return 'success';
