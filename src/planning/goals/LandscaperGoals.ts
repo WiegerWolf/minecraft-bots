@@ -3,7 +3,8 @@ import { WorldState } from '../WorldState';
 
 /**
  * Goal: Collect dropped items before they despawn.
- * HIGHEST PRIORITY - items despawn after 5 minutes.
+ * For landscaper: LOW priority - don't chase drops, focus on terraforming.
+ * Only pick up items that are very close (likely from own work).
  */
 export class CollectDropsGoal extends BaseGoal {
   name = 'CollectDrops';
@@ -17,8 +18,12 @@ export class CollectDropsGoal extends BaseGoal {
     const dropCount = ws.getNumber('nearby.drops');
     if (dropCount === 0) return 0;
 
-    // Very high base utility + scale with count
-    return Math.min(150, 100 + dropCount * 10);
+    // Don't interrupt active terraforming for drops
+    const terraformActive = ws.getBool('terraform.active');
+    if (terraformActive) return 40; // Low priority when terraforming
+
+    // Lower utility than FulfillTerraformRequest - landscaper shouldn't chase drops
+    return Math.min(80, 50 + dropCount * 5);
   }
 }
 
@@ -42,14 +47,14 @@ export class FulfillTerraformRequestGoal extends BaseGoal {
 
     if (!hasPending && !terraformActive) return 0;
 
-    // Continue active terraform
-    if (terraformActive) return 95;
+    // Continue active terraform - HIGHEST priority for landscaper
+    if (terraformActive) return 120;
 
     // Can start terraforming - have pending request and tools
-    if (hasTools) return 85;
+    if (hasTools) return 100;
 
     // Have pending request but no tools - still important
-    return 30;
+    return 50;
   }
 }
 
