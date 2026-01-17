@@ -129,7 +129,8 @@ export class TillGroundGoal extends BaseGoal {
 
 /**
  * Goal: Obtain farming tools (hoe).
- * High priority when no tools available.
+ * High priority when no tools available AND we can obtain materials.
+ * Lower priority if we're waiting for lumberjack to deposit materials.
  */
 export class ObtainToolsGoal extends BaseGoal {
   name = 'ObtainTools';
@@ -141,17 +142,34 @@ export class ObtainToolsGoal extends BaseGoal {
 
   getUtility(ws: WorldState): number {
     const hasHoe = ws.getBool('has.hoe');
-
     if (hasHoe) return 0;
 
-    // Very high priority - can't farm without tools
-    return 80;
+    // Check if we have materials to craft
+    const logs = ws.getNumber('inv.logs');
+    const planks = ws.getNumber('inv.planks');
+    const sticks = ws.getNumber('inv.sticks');
+    const hasStorage = ws.getBool('derived.hasStorageAccess');
+
+    // Can craft now - VERY high priority
+    if (logs >= 2 || planks >= 4 || (planks >= 2 && sticks >= 2)) {
+      return 95;
+    }
+
+    // Have chest access - might be able to get materials
+    if (hasStorage) {
+      return 80;
+    }
+
+    // No materials and no chest - lower priority, let other goals run
+    // (EstablishFarm, GatherSeeds, etc.)
+    return 40;
   }
 }
 
 /**
  * Goal: Gather seeds from grass.
- * Moderate priority when low on seeds.
+ * Moderate-high priority when low on seeds or waiting for hoe.
+ * Farmer can productively gather seeds while waiting for lumberjack to deposit materials.
  */
 export class GatherSeedsGoal extends BaseGoal {
   name = 'GatherSeeds';
@@ -166,46 +184,31 @@ export class GatherSeedsGoal extends BaseGoal {
   ];
 
   getUtility(ws: WorldState): number {
-    const needsSeeds = ws.getBool('needs.seeds');
     const grassCount = ws.getNumber('nearby.grass');
     const seedCount = ws.getNumber('inv.seeds');
+    const hasHoe = ws.getBool('has.hoe');
+    const hasFarm = ws.getBool('derived.hasFarmEstablished');
 
-    if (!needsSeeds || grassCount === 0) return 0;
+    if (grassCount === 0) return 0;
 
-    // Higher utility when we have fewer seeds
+    // Already have enough seeds
+    if (seedCount >= 10) return 0;
+
+    // If we're waiting for hoe and have farm established, gathering seeds is productive
+    if (!hasHoe && hasFarm) {
+      // Higher priority when we have fewer seeds
+      if (seedCount === 0) return 60;
+      if (seedCount < 5) return 55;
+      return 45;
+    }
+
+    // Normal priority when we have hoe or don't have farm yet
     if (seedCount === 0) return 55;
     if (seedCount < 5) return 45;
     return 30;
   }
 }
 
-/**
- * Goal: Gather wood for crafting tools.
- * High priority when no wood and need to craft hoe.
- */
-export class GatherWoodGoal extends BaseGoal {
-  name = 'GatherWood';
-  description = 'Chop trees to collect wood';
-
-  conditions = [
-    numericGoalCondition('inv.logs', v => v >= 4, 'sufficient wood', {
-      value: 4,
-      comparison: 'gte',
-      estimatedDelta: 4, // ~4 logs per tree
-    }),
-  ];
-
-  getUtility(ws: WorldState): number {
-    const needsWood = ws.getBool('derived.needsWood');
-    const hasHoe = ws.getBool('has.hoe');
-
-    if (!needsWood) return 0;
-
-    // Higher priority if we don't have a hoe yet
-    if (!hasHoe) return 70;
-    return 40;
-  }
-}
 
 /**
  * Goal: Establish a farm near water.
@@ -268,30 +271,10 @@ export class ExploreGoal extends BaseGoal {
   }
 }
 
-/**
- * Goal: Continue an in-progress tree harvest.
- * High priority to complete started work.
- */
-export class CompleteTreeHarvestGoal extends BaseGoal {
-  name = 'CompleteTreeHarvest';
-  description = 'Complete the current tree harvest';
-
-  conditions = [
-    booleanGoalCondition('tree.active', false, 'tree harvest complete'),
-  ];
-
-  getUtility(ws: WorldState): number {
-    const treeActive = ws.getBool('tree.active');
-
-    if (!treeActive) return 0;
-
-    // High priority to finish what we started
-    return 85;
-  }
-}
 
 /**
  * Registry of all farming goals.
+ * Note: Wood gathering is handled by lumberjack bot - farmer requests logs via chat.
  */
 export function createFarmingGoals(): BaseGoal[] {
   return [
@@ -302,9 +285,7 @@ export function createFarmingGoals(): BaseGoal[] {
     new TillGroundGoal(),
     new ObtainToolsGoal(),
     new GatherSeedsGoal(),
-    new GatherWoodGoal(),
     new EstablishFarmGoal(),
-    new CompleteTreeHarvestGoal(),
     new ExploreGoal(), // Always last - lowest priority fallback
   ];
 }

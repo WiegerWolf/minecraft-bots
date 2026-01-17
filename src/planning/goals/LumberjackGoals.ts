@@ -24,7 +24,7 @@ export class CollectDropsGoal extends BaseGoal {
 
 /**
  * Goal: Fulfill pending village requests for wood products.
- * High priority - inter-bot coordination.
+ * VERY HIGH priority - farmer is waiting for materials!
  */
 export class FulfillRequestsGoal extends BaseGoal {
   name = 'FulfillRequests';
@@ -41,9 +41,9 @@ export class FulfillRequestsGoal extends BaseGoal {
 
     if (!hasPending) return 0;
 
-    // Higher utility if we have materials to fulfill
+    // VERY high utility if we have materials - farmer is waiting!
     const hasMaterials = logCount > 0 || plankCount > 0;
-    return hasMaterials ? 110 : 80;
+    return hasMaterials ? 120 : 85;  // Boosted: 110->120, 80->85
   }
 }
 
@@ -125,7 +125,8 @@ export class ObtainAxeGoal extends BaseGoal {
 
 /**
  * Goal: Deposit logs in storage.
- * High priority when inventory is full or have many logs.
+ * High priority when inventory is full, have many logs, or pending requests.
+ * Lower threshold (8+ logs) to ensure farmer gets materials quickly.
  */
 export class DepositLogsGoal extends BaseGoal {
   name = 'DepositLogs';
@@ -144,15 +145,20 @@ export class DepositLogsGoal extends BaseGoal {
     const inventoryFull = ws.getBool('state.inventoryFull');
     const hasStorage = ws.getBool('derived.hasStorageAccess');
     const needsToDeposit = ws.getBool('needs.toDeposit');
+    const hasPendingRequests = ws.getBool('has.pendingRequests');
 
     if (logCount === 0 || !hasStorage) return 0;
 
     // Very high priority when inventory full
     if (inventoryFull) return 90;
 
-    // High priority when we have many logs
+    // High priority when there are pending requests - farmer is waiting!
+    if (hasPendingRequests && logCount > 0) return 85;
+
+    // High priority when we have many logs (lowered threshold: 16->8)
     if (needsToDeposit || logCount >= 32) return 80;
     if (logCount >= 16) return 70;
+    if (logCount >= 8) return 60;  // New: deposit at 8+ logs
     return 0;
   }
 }

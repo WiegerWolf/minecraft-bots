@@ -57,16 +57,17 @@ export class FindFarmCenter implements BehaviorNode {
             }
         });
 
-        // Filter for water under clear sky (not in caves) and not near known bad water
+        // Filter for water under clear sky (not in caves)
         // Be lenient - just check if the water itself has sky above, shorelines are fine!
+        // Use a smaller radius for badWater check (8 blocks) to avoid filtering all nearby water
         const suitablePositions: Vec3[] = [];
         let caveWaterCount = 0;
 
         for (const pos of waterBlocks) {
             const vec = new Vec3(pos.x, pos.y, pos.z);
 
-            // Skip if near known bad water
-            if (isNearBadWater(bb, vec)) continue;
+            // Skip if VERY close to known bad water (use small radius to avoid over-filtering)
+            if (isNearBadWater(bb, vec, 8)) continue;
 
             // Just check if this water block has clear sky - radius 0
             if (hasClearSky(bot, vec, 0)) {
@@ -108,7 +109,15 @@ export class FindFarmCenter implements BehaviorNode {
                     console.log(`[BT] Established farm center at ${bb.farmCenter}`);
 
                     return 'success';
-                } catch {
+                } catch (err) {
+                    console.log(`[BT] Failed to reach water at ${best.pos}: ${err}`);
+                    // Don't give up - still set farm center if we're reasonably close
+                    const dist = bot.entity.position.distanceTo(best.pos);
+                    if (dist < 32) {
+                        bb.farmCenter = new Vec3(best.pos.x, best.pos.y, best.pos.z);
+                        console.log(`[BT] Set farm center anyway (${Math.round(dist)} blocks away)`);
+                        return 'success';
+                    }
                     return 'failure';
                 }
             }

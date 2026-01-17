@@ -13,14 +13,26 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * DepositLogs - Put logs, planks, sticks, and saplings in shared chest
+ *
+ * Deposits more frequently (8+ logs instead of 16+) to ensure farmer
+ * can get materials quickly. Also announces deposits via chat.
  */
 export class DepositLogs implements BehaviorNode {
     name = 'DepositLogs';
 
     async tick(bot: Bot, bb: LumberjackBlackboard): Promise<BehaviorStatus> {
-        // Only deposit if we have enough items or inventory is getting full
+        // Check if there are pending requests for wood-related items
+        const hasPendingRequests = bb.villageChat?.hasPendingRequestsToFulfill(['log', 'plank', 'stick']) ?? false;
+
+        // Deposit threshold: 8+ logs normally, or any logs if there's a pending request
         const totalWoodItems = bb.logCount + bb.plankCount + bb.stickCount;
-        if (totalWoodItems < 16 && !bb.inventoryFull) {
+        const shouldDeposit = (
+            bb.inventoryFull ||
+            totalWoodItems >= 8 ||
+            (hasPendingRequests && bb.logCount > 0)
+        );
+
+        if (!shouldDeposit) {
             return 'failure';
         }
 
@@ -70,10 +82,14 @@ export class DepositLogs implements BehaviorNode {
             );
 
             let deposited = 0;
+            let logsDeposited = 0;
             for (const item of itemsToDeposit) {
                 try {
                     await chestWindow.deposit(item.type, null, item.count);
                     deposited += item.count;
+                    if (LOG_NAMES.includes(item.name)) {
+                        logsDeposited += item.count;
+                    }
                     await sleep(50);
                 } catch (err) {
                     // Chest might be full
@@ -83,7 +99,13 @@ export class DepositLogs implements BehaviorNode {
             }
 
             chestWindow.close();
-            console.log(`[Lumberjack] Deposited ${deposited} items`);
+            console.log(`[Lumberjack] Deposited ${deposited} items (${logsDeposited} logs)`);
+
+            // Announce deposit via chat so farmer knows materials are available
+            if (logsDeposited > 0 && bb.villageChat) {
+                bb.villageChat.announceDeposit('logs', logsDeposited);
+            }
+
             return 'success';
         } catch (error) {
             console.warn(`[Lumberjack] Error depositing items:`, error);

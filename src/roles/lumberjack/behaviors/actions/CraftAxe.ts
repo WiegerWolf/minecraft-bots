@@ -128,8 +128,16 @@ export class CraftAxe implements BehaviorNode {
             }
         }
 
+        // Check shared crafting table from village chat
+        if (bb.sharedCraftingTable) {
+            const table = bot.blockAt(bb.sharedCraftingTable);
+            if (table && table.name === 'crafting_table') {
+                return table;
+            }
+        }
+
         // Check if we have a crafting table in inventory
-        const tableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
+        let tableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
 
         if (!tableItem) {
             // Try to craft one (4 planks)
@@ -155,30 +163,54 @@ export class CraftAxe implements BehaviorNode {
         }
 
         // Place the crafting table
-        const newTableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
-        if (!newTableItem) return null;
+        tableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
+        if (!tableItem) return null;
 
-        // Find a spot to place it
+        // Find a spot to place it - prefer near village center if available
+        const searchCenter = bb.villageCenter || bot.entity.position;
         const groundBlocks = bot.findBlocks({
-            matching: b => ['grass_block', 'dirt', 'stone', 'cobblestone'].includes(b.name),
-            maxDistance: 5,
-            count: 10
+            point: searchCenter,
+            matching: b => ['grass_block', 'dirt', 'stone', 'cobblestone', 'sand', 'gravel'].includes(b.name),
+            maxDistance: 8,
+            count: 20
         });
 
+        // Sort by distance to bot for easier placement
+        groundBlocks.sort((a, b) =>
+            a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position)
+        );
+
         for (const groundPos of groundBlocks) {
-            const above = bot.blockAt(groundPos.offset(0, 1, 0));
+            const placePos = groundPos.offset(0, 1, 0);
+            const above = bot.blockAt(placePos);
             if (above && above.name === 'air') {
+                const groundBlock = bot.blockAt(groundPos);
+                if (!groundBlock || groundBlock.boundingBox !== 'block') continue;
+
                 try {
-                    await bot.equip(newTableItem, 'hand');
-                    const groundBlock = bot.blockAt(groundPos);
-                    if (groundBlock) {
-                        await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
-                        console.log(`[Lumberjack] Placed crafting table at ${groundPos.offset(0, 1, 0)}`);
-                        await sleep(200);
-                        return bot.blockAt(groundPos.offset(0, 1, 0));
+                    // CRITICAL: Move close to placement position BEFORE placing
+                    await bot.pathfinder.goto(new GoalNear(placePos.x, placePos.y, placePos.z, 3));
+                    await sleep(100);
+
+                    await bot.equip(tableItem, 'hand');
+                    await sleep(50);
+
+                    await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
+                    console.log(`[Lumberjack] Placed crafting table at ${placePos}`);
+                    await sleep(200);
+
+                    const placedTable = bot.blockAt(placePos);
+                    if (placedTable && placedTable.name === 'crafting_table') {
+                        // Announce to village
+                        if (bb.villageChat) {
+                            bb.villageChat.announceSharedCraftingTable(placePos);
+                            bb.sharedCraftingTable = placePos;
+                        }
+                        return placedTable;
                     }
                 } catch (error) {
-                    console.warn(`[Lumberjack] Failed to place crafting table:`, error);
+                    console.warn(`[Lumberjack] Failed to place crafting table at ${placePos}:`, error);
+                    // Continue trying other positions
                 }
             }
         }

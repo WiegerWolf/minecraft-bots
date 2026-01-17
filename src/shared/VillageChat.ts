@@ -10,10 +10,18 @@ import { Vec3 } from 'vec3';
  * - [CHEST] shared <x> <y> <z>             - Announce shared chest location
  * - [REQUEST] <item> <quantity>            - Request resources
  * - [FULFILL] <item> <quantity> for <bot>  - Announce fulfilled request
+ * - [DEPOSIT] <item> <quantity>            - Announce deposit to shared chest
  * - [STATUS] <role> at <x> <y> <z>         - Periodic status update
  */
 
 export interface ResourceRequest {
+    from: string;
+    item: string;
+    quantity: number;
+    timestamp: number;
+}
+
+export interface DepositNotification {
     from: string;
     item: string;
     quantity: number;
@@ -25,6 +33,7 @@ export interface VillageChatState {
     sharedChest: Vec3 | null;
     sharedCraftingTable: Vec3 | null;
     pendingRequests: ResourceRequest[];
+    lastDepositNotification: DepositNotification | null;
 }
 
 export class VillageChat {
@@ -32,7 +41,8 @@ export class VillageChat {
         villageCenter: null,
         sharedChest: null,
         sharedCraftingTable: null,
-        pendingRequests: []
+        pendingRequests: [],
+        lastDepositNotification: null
     };
 
     private bot: Bot;
@@ -117,6 +127,21 @@ export class VillageChat {
                     console.log(`[VillageChat] ${username} fulfilled ${item} request for ${forBot}`);
                 }
             }
+
+            // Parse deposit notifications
+            if (message.startsWith('[DEPOSIT] ')) {
+                const match = message.match(/\[DEPOSIT\] (\w+) (\d+)/);
+                if (match) {
+                    const notification: DepositNotification = {
+                        from: username,
+                        item: match[1]!,
+                        quantity: parseInt(match[2]!),
+                        timestamp: Date.now()
+                    };
+                    this.state.lastDepositNotification = notification;
+                    console.log(`[VillageChat] ${username} deposited ${notification.quantity}x ${notification.item} to shared chest`);
+                }
+            }
         });
     }
 
@@ -183,6 +208,12 @@ export class VillageChat {
         this.bot.chat(msg);
     }
 
+    // Announce a deposit to the shared chest
+    announceDeposit(item: string, quantity: number) {
+        const msg = `[DEPOSIT] ${item} ${quantity}`;
+        this.bot.chat(msg);
+    }
+
     // Check if we have a pending request for an item
     hasPendingRequestFor(item: string): boolean {
         return this.state.pendingRequests.some(r =>
@@ -233,5 +264,17 @@ export class VillageChat {
 
     getPendingRequests(): ResourceRequest[] {
         return this.state.pendingRequests;
+    }
+
+    getLastDepositNotification(): DepositNotification | null {
+        return this.state.lastDepositNotification;
+    }
+
+    // Check if there are pending requests that this bot could fulfill
+    hasPendingRequestsToFulfill(canProvide: string[]): boolean {
+        return this.state.pendingRequests.some(r =>
+            r.from !== this.bot.username &&
+            canProvide.some(item => r.item.includes(item) || item.includes(r.item))
+        );
     }
 }

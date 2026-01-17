@@ -10,7 +10,12 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * CheckSharedChest - Check shared chest for requested materials and withdraw them
+ * CheckSharedChest - Check shared chest for materials and withdraw them
+ *
+ * Priority order for withdrawal:
+ * 1. Logs (most efficient - 1 log = 4 planks)
+ * 2. Planks (if no logs available)
+ * 3. Sticks (if no planks available)
  */
 export class CheckSharedChest implements BehaviorNode {
     name = 'CheckSharedChest';
@@ -18,7 +23,13 @@ export class CheckSharedChest implements BehaviorNode {
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
         // Only check if we need tools
         if (!bb.needsTools) return 'failure';
-        if (bb.stickCount >= 2 && bb.plankCount >= 2) return 'failure';
+
+        // Check if we have enough materials to craft a hoe
+        const hasEnoughForHoe = (
+            (bb.stickCount >= 2 && bb.plankCount >= 2) ||  // Direct materials
+            bb.logCount >= 2  // 2 logs = 8 planks = enough for sticks + hoe
+        );
+        if (hasEnoughForHoe) return 'failure';
 
         // Get shared chest location from chat or nearby chests
         let sharedChest = bb.villageChat?.getSharedChest();
@@ -56,11 +67,41 @@ export class CheckSharedChest implements BehaviorNode {
             const chestWindow = await bot.openContainer(chest);
             await sleep(100);
 
-            // Look for sticks and planks
             const chestItems = chestWindow.containerItems();
             let withdrew = false;
 
-            // Withdraw sticks if needed
+            // Priority 1: Withdraw logs (most efficient - 1 log = 4 planks)
+            // Only withdraw if we need more materials
+            if (bb.logCount < 2) {
+                const logItem = chestItems.find(i => i.name.includes('_log'));
+                if (logItem) {
+                    const toWithdraw = Math.min(logItem.count, 4); // 4 logs = 16 planks
+                    try {
+                        await chestWindow.withdraw(logItem.type, null, toWithdraw);
+                        console.log(`[Farmer] Withdrew ${toWithdraw} logs from shared chest`);
+                        withdrew = true;
+                    } catch (err) {
+                        console.log(`[Farmer] Failed to withdraw logs: ${err}`);
+                    }
+                }
+            }
+
+            // Priority 2: Withdraw planks if no logs found and we need planks
+            if (!withdrew && bb.plankCount < 4) {
+                const plankItem = chestItems.find(i => i.name.endsWith('_planks'));
+                if (plankItem) {
+                    const toWithdraw = Math.min(plankItem.count, 8);
+                    try {
+                        await chestWindow.withdraw(plankItem.type, null, toWithdraw);
+                        console.log(`[Farmer] Withdrew ${toWithdraw} planks from shared chest`);
+                        withdrew = true;
+                    } catch (err) {
+                        console.log(`[Farmer] Failed to withdraw planks: ${err}`);
+                    }
+                }
+            }
+
+            // Priority 3: Withdraw sticks if needed
             if (bb.stickCount < 2) {
                 const stickItem = chestItems.find(i => i.name === 'stick');
                 if (stickItem) {
@@ -71,21 +112,6 @@ export class CheckSharedChest implements BehaviorNode {
                         withdrew = true;
                     } catch (err) {
                         console.log(`[Farmer] Failed to withdraw sticks: ${err}`);
-                    }
-                }
-            }
-
-            // Withdraw planks if needed
-            if (bb.plankCount < 2) {
-                const plankItem = chestItems.find(i => i.name.endsWith('_planks'));
-                if (plankItem) {
-                    const toWithdraw = Math.min(plankItem.count, 8);
-                    try {
-                        await chestWindow.withdraw(plankItem.type, null, toWithdraw);
-                        console.log(`[Farmer] Withdrew ${toWithdraw} planks from shared chest`);
-                        withdrew = true;
-                    } catch (err) {
-                        console.log(`[Farmer] Failed to withdraw planks: ${err}`);
                     }
                 }
             }

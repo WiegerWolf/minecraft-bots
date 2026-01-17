@@ -8,10 +8,11 @@ import { PlantSeeds } from '../../roles/farming/behaviors/actions/PlantSeeds';
 import { TillGround } from '../../roles/farming/behaviors/actions/TillGround';
 import { DepositItems } from '../../roles/farming/behaviors/actions/DepositItems';
 import { GatherSeeds } from '../../roles/farming/behaviors/actions/GatherSeeds';
-import { GatherWood } from '../../roles/farming/behaviors/actions/GatherWood';
 import { CraftHoe } from '../../roles/farming/behaviors/actions/CraftHoe';
 import { Explore } from '../../roles/farming/behaviors/actions/Explore';
 import { FindFarmCenter } from '../../roles/farming/behaviors/actions/FindFarmCenter';
+import { CheckSharedChest } from '../../roles/farming/behaviors/actions/CheckSharedChest';
+import { RequestMaterials } from '../../roles/farming/behaviors/actions/RequestMaterials';
 
 /**
  * GOAP Action: Pick up dropped items
@@ -178,32 +179,6 @@ export class GatherSeedsAction extends BaseGOAPAction {
   }
 }
 
-/**
- * GOAP Action: Gather wood from trees
- */
-export class GatherWoodAction extends BaseGOAPAction {
-  name = 'GatherWood';
-  private impl = new GatherWood();
-
-  preconditions = [
-    // No specific preconditions - can always try to find trees
-  ];
-
-  effects = [
-    incrementEffect('inv.logs', 4, 'chopped wood'),
-    setEffect('derived.needsWood', false, 'has wood'),
-  ];
-
-  override getCost(ws: WorldState): number {
-    // Higher cost - tree chopping takes time
-    return 5.0;
-  }
-
-  override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
-    const result = await this.impl.tick(bot, bb);
-    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
-  }
-}
 
 /**
  * GOAP Action: Craft a wooden hoe
@@ -211,27 +186,40 @@ export class GatherWoodAction extends BaseGOAPAction {
  * The implementation handles the full crafting chain internally:
  * logs → planks → sticks → hoe
  *
- * Precondition: Need at least 2 logs (which will be converted to planks).
- * This allows the planner to chain: GatherWood → CraftHoe
+ * Precondition: Need materials (logs OR planks+sticks).
+ * This allows the planner to chain: CheckSharedChest → CraftHoe
  */
 export class CraftHoeAction extends BaseGOAPAction {
   name = 'CraftHoe';
   private impl = new CraftHoe();
 
-  // Need logs to convert to planks (the implementation handles the conversion)
-  preconditions = [
-    numericPrecondition('inv.logs', v => v >= 2, 'has logs for planks'),
-  ];
+  // Dynamic precondition: need logs OR (planks + sticks)
+  preconditions = [];
+
+  override checkPreconditions(ws: WorldState): boolean {
+    const logs = ws.getNumber('inv.logs');
+    const planks = ws.getNumber('inv.planks');
+    const sticks = ws.getNumber('inv.sticks');
+
+    // Can craft if we have: 2+ logs, OR 4+ planks (for sticks + head), OR (2+ planks AND 2+ sticks)
+    return logs >= 2 || planks >= 4 || (planks >= 2 && sticks >= 2);
+  }
 
   effects = [
     setEffect('has.hoe', true, 'crafted hoe'),
     setEffect('needs.tools', false, 'has tools'),
-    setEffect('derived.needsWood', false, 'used wood for hoe'),
-    incrementEffect('inv.logs', -2, 'used logs for planks'),
   ];
 
   override getCost(ws: WorldState): number {
-    return 4.0; // Higher cost since it includes crafting steps
+    const logs = ws.getNumber('inv.logs');
+    const planks = ws.getNumber('inv.planks');
+    const sticks = ws.getNumber('inv.sticks');
+
+    // Lower cost if we have more prepared materials
+    if (planks >= 2 && sticks >= 2) return 2.0; // Ready to craft
+    if (planks >= 4) return 3.0; // Need to make sticks
+    if (logs >= 2) return 4.0; // Need to make planks + sticks
+    return 10.0; // Can't craft
   }
 
   override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
@@ -245,24 +233,25 @@ export class CraftHoeAction extends BaseGOAPAction {
 }
 
 /**
- * GOAP Action: Continue an in-progress tree harvest
- * This allows the planner to chain tree chopping with completion.
+ * GOAP Action: Check shared chest for crafting materials (logs, planks, sticks)
+ *
+ * This action withdraws materials from the shared chest that the lumberjack deposits.
  */
-export class ContinueTreeHarvestAction extends BaseGOAPAction {
-  name = 'ContinueTreeHarvest';
-  private impl = new GatherWood(false); // Default mode continues existing harvest
+export class CheckSharedChestAction extends BaseGOAPAction {
+  name = 'CheckSharedChest';
+  private impl = new CheckSharedChest();
 
   preconditions = [
-    booleanPrecondition('tree.active', true, 'tree harvest in progress'),
+    booleanPrecondition('needs.tools', true, 'needs tools'),
+    booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
   ];
 
   effects = [
-    setEffect('tree.active', false, 'tree harvest complete'),
-    incrementEffect('inv.logs', 2, 'collected remaining logs'),
+    incrementEffect('inv.logs', 4, 'withdrew logs from chest'),
   ];
 
   override getCost(ws: WorldState): number {
-    return 2.0;
+    return 2.0; // Low cost - just walking to chest
   }
 
   override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
@@ -270,6 +259,38 @@ export class ContinueTreeHarvestAction extends BaseGOAPAction {
     return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
   }
 }
+
+/**
+ * GOAP Action: Request materials from lumberjack via village chat
+ *
+ * This action requests logs from the lumberjack. It returns RUNNING to indicate
+ * that we're waiting for materials to be deposited.
+ */
+export class RequestMaterialsAction extends BaseGOAPAction {
+  name = 'RequestMaterials';
+  private impl = new RequestMaterials();
+
+  preconditions = [
+    booleanPrecondition('needs.tools', true, 'needs tools'),
+  ];
+
+  effects = [
+    // Requesting doesn't directly give us materials, but triggers lumberjack to deposit
+    setEffect('state.materialsRequested', true, 'materials requested'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    return 5.0; // Medium cost - need to wait for lumberjack
+  }
+
+  override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    // Running means we're waiting for materials
+    if (result === 'running') return ActionResult.RUNNING;
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
 
 /**
  * GOAP Action: Find and establish a farm center near water
@@ -329,6 +350,7 @@ export class ExploreAction extends BaseGOAPAction {
 
 /**
  * Create all farming actions for the planner.
+ * Note: Wood gathering is handled by the lumberjack bot - farmer requests logs via chat.
  */
 export function createFarmingActions(): BaseGOAPAction[] {
   return [
@@ -338,8 +360,8 @@ export function createFarmingActions(): BaseGOAPAction[] {
     new TillGroundAction(),
     new DepositItemsAction(),
     new GatherSeedsAction(),
-    new GatherWoodAction(),
-    new ContinueTreeHarvestAction(),
+    new CheckSharedChestAction(),
+    new RequestMaterialsAction(),
     new CraftHoeAction(),
     new FindFarmCenterAction(),
     new ExploreAction(),
