@@ -47,6 +47,9 @@ export interface FarmingBlackboard {
     exploredPositions: ExplorationMemory[];  // Recently visited positions
     badWaterPositions: ExplorationMemory[];  // Cave water locations to avoid
 
+    // Unreachable items tracking (entity id -> expiry timestamp)
+    unreachableDrops: Map<number, number>;
+
     // Tree harvesting state (persists across ticks)
     currentTreeHarvest: TreeHarvestState | null;
 
@@ -90,6 +93,7 @@ export function createBlackboard(): FarmingBlackboard {
 
         exploredPositions: [],
         badWaterPositions: [],
+        unreachableDrops: new Map(),
 
         currentTreeHarvest: null,
 
@@ -240,10 +244,21 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 
+    // Clean up expired unreachable entries
+    const now = Date.now();
+    for (const [id, expiry] of bb.unreachableDrops) {
+        if (now >= expiry) {
+            bb.unreachableDrops.delete(id);
+        }
+    }
+
     // Find dropped items - filter to only include reachable ones
     bb.nearbyDrops = Object.values(bot.entities).filter(e => {
         if (e.name !== 'item' || !e.position) return false;
         if (e.position.distanceTo(pos) >= 16) return false;
+
+        // Skip items marked as unreachable
+        if (bb.unreachableDrops.has(e.id)) return false;
 
         // Check if the item is on a walkable surface
         const itemPos = e.position;

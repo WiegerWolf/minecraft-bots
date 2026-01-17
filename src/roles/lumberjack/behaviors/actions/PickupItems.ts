@@ -5,17 +5,17 @@ import { goals } from 'mineflayer-pathfinder';
 
 const { GoalNear } = goals;
 
+// Cooldown for unreachable items - long enough that they might despawn (5 minutes)
+const UNREACHABLE_COOLDOWN = 5 * 60 * 1000;
+
 /**
  * PickupItems - Collect dropped logs, saplings, and other items
  *
- * Handles unreachable items by tracking failed attempts and skipping them.
+ * Handles unreachable items by tracking failed attempts in the blackboard
+ * so that the goal's utility calculation reflects actual reachable drops.
  */
 export class PickupItems implements BehaviorNode {
     name = 'PickupItems';
-
-    // Track items we've failed to pick up (by entity id -> expiry time)
-    private unreachableItems = new Map<number, number>();
-    private readonly UNREACHABLE_COOLDOWN = 15000; // 15 seconds
 
     // Track consecutive failures at current position (item might be in a hole)
     private lastTargetId: number | null = null;
@@ -23,6 +23,7 @@ export class PickupItems implements BehaviorNode {
     private readonly MAX_ATTEMPTS = 5;
 
     async tick(bot: Bot, bb: LumberjackBlackboard): Promise<BehaviorStatus> {
+        // nearbyDrops is already filtered by the blackboard to exclude unreachable items
         if (bb.nearbyDrops.length === 0) {
             return 'failure';
         }
@@ -30,32 +31,10 @@ export class PickupItems implements BehaviorNode {
             return 'failure';
         }
 
-        // Clean up expired unreachable entries
         const now = Date.now();
-        for (const [id, expiry] of this.unreachableItems) {
-            if (now >= expiry) {
-                this.unreachableItems.delete(id);
-            }
-        }
 
-        // Filter out unreachable items
-        const reachableDrops = bb.nearbyDrops.filter(d => !this.unreachableItems.has(d.id));
-
-        if (reachableDrops.length === 0) {
-            // All items unreachable - clear the oldest half and try again next tick
-            if (this.unreachableItems.size > 0) {
-                const entries = [...this.unreachableItems.entries()].sort((a, b) => a[1] - b[1]);
-                const toRemove = Math.ceil(entries.length / 2);
-                for (let i = 0; i < toRemove; i++) {
-                    const entry = entries[i];
-                    if (entry) this.unreachableItems.delete(entry[0]);
-                }
-            }
-            return 'failure';
-        }
-
-        // Find closest reachable drop
-        const sorted = [...reachableDrops].sort((a, b) =>
+        // Find closest drop
+        const sorted = [...bb.nearbyDrops].sort((a, b) =>
             bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position)
         );
 
@@ -72,10 +51,11 @@ export class PickupItems implements BehaviorNode {
             this.failedAttemptsAtTarget = 0;
         }
 
-        // If we've tried too many times, mark as unreachable
+        // If we've tried too many times, mark as unreachable in blackboard
         if (this.failedAttemptsAtTarget >= this.MAX_ATTEMPTS) {
             console.log(`[Lumberjack] Item ${drop.id} at ${drop.position.floored()} unreachable after ${this.MAX_ATTEMPTS} attempts`);
-            this.unreachableItems.set(drop.id, now + this.UNREACHABLE_COOLDOWN);
+            // Mark in blackboard so it affects nearbyDrops count and goal utility
+            bb.unreachableDrops.set(drop.id, now + UNREACHABLE_COOLDOWN);
             this.lastTargetId = null;
             this.failedAttemptsAtTarget = 0;
             return 'failure';

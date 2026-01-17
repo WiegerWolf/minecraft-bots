@@ -39,6 +39,9 @@ export interface LumberjackBlackboard {
     // Exploration memory
     exploredPositions: ExplorationMemory[];
 
+    // Unreachable items tracking (entity id -> expiry timestamp)
+    unreachableDrops: Map<number, number>;
+
     // Computed booleans
     inventoryFull: boolean;
     canChop: boolean;
@@ -74,6 +77,7 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         villageChat: null,
 
         exploredPositions: [],
+        unreachableDrops: new Map(),
 
         inventoryFull: false,
         canChop: true,
@@ -205,10 +209,21 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 
+    // Clean up expired unreachable entries
+    const now = Date.now();
+    for (const [id, expiry] of bb.unreachableDrops) {
+        if (now >= expiry) {
+            bb.unreachableDrops.delete(id);
+        }
+    }
+
     // Find dropped items - filter to only include reachable ones
     bb.nearbyDrops = Object.values(bot.entities).filter(e => {
         if (e.name !== 'item' || !e.position) return false;
         if (e.position.distanceTo(pos) >= 16) return false;
+
+        // Skip items marked as unreachable
+        if (bb.unreachableDrops.has(e.id)) return false;
 
         // Check if the item is on a walkable surface
         // Items floating on leaves/water are not reachable
