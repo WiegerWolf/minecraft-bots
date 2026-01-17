@@ -360,11 +360,10 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         }
     }
 
-    // Validate existing farm center (should be farmable land, not water)
+    // Validate existing farm center (should be water - the irrigation source)
     if (bb.farmCenter) {
         const block = bot.blockAt(bb.farmCenter);
-        const validFarmBlocks = ['dirt', 'grass_block', 'farmland', 'coarse_dirt', 'rooted_dirt'];
-        if (!block || !validFarmBlocks.includes(block.name)) {
+        if (!block || (block.name !== 'water' && block.name !== 'flowing_water')) {
             console.log(`[Blackboard] Farm center invalid (${block?.name || 'null'}), clearing...`);
             bb.farmCenter = null;
         }

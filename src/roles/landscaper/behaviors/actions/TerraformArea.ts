@@ -5,7 +5,7 @@ import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
-const { GoalNear, GoalLookAtBlock } = goals;
+const { GoalNear } = goals;
 
 function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -21,10 +21,10 @@ const HARD_BLOCKS = ['stone', 'cobblestone', 'andesite', 'diorite', 'granite', '
 const FARMABLE_BLOCKS = ['dirt', 'grass_block', 'farmland'];
 
 /**
- * TerraformArea - Flatten terrain around water for farming
+ * TerraformArea - Create a 9x9 flat dirt area centered on a water source
  *
- * Creates a 9x9 flat area (4 blocks in each direction = wheat hydration range)
- * Target Y = water level
+ * The water block stays in the CENTER for irrigation.
+ * All 80 surrounding blocks become dirt at the same Y level as the water.
  */
 export class TerraformArea implements BehaviorNode {
     name = 'TerraformArea';
@@ -41,74 +41,43 @@ export class TerraformArea implements BehaviorNode {
         const pendingRequests = bb.villageChat.getPendingTerraformRequests();
         if (pendingRequests.length === 0) return 'failure';
 
-        // Pick the first pending request
+        // Pick the first pending request - the position IS the water block
         const request = pendingRequests[0]!;
+        const waterPos = request.position.clone();
 
         // Claim the request
-        bb.villageChat.claimTerraformRequest(request.position);
+        bb.villageChat.claimTerraformRequest(waterPos);
 
-        // Move closer to the terraform area if needed (chunks must be loaded to scan)
-        const distToRequest = bot.entity.position.distanceTo(request.position);
+        // Move closer if needed (chunks must be loaded to scan)
+        const distToRequest = bot.entity.position.distanceTo(waterPos);
         if (distToRequest > 32) {
-            console.log(`[Landscaper] Moving closer to terraform area at ${request.position.floored()} (${Math.round(distToRequest)} blocks away)`);
+            console.log(`[Landscaper] Moving to terraform area at ${waterPos.floored()} (${Math.round(distToRequest)} blocks away)`);
             const result = await smartPathfinderGoto(
                 bot,
-                new GoalNear(request.position.x, request.position.y, request.position.z, 16),
+                new GoalNear(waterPos.x, waterPos.y, waterPos.z, 16),
                 { timeoutMs: 30000 }
             );
             if (!result.success) {
                 console.log(`[Landscaper] Failed to reach terraform area: ${result.failureReason}`);
-                bb.villageChat.releaseTerraformClaim(request.position);
+                bb.villageChat.releaseTerraformClaim(waterPos);
                 return 'failure';
             }
         }
 
-        // The request position is now a LAND position (farm center), not water
-        // Detect the ground level at the center
-        const centerX = Math.floor(request.position.x);
-        const centerZ = Math.floor(request.position.z);
-        let targetY = Math.floor(request.position.y);
-
-        // Verify/find ground level at center
-        for (let y = targetY + 3; y >= targetY - 3; y--) {
-            const block = bot.blockAt(new Vec3(centerX, y, centerZ));
-            const above = bot.blockAt(new Vec3(centerX, y + 1, centerZ));
-            if (block && block.boundingBox === 'block' && block.name !== 'water' &&
-                above && (above.name === 'air' || above.name.includes('grass'))) {
-                targetY = y;
-                break;
-            }
-        }
-
-        // Find water nearby (within irrigation range)
-        let waterPos: Vec3 | null = null;
-        const searchRadius = 6;
-        for (let dx = -searchRadius; dx <= searchRadius && !waterPos; dx++) {
-            for (let dz = -searchRadius; dz <= searchRadius && !waterPos; dz++) {
-                for (let dy = -2; dy <= 1; dy++) {
-                    const checkPos = new Vec3(centerX + dx, targetY + dy, centerZ + dz);
-                    const block = bot.blockAt(checkPos);
-                    if (block && block.name === 'water') {
-                        waterPos = checkPos.clone();
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (!waterPos) {
-            console.log(`[Landscaper] No water found within ${searchRadius} blocks of farm center at ${request.position.floored()} (searched Y=${targetY-2} to Y=${targetY+1})`);
-            // Release the claim so the request can be retried
-            bb.villageChat.releaseTerraformClaim(request.position);
+        // Verify the center block is water
+        const centerBlock = bot.blockAt(waterPos);
+        if (!centerBlock || (centerBlock.name !== 'water' && centerBlock.name !== 'flowing_water')) {
+            console.log(`[Landscaper] Request position is not water (found: ${centerBlock?.name || 'null'}) at ${waterPos.floored()}`);
+            bb.villageChat.releaseTerraformClaim(waterPos);
             return 'failure';
         }
 
-        console.log(`[Landscaper] Starting terraform at ${request.position.floored()}, ground Y=${targetY}, water at ${waterPos.floored()}`);
+        const targetY = Math.floor(waterPos.y);
+        console.log(`[Landscaper] Starting 9x9 terraform centered on water at ${waterPos.floored()}, target Y=${targetY}`);
 
-        // Initialize the terraform task - center on farm position, not water
+        // Initialize the terraform task
         bb.currentTerraformTask = {
-            farmCenter: new Vec3(centerX, targetY, centerZ),
-            waterPos: waterPos,
+            waterCenter: waterPos.floored(),
             targetY: targetY,
             phase: 'analyzing',
             blocksToRemove: [],
@@ -144,19 +113,17 @@ export class TerraformArea implements BehaviorNode {
         const task = bb.currentTerraformTask!;
         bb.lastAction = 'terraform_analyzing';
 
-        const farmCenter = task.farmCenter;
-        const waterPos = task.waterPos;
+        const waterCenter = task.waterCenter;
         const targetY = task.targetY;
-        const radius = 4; // 9x9 area (hydration range from water)
+        const radius = 4; // 9x9 area = 4 blocks in each direction
 
-        // Use FARM CENTER as center of the 9x9 area (not water)
-        const centerX = Math.floor(farmCenter.x);
-        const centerZ = Math.floor(farmCenter.z);
+        const centerX = Math.floor(waterCenter.x);
+        const centerZ = Math.floor(waterCenter.z);
 
         const blocksToRemove: Vec3[] = [];
         const blocksToFill: Vec3[] = [];
 
-        console.log(`[Landscaper] Analyzing 9x9 area centered at (${centerX}, ${targetY}, ${centerZ}), water at ${waterPos.floored()}`);
+        console.log(`[Landscaper] Analyzing 9x9 area centered on water at (${centerX}, ${targetY}, ${centerZ})`);
 
         // Scan the 9x9 area
         for (let dx = -radius; dx <= radius; dx++) {
@@ -164,10 +131,9 @@ export class TerraformArea implements BehaviorNode {
                 const x = centerX + dx;
                 const z = centerZ + dz;
 
-                // Skip the water source block position
-                if (x === Math.floor(waterPos.x) && z === Math.floor(waterPos.z)) continue;
+                // SKIP the center water block - we keep it!
+                if (dx === 0 && dz === 0) continue;
 
-                // Check what's at the target surface level
                 const surfacePos = new Vec3(x, targetY, z);
                 const surfaceBlock = bot.blockAt(surfacePos);
                 const abovePos = new Vec3(x, targetY + 1, z);
@@ -175,46 +141,39 @@ export class TerraformArea implements BehaviorNode {
                 const belowPos = new Vec3(x, targetY - 1, z);
                 const belowBlock = bot.blockAt(belowPos);
 
-                // Skip if this is water
-                if (surfaceBlock?.name === 'water') continue;
-
-                // Case 1: Surface is air - need to fill with dirt
-                if (!surfaceBlock || surfaceBlock.name === 'air') {
-                    // Check if there's support below or we need to build up
-                    if (belowBlock && belowBlock.boundingBox === 'block' && belowBlock.name !== 'water') {
-                        blocksToFill.push(surfacePos.clone());
-                    } else if (belowBlock?.name === 'water') {
-                        // Building over water - need to place dirt
-                        blocksToFill.push(surfacePos.clone());
-                    } else if (!belowBlock || belowBlock.name === 'air') {
-                        // Deep hole - fill from bottom
-                        // First fill below, then surface
-                        blocksToFill.push(belowPos.clone());
-                        blocksToFill.push(surfacePos.clone());
-                    }
+                // Case 1: Surface is air or water - need to place dirt
+                if (!surfaceBlock || surfaceBlock.name === 'air' ||
+                    surfaceBlock.name === 'water' || surfaceBlock.name === 'flowing_water') {
+                    blocksToFill.push(surfacePos.clone());
                 }
-                // Case 2: Surface has non-farmable block - replace it
+                // Case 2: Surface has a block but it's not farmable - dig and replace
                 else if (!FARMABLE_BLOCKS.includes(surfaceBlock.name)) {
                     if (SOFT_BLOCKS.includes(surfaceBlock.name) || HARD_BLOCKS.includes(surfaceBlock.name)) {
                         blocksToRemove.push(surfacePos.clone());
                         blocksToFill.push(surfacePos.clone());
                     }
                 }
-                // Case 3: Surface is good (dirt/grass) - just clear above
+                // Case 3: Surface is already farmable (dirt/grass) - good, just clear above
 
-                // Clear any blocks above the surface (obstacles)
+                // Clear any blocks above the surface
                 for (let y = targetY + 1; y <= targetY + 4; y++) {
                     const pos = new Vec3(x, y, z);
                     const block = bot.blockAt(pos);
                     if (!block || block.name === 'air') continue;
 
-                    // Remove obstacles
+                    // Remove obstacles (trees, tall grass, etc)
                     if (SOFT_BLOCKS.includes(block.name) || HARD_BLOCKS.includes(block.name) ||
                         block.name.includes('_log') || block.name.includes('leaves') ||
                         block.name.includes('grass') || block.name.includes('flower') ||
                         block.name.includes('fern') || block.name.includes('bush')) {
                         blocksToRemove.push(pos.clone());
                     }
+                }
+
+                // Check for holes below that need filling (support for farm surface)
+                if (belowBlock && (belowBlock.name === 'air' || belowBlock.name === 'water')) {
+                    // Need support below
+                    blocksToFill.push(belowPos.clone());
                 }
             }
         }
@@ -232,20 +191,17 @@ export class TerraformArea implements BehaviorNode {
             }
         }
         task.blocksToFill = Array.from(uniqueFills.values()).sort((a, b) => a.y - b.y);
-
         task.blocksToRemove = blocksToRemove;
+
+        // Determine next phase
         task.phase = blocksToRemove.length > 0 ? 'digging' : (task.blocksToFill.length > 0 ? 'filling' : 'finishing');
 
         // Log summary
         const totalWork = blocksToRemove.length + task.blocksToFill.length;
         if (totalWork > 0) {
-            console.log(`[Landscaper] Analysis: ${blocksToRemove.length} to dig, ${task.blocksToFill.length} to fill (total: ${totalWork} blocks)`);
-            if (blocksToRemove.length > 0) {
-                const yLevels = new Set(blocksToRemove.map(b => b.y));
-                console.log(`[Landscaper]   Dig at Y: ${[...yLevels].sort((a,b) => a-b).join(', ')}`);
-            }
+            console.log(`[Landscaper] Work needed: ${blocksToRemove.length} to dig, ${task.blocksToFill.length} to fill`);
         } else {
-            console.log(`[Landscaper] Analysis: Area already suitable at Y=${targetY}`);
+            console.log(`[Landscaper] Area already suitable - 9x9 dirt with water center`);
         }
 
         return 'running';
@@ -266,12 +222,10 @@ export class TerraformArea implements BehaviorNode {
             return 'failure'; // Let deposit action run
         }
 
-        // Get the next block to dig
         const blockPos = task.blocksToRemove[0]!;
         const block = bot.blockAt(blockPos);
 
         if (!block || block.name === 'air' || block.name === 'water') {
-            // Block already cleared
             task.blocksToRemove.shift();
             task.progress++;
             return 'running';
@@ -283,21 +237,20 @@ export class TerraformArea implements BehaviorNode {
 
         if (needPickaxe && !bb.hasPickaxe) {
             console.log(`[Landscaper] Need pickaxe for ${block.name}`);
-            return 'failure'; // Let craft action run
+            return 'failure';
         }
 
         if (!needPickaxe && !bb.hasShovel && !bb.hasPickaxe) {
             console.log(`[Landscaper] Need shovel for ${block.name}`);
-            return 'failure'; // Let craft action run
+            return 'failure';
         }
 
-        // Equip tool
         const tool = bot.inventory.items().find(i => i.name.includes(toolType));
         if (tool) {
             try {
                 await bot.equip(tool, 'hand');
             } catch (error) {
-                // Continue without tool if equip fails
+                // Continue without tool
             }
         }
 
@@ -309,12 +262,8 @@ export class TerraformArea implements BehaviorNode {
                 new GoalNear(blockPos.x, blockPos.y, blockPos.z, 3),
                 { timeoutMs: 15000 }
             );
-            if (!result.success) {
-                console.log(`[Landscaper] Path to dig block failed: ${result.failureReason}`);
-                // Try digging anyway if we're somewhat close
-                if (dist > 6) {
-                    return 'failure';
-                }
+            if (!result.success && dist > 6) {
+                return 'failure';
             }
         }
 
@@ -327,7 +276,6 @@ export class TerraformArea implements BehaviorNode {
             await sleep(100);
         } catch (error) {
             console.log(`[Landscaper] Dig failed at ${blockPos.floored()}: ${error instanceof Error ? error.message : 'unknown'}`);
-            // Skip this block
             task.blocksToRemove.shift();
         }
 
@@ -346,26 +294,22 @@ export class TerraformArea implements BehaviorNode {
         // Check if we have dirt
         const dirtItem = bot.inventory.items().find(i => i.name === 'dirt');
         if (!dirtItem) {
-            console.log(`[Landscaper] Need dirt to fill - searching for dirt nearby`);
-
-            // Try to gather dirt from outside the work area
+            console.log(`[Landscaper] Need dirt - gathering from nearby`);
             const gathered = await this.gatherDirtFromNearby(bot, bb, task);
             if (!gathered) {
-                // Couldn't find dirt nearby - skip remaining fills
-                console.log(`[Landscaper] No dirt found nearby - completing with partial fill`);
+                console.log(`[Landscaper] No dirt found - completing with partial fill`);
                 task.blocksToFill = [];
                 task.phase = 'finishing';
                 return 'running';
             }
-            // Got some dirt, continue filling
             return 'running';
         }
 
         const fillPos = task.blocksToFill[0]!;
         const block = bot.blockAt(fillPos);
 
-        // Check if block already filled
-        if (block && block.name !== 'air' && block.name !== 'water') {
+        // Check if already filled
+        if (block && block.name !== 'air' && block.name !== 'water' && block.name !== 'flowing_water') {
             task.blocksToFill.shift();
             task.progress++;
             return 'running';
@@ -373,7 +317,7 @@ export class TerraformArea implements BehaviorNode {
 
         // Find a surface to place against
         const adjacentOffsets = [
-            new Vec3(0, -1, 0), // below
+            new Vec3(0, -1, 0), // below (preferred)
             new Vec3(1, 0, 0), new Vec3(-1, 0, 0),
             new Vec3(0, 0, 1), new Vec3(0, 0, -1),
             new Vec3(0, 1, 0), // above
@@ -385,9 +329,10 @@ export class TerraformArea implements BehaviorNode {
         for (const offset of adjacentOffsets) {
             const checkPos = fillPos.plus(offset);
             const checkBlock = bot.blockAt(checkPos);
-            if (checkBlock && checkBlock.boundingBox === 'block' && checkBlock.name !== 'water') {
+            if (checkBlock && checkBlock.boundingBox === 'block' &&
+                checkBlock.name !== 'water' && checkBlock.name !== 'flowing_water') {
                 referenceBlock = checkBlock;
-                faceVector = offset.scaled(-1); // Face toward fill position
+                faceVector = offset.scaled(-1);
                 break;
             }
         }
@@ -407,12 +352,11 @@ export class TerraformArea implements BehaviorNode {
                 { timeoutMs: 15000 }
             );
             if (!result.success) {
-                console.log(`[Landscaper] Path to fill block failed: ${result.failureReason}`);
                 // Try placing anyway
             }
         }
 
-        // Equip dirt
+        // Equip and place dirt
         const dirtToPlace = bot.inventory.items().find(i => i.name === 'dirt');
         if (!dirtToPlace) {
             task.blocksToFill.shift();
@@ -436,27 +380,24 @@ export class TerraformArea implements BehaviorNode {
     }
 
     /**
-     * Gather dirt from outside the terraform area when we run out during filling.
-     * Searches for dirt/grass blocks in a ring around the work area.
+     * Gather dirt from OUTSIDE the 9x9 work area
      */
     private async gatherDirtFromNearby(bot: Bot, bb: LandscaperBlackboard, task: TerraformTask): Promise<boolean> {
-        const farmCenter = task.farmCenter;
+        const waterCenter = task.waterCenter;
         const targetY = task.targetY;
         const workRadius = 4; // The 9x9 work area
-        const searchRadius = 12; // How far to search for dirt
+        const searchRadius = 12;
 
-        // Find dirt blocks outside the work area but nearby
         const dirtPositions: Vec3[] = [];
 
         for (let dx = -searchRadius; dx <= searchRadius; dx++) {
             for (let dz = -searchRadius; dz <= searchRadius; dz++) {
-                // Skip blocks inside the work area
+                // Skip blocks INSIDE the work area - don't dig from there!
                 if (Math.abs(dx) <= workRadius && Math.abs(dz) <= workRadius) continue;
 
-                const x = Math.floor(farmCenter.x) + dx;
-                const z = Math.floor(farmCenter.z) + dz;
+                const x = Math.floor(waterCenter.x) + dx;
+                const z = Math.floor(waterCenter.z) + dz;
 
-                // Check at and slightly above/below target level
                 for (let dy = -2; dy <= 2; dy++) {
                     const pos = new Vec3(x, targetY + dy, z);
                     const block = bot.blockAt(pos);
@@ -469,20 +410,17 @@ export class TerraformArea implements BehaviorNode {
         }
 
         if (dirtPositions.length === 0) {
-            console.log(`[Landscaper] No dirt found within ${searchRadius} blocks of work area`);
             return false;
         }
 
-        // Sort by distance to bot
+        // Sort by distance
         dirtPositions.sort((a, b) =>
             bot.entity.position.distanceTo(a) - bot.entity.position.distanceTo(b)
         );
 
-        // Dig up to 16 dirt blocks (or however many we need)
         const neededDirt = Math.min(task.blocksToFill.length, 16);
         let gathered = 0;
 
-        // Equip shovel if we have one
         const shovel = bot.inventory.items().find(i => i.name.includes('shovel'));
         if (shovel) {
             try {
@@ -497,7 +435,6 @@ export class TerraformArea implements BehaviorNode {
             const block = bot.blockAt(dirtPos);
             if (!block || (block.name !== 'dirt' && block.name !== 'grass_block')) continue;
 
-            // Move to the dirt
             const dist = bot.entity.position.distanceTo(dirtPos);
             if (dist > 4) {
                 const result = await smartPathfinderGoto(
@@ -505,24 +442,21 @@ export class TerraformArea implements BehaviorNode {
                     new GoalNear(dirtPos.x, dirtPos.y, dirtPos.z, 3),
                     { timeoutMs: 15000 }
                 );
-                if (!result.success) {
-                    continue; // Skip unreachable dirt
-                }
+                if (!result.success) continue;
             }
 
-            // Dig it
             try {
                 await bot.dig(block);
                 gathered++;
                 console.log(`[Landscaper] Gathered dirt ${gathered}/${neededDirt} from ${dirtPos.floored()}`);
                 await sleep(100);
             } catch (error) {
-                // Skip this block
+                // Skip
             }
         }
 
         if (gathered > 0) {
-            console.log(`[Landscaper] Gathered ${gathered} dirt blocks for filling`);
+            console.log(`[Landscaper] Gathered ${gathered} dirt blocks`);
             return true;
         }
 
@@ -533,12 +467,12 @@ export class TerraformArea implements BehaviorNode {
         const task = bb.currentTerraformTask!;
         bb.lastAction = 'terraform_done';
 
-        // Announce completion at the FARM CENTER (matches the original request position)
+        // Announce completion at the water center position (matches request)
         if (bb.villageChat) {
-            bb.villageChat.announceTerraformDone(task.farmCenter);
+            bb.villageChat.announceTerraformDone(task.waterCenter);
         }
 
-        console.log(`[Landscaper] Terraform complete at ${task.farmCenter.floored()}`);
+        console.log(`[Landscaper] Terraform complete - 9x9 farm at ${task.waterCenter.floored()}`);
 
         task.phase = 'done';
         bb.currentTerraformTask = null;
