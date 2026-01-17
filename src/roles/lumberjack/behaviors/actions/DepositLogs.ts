@@ -11,6 +11,9 @@ function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// How long to remember a chest is full (5 minutes)
+const FULL_CHEST_MEMORY_MS = 5 * 60 * 1000;
+
 /**
  * DepositLogs - Put logs, planks, sticks, and saplings in shared chest
  *
@@ -20,7 +23,40 @@ function sleep(ms: number): Promise<void> {
 export class DepositLogs implements BehaviorNode {
     name = 'DepositLogs';
 
+    private posToKey(pos: { x: number; y: number; z: number }): string {
+        return `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
+    }
+
+    private cleanupFullChests(bb: LumberjackBlackboard): void {
+        const now = Date.now();
+        for (const [key, expiry] of bb.fullChests) {
+            if (now >= expiry) {
+                bb.fullChests.delete(key);
+            }
+        }
+    }
+
+    private isChestFull(bb: LumberjackBlackboard, pos: { x: number; y: number; z: number }): boolean {
+        const key = this.posToKey(pos);
+        const expiry = bb.fullChests.get(key);
+        if (!expiry) return false;
+        if (Date.now() >= expiry) {
+            bb.fullChests.delete(key);
+            return false;
+        }
+        return true;
+    }
+
+    private markChestFull(bb: LumberjackBlackboard, pos: { x: number; y: number; z: number }): void {
+        const key = this.posToKey(pos);
+        bb.fullChests.set(key, Date.now() + FULL_CHEST_MEMORY_MS);
+        bb.log?.info({ chestPos: key, expiresIn: '5 minutes' }, 'Marked chest as full');
+    }
+
     async tick(bot: Bot, bb: LumberjackBlackboard): Promise<BehaviorStatus> {
+        // Clean up expired full chest entries
+        this.cleanupFullChests(bb);
+
         // Check if there are pending requests for wood-related items
         const hasPendingRequests = bb.villageChat?.hasPendingRequestsToFulfill(['log', 'plank', 'stick']) ?? false;
 
@@ -39,10 +75,19 @@ export class DepositLogs implements BehaviorNode {
         // Find or use shared chest
         let chestPos = bb.sharedChest;
 
+        // If shared chest is marked as full, clear it
+        if (chestPos && this.isChestFull(bb, chestPos)) {
+            bb.log?.debug({ chestPos: chestPos.toString() }, 'Shared chest is marked full, looking for another');
+            bb.sharedChest = null;
+            chestPos = null;
+        }
+
         if (!chestPos) {
-            // Try to find a chest near village center
-            if (bb.nearbyChests.length > 0) {
-                chestPos = bb.nearbyChests[0]!.position;
+            // Try to find a chest near village center that isn't full
+            const availableChest = bb.nearbyChests.find(c => !this.isChestFull(bb, c.position));
+
+            if (availableChest) {
+                chestPos = availableChest.position;
                 // Register it as shared chest
                 if (bb.villageChat) {
                     bb.villageChat.announceSharedChest(chestPos);
@@ -58,6 +103,7 @@ export class DepositLogs implements BehaviorNode {
                     bb.log?.debug({ type: 'CHEST', pos: chestPos.toString() }, 'Queued sign write for discovered chest');
                 }
             } else {
+                bb.log?.debug('No available (non-full) chests found');
                 return 'failure'; // No chest available
             }
         }
@@ -110,7 +156,8 @@ export class DepositLogs implements BehaviorNode {
 
             // If we had items to deposit but deposited nothing, chest is full
             if (itemsToDeposit.length > 0 && deposited === 0) {
-                bb.log?.warn({ chestPos: chestPos.toString() }, 'Chest is full, clearing shared chest to find/craft new one');
+                bb.log?.warn({ chestPos: chestPos.toString() }, 'Chest is full, marking as full and clearing shared chest');
+                this.markChestFull(bb, chestPos);
                 bb.sharedChest = null;
                 return 'failure';
             }

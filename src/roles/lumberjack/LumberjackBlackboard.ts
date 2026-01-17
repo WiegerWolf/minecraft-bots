@@ -68,6 +68,9 @@ export interface LumberjackBlackboard {
     spawnPosition: Vec3 | null;           // Where bot spawned (sign location)
     pendingSignWrites: PendingSignWrite[]; // Queue of signs to write
     signPositions: Map<string, Vec3>;     // type -> sign block position (for updates)
+
+    // Full chest tracking (position string -> expiry timestamp)
+    fullChests: Map<string, number>;
 }
 
 export function createLumberjackBlackboard(): LumberjackBlackboard {
@@ -109,6 +112,9 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         spawnPosition: null,
         pendingSignWrites: [],
         signPositions: new Map(),
+
+        // Full chest tracking
+        fullChests: new Map(),
     };
 }
 
