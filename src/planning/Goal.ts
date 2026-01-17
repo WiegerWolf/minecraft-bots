@@ -8,6 +8,19 @@ export type GoalCondition = {
   key: string;
   check: (value: FactValue) => boolean;
   description?: string;
+  /**
+   * Optional metadata for numeric conditions to help the heuristic.
+   * When provided, the planner can estimate how far the current state
+   * is from the goal, enabling better A* guidance.
+   */
+  numericTarget?: {
+    /** The target value to reach (e.g., 64 for "have 64 logs") */
+    value: number;
+    /** Comparison type: 'gte' means current >= target, 'lte' means current <= target */
+    comparison: 'gte' | 'lte' | 'eq';
+    /** Estimated change per action that affects this fact (e.g., 4 logs per ChopTree) */
+    estimatedDelta?: number;
+  };
 };
 
 /**
@@ -65,7 +78,8 @@ export interface Goal {
 export function numericGoalCondition(
   key: string,
   check: (value: number) => boolean,
-  description?: string
+  description?: string,
+  numericTarget?: GoalCondition['numericTarget']
 ): GoalCondition {
   return {
     key,
@@ -74,6 +88,7 @@ export function numericGoalCondition(
       return check(num);
     },
     description,
+    numericTarget,
   };
 }
 

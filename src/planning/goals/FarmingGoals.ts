@@ -106,7 +106,11 @@ export class TillGroundGoal extends BaseGoal {
   description = 'Till ground near water to create farmland';
 
   conditions = [
-    numericGoalCondition('nearby.farmland', v => v > 20, 'sufficient farmland created'),
+    numericGoalCondition('nearby.farmland', v => v > 20, 'sufficient farmland created', {
+      value: 20,
+      comparison: 'gte',
+      estimatedDelta: 10, // ~10 farmland per tilling action
+    }),
   ];
 
   getUtility(ws: WorldState): number {
@@ -154,7 +158,11 @@ export class GatherSeedsGoal extends BaseGoal {
   description = 'Break grass to collect seeds';
 
   conditions = [
-    numericGoalCondition('inv.seeds', v => v >= 10, 'sufficient seeds'),
+    numericGoalCondition('inv.seeds', v => v >= 10, 'sufficient seeds', {
+      value: 10,
+      comparison: 'gte',
+      estimatedDelta: 5, // ~5 seeds per grass break
+    }),
   ];
 
   getUtility(ws: WorldState): number {
@@ -180,7 +188,11 @@ export class GatherWoodGoal extends BaseGoal {
   description = 'Chop trees to collect wood';
 
   conditions = [
-    numericGoalCondition('inv.logs', v => v >= 4, 'sufficient wood'),
+    numericGoalCondition('inv.logs', v => v >= 4, 'sufficient wood', {
+      value: 4,
+      comparison: 'gte',
+      estimatedDelta: 4, // ~4 logs per tree
+    }),
   ];
 
   getUtility(ws: WorldState): number {
@@ -222,20 +234,32 @@ export class EstablishFarmGoal extends BaseGoal {
 /**
  * Goal: Explore the world to find resources.
  * LOWEST PRIORITY - fallback when nothing else to do.
+ *
+ * This goal is satisfied when the bot is not idle (consecutiveIdleTicks == 0).
+ * The explore action resets idle ticks, so completing exploration satisfies this goal.
+ * This ensures Explore actually runs when selected, rather than returning an empty plan.
  */
 export class ExploreGoal extends BaseGoal {
   name = 'Explore';
   description = 'Explore the world to find resources';
 
   conditions = [
-    // This goal is never "satisfied" - always available as fallback
+    numericGoalCondition('state.consecutiveIdleTicks', v => v === 0, 'not idle', {
+      value: 0,
+      comparison: 'eq',
+      estimatedDelta: -1, // Explore resets to 0
+    }),
   ];
 
   getUtility(ws: WorldState): number {
     const idleTicks = ws.getNumber('state.consecutiveIdleTicks');
 
-    // Low base utility, increases if bot has been idle
-    return 5 + Math.min(20, idleTicks / 10);
+    // Low base utility, increases significantly if bot has been idle
+    if (idleTicks > 5) {
+      return 15 + Math.min(25, idleTicks / 2);
+    }
+
+    return 5;
   }
 
   // Explore is always valid

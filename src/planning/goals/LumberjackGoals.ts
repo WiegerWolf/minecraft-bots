@@ -119,7 +119,11 @@ export class DepositLogsGoal extends BaseGoal {
   description = 'Deposit logs in chest';
 
   conditions = [
-    numericGoalCondition('inv.logs', v => v < 5, 'few logs remaining'),
+    numericGoalCondition('inv.logs', v => v < 5, 'few logs remaining', {
+      value: 5,
+      comparison: 'lte',
+      estimatedDelta: -32, // Deposit action clears logs
+    }),
   ];
 
   getUtility(ws: WorldState): number {
@@ -149,7 +153,11 @@ export class ChopTreeGoal extends BaseGoal {
   description = 'Chop down trees to gather wood';
 
   conditions = [
-    numericGoalCondition('inv.logs', v => v >= 64, 'have plenty of logs'),
+    numericGoalCondition('inv.logs', v => v >= 16, 'have some logs', {
+      value: 16,
+      comparison: 'gte',
+      estimatedDelta: 4, // ~4 logs per tree chopped
+    }),
   ];
 
   getUtility(ws: WorldState): number {
@@ -234,27 +242,41 @@ export class ProcessWoodGoal extends BaseGoal {
 /**
  * Goal: Patrol forest to find trees.
  * LOWEST PRIORITY - fallback when nothing else to do.
+ *
+ * This goal is satisfied when the bot is not idle (consecutiveIdleTicks == 0).
+ * The patrol action resets idle ticks, so completing a patrol satisfies this goal.
+ * This prevents the "already satisfied" problem when trees exist but other goals fail.
  */
 export class PatrolForestGoal extends BaseGoal {
   name = 'PatrolForest';
   description = 'Explore to find reachable trees';
 
-  // Goal: find REACHABLE trees (not just trees we're standing on top of)
+  // Goal is satisfied when bot is not idle (any action resets idle ticks)
+  // This ensures PatrolForest actually runs when selected, rather than
+  // being marked "already satisfied" just because trees exist nearby.
   conditions = [
-    numericGoalCondition('nearby.reachableTrees', v => v > 0, 'found reachable trees'),
+    numericGoalCondition('state.consecutiveIdleTicks', v => v === 0, 'not idle', {
+      value: 0,
+      comparison: 'eq',
+      estimatedDelta: -1, // Patrol resets to 0
+    }),
   ];
 
   getUtility(ws: WorldState): number {
-    // Use reachableTrees to determine if we need to patrol
-    // This prevents "already satisfied" when bot is standing on tree canopy
     const reachableTreeCount = ws.getNumber('nearby.reachableTrees');
     const idleTicks = ws.getNumber('state.consecutiveIdleTicks');
 
-    // High utility if no REACHABLE trees (even if we see some above us)
+    // High utility if no reachable trees - we need to find some
     if (reachableTreeCount === 0) return 25;
 
-    // Low base utility when we have reachable trees, increases if bot has been idle
-    return 5 + Math.min(20, idleTicks / 10);
+    // When we have trees but keep being idle (planning failures), increase utility
+    // This helps break out of "stuck" states
+    if (idleTicks > 5) {
+      return 15 + Math.min(25, idleTicks / 2);
+    }
+
+    // Low base utility when everything is working
+    return 5;
   }
 
   // Patrol is always valid

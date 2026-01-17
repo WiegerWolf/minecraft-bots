@@ -219,17 +219,56 @@ export class GOAPPlanner {
 
   /**
    * Heuristic: estimate cost from state to goal.
-   * Simple heuristic: count unsatisfied goal conditions.
+   *
+   * For numeric conditions with target metadata, calculates the estimated
+   * number of actions needed to reach the target value. This provides much
+   * better A* guidance than simply counting unsatisfied conditions.
+   *
+   * For example, if goal is "inv.logs >= 64" and current logs = 4,
+   * with estimatedDelta = 4 (logs per ChopTree), heuristic = (64-4)/4 = 15.
    */
   private heuristic(state: WorldState, goal: Goal): number {
-    let unsatisfied = 0;
+    let totalCost = 0;
+
     for (const condition of goal.conditions) {
       const value = state.get(condition.key);
-      if (!condition.check(value)) {
-        unsatisfied++;
+
+      if (condition.check(value)) {
+        continue; // Already satisfied
+      }
+
+      // If we have numeric target metadata, calculate distance-based heuristic
+      if (condition.numericTarget) {
+        const currentValue = typeof value === 'number' ? value : 0;
+        const target = condition.numericTarget;
+        const delta = target.estimatedDelta ?? 1;
+
+        let distance = 0;
+        switch (target.comparison) {
+          case 'gte':
+            // Need to increase from current to target
+            distance = Math.max(0, target.value - currentValue);
+            break;
+          case 'lte':
+            // Need to decrease from current to target
+            distance = Math.max(0, currentValue - target.value);
+            break;
+          case 'eq':
+            // Need to reach exact value
+            distance = Math.abs(target.value - currentValue);
+            break;
+        }
+
+        // Estimate actions needed (cost per action assumed ~1-5, use 3 as average)
+        const estimatedActions = Math.ceil(distance / Math.abs(delta));
+        totalCost += estimatedActions * 3; // Weight by average action cost
+      } else {
+        // Fallback: count as 1 unsatisfied condition (default heuristic)
+        totalCost += 5; // Assume ~5 cost to satisfy an unknown condition
       }
     }
-    return unsatisfied;
+
+    return totalCost;
   }
 
   /**
