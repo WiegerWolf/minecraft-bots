@@ -206,6 +206,9 @@ export class WorldStateBuilder {
     ws.set('derived.hasVillage', bb.villageCenter !== null);
     ws.set('derived.needsCraftingTable', bb.nearbyCraftingTables.length === 0 && !bb.sharedCraftingTable);
     ws.set('derived.needsChest', bb.nearbyChests.length === 0 && !bb.sharedChest);
+
+    // Sign-based persistent knowledge
+    ws.set('pending.signWrites', bb.pendingSignWrites.length);
   }
 
   /**

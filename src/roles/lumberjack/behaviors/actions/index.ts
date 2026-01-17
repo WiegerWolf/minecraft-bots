@@ -8,3 +8,4 @@ export { CraftAndPlaceCraftingTable } from './CraftAndPlaceCraftingTable';
 export { ProcessWood } from './ProcessWood';
 export { PatrolForest, WaitForVillage } from './PatrolForest';
 export { PlantSaplings } from './PlantSaplings';
+export { WriteKnowledgeSign } from './WriteKnowledgeSign';

@@ -31,6 +31,15 @@ export class CraftChest implements BehaviorNode {
             if (bb.villageChat) {
                 bb.villageChat.announceVillageCenter(pos);
             }
+
+            // Queue sign write for village center
+            if (bb.spawnPosition) {
+                bb.pendingSignWrites.push({
+                    type: 'VILLAGE',
+                    pos: pos.clone()
+                });
+                bb.log?.debug({ type: 'VILLAGE', pos: pos.toString() }, 'Queued sign write for village center');
+            }
         }
 
         // Check if we have materials (8 planks)
@@ -62,6 +71,19 @@ export class CraftChest implements BehaviorNode {
             const placed = await this.placeChestAtVillageCenter(bot, bb);
             if (placed) {
                 bb.log?.debug(`[Lumberjack] Chest placed at ${bb.sharedChest}`);
+
+                // Queue sign write for persistent knowledge
+                // Cast is needed because TypeScript narrowed sharedChest to null
+                // after the early return, but placeChestAtVillageCenter sets it
+                const chestPos = bb.sharedChest as Vec3 | null;
+                if (chestPos && bb.spawnPosition) {
+                    bb.pendingSignWrites.push({
+                        type: 'CHEST',
+                        pos: chestPos.clone()
+                    });
+                    bb.log?.debug({ type: 'CHEST', pos: chestPos.toString() }, 'Queued sign write for chest');
+                }
+
                 return 'success';
             }
             return 'failure';

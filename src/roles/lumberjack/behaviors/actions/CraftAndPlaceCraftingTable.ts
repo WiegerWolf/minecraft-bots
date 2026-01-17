@@ -31,6 +31,15 @@ export class CraftAndPlaceCraftingTable implements BehaviorNode {
             if (bb.villageChat) {
                 bb.villageChat.announceVillageCenter(pos);
             }
+
+            // Queue sign write for village center
+            if (bb.spawnPosition) {
+                bb.pendingSignWrites.push({
+                    type: 'VILLAGE',
+                    pos: pos.clone()
+                });
+                bb.log?.debug({ type: 'VILLAGE', pos: pos.toString() }, 'Queued sign write for village center');
+            }
         }
 
         // Check if we have materials (4 planks)
@@ -59,6 +68,19 @@ export class CraftAndPlaceCraftingTable implements BehaviorNode {
         const placed = await this.placeCraftingTableAtVillageCenter(bot, bb);
         if (placed) {
             bb.log?.debug(`[Lumberjack] Crafting table placed at ${bb.sharedCraftingTable}`);
+
+            // Queue sign write for persistent knowledge
+            // Cast is needed because TypeScript narrowed sharedCraftingTable to null
+            // after the early return, but placeCraftingTableAtVillageCenter sets it
+            const craftingTablePos = bb.sharedCraftingTable as Vec3 | null;
+            if (craftingTablePos && bb.spawnPosition) {
+                bb.pendingSignWrites.push({
+                    type: 'CRAFT',
+                    pos: craftingTablePos.clone()
+                });
+                bb.log?.debug({ type: 'CRAFT', pos: craftingTablePos.toString() }, 'Queued sign write for crafting table');
+            }
+
             return 'success';
         }
 

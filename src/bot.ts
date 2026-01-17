@@ -1,6 +1,7 @@
 import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
 import { pathfinder, goals } from 'mineflayer-pathfinder';
 import { faker } from '@faker-js/faker';
+import { Vec3 } from 'vec3';
 import { FarmingRole } from './roles/farming/FarmingRole';
 import { LumberjackRole } from './roles/lumberjack/LumberjackRole';
 import { GOAPFarmingRole } from './roles/GOAPFarmingRole';
@@ -9,6 +10,9 @@ import { GOAPLandscaperRole } from './roles/GOAPLandscaperRole';
 import type { Role } from './roles/Role';
 import { createBotLogger, createChildLogger, type Logger } from './shared/logger';
 const { GoalNear } = goals;
+
+// Track spawn position for persistent knowledge system
+let spawnPosition: Vec3 | null = null;
 
 // Read configuration from environment variables (set by manager)
 const BOT_ROLE = process.env.BOT_ROLE || 'farming';
@@ -68,10 +72,14 @@ bot.once('spawn', () => {
     console.log('✅ Bot has spawned!');
     botLog.info('Bot spawned');
 
+    // Capture spawn position for persistent knowledge system (signs at spawn)
+    spawnPosition = bot.entity.position.clone();
+    botLog.info({ spawnPosition: spawnPosition.toString() }, 'Captured spawn position');
+
     // Auto-start the configured role after a short delay
     bot.waitForTicks(40).then(() => {
         botLog.info({ role: BOT_ROLE }, 'Auto-starting role');
-        setRole(BOT_ROLE, { logger });
+        setRole(BOT_ROLE, { logger, spawnPosition });
     });
 });
 

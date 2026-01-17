@@ -14,6 +14,7 @@ import {
   CraftAndPlaceCraftingTable,
   PatrolForest,
   PlantSaplings,
+  WriteKnowledgeSign,
 } from '../../roles/lumberjack/behaviors/actions';
 
 /**
@@ -330,6 +331,34 @@ export class PlantSaplingsAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Write knowledge to signs at spawn
+ * Records infrastructure locations (village center, crafting table, chest) to signs
+ * for persistence across bot restarts.
+ */
+export class WriteKnowledgeSignAction extends BaseGOAPAction {
+  name = 'WriteKnowledgeSign';
+  private impl = new WriteKnowledgeSign();
+
+  preconditions = [
+    numericPrecondition('pending.signWrites', v => v > 0, 'has pending sign writes'),
+  ];
+
+  effects = [
+    incrementEffect('pending.signWrites', -1, 'wrote sign'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Medium cost - requires navigation to spawn and possibly crafting
+    return 4.0;
+  }
+
+  override async execute(bot: Bot, bb: LumberjackBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * GOAP Action: Patrol to find trees
  */
 export class PatrolForestAction extends BaseGOAPAction {
@@ -373,6 +402,7 @@ export function createLumberjackActions(): BaseGOAPAction[] {
     new ProcessWoodAction(),
     new CraftChestAction(),
     new CraftAndPlaceCraftingTableAction(),
+    new WriteKnowledgeSignAction(),
     new PatrolForestAction(),
   ];
 }

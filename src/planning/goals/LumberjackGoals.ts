@@ -303,12 +303,51 @@ export class PlantSaplingsGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Write pending knowledge to signs at spawn.
+ * Medium priority - important for persistence but not urgent.
+ *
+ * This goal activates when there are pending sign writes in the queue
+ * (after placing crafting tables, chests, or establishing village center).
+ * Writing signs ensures the bot can recover this knowledge after restarts.
+ */
+export class WriteKnowledgeSignGoal extends BaseGoal {
+  name = 'WriteKnowledgeSign';
+  description = 'Write infrastructure locations to signs at spawn';
+
+  conditions = [
+    numericGoalCondition('pending.signWrites', v => v === 0, 'no pending sign writes', {
+      value: 0,
+      comparison: 'eq',
+      estimatedDelta: -1, // Each action writes one sign
+    }),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const pendingCount = ws.getNumber('pending.signWrites');
+
+    if (pendingCount === 0) return 0;
+
+    // Medium-high priority when there are signs to write
+    // Utility scales with pending count to handle multiple writes
+    // Range: 55-65 to be above PlantSaplings (55-75) but below critical goals
+    return Math.min(65, 55 + pendingCount * 5);
+  }
+
+  override isValid(ws: WorldState): boolean {
+    return ws.getNumber('pending.signWrites') > 0;
+  }
+}
+
+/**
  * Goal: Patrol forest to find trees.
- * LOWEST PRIORITY - fallback when nothing else to do.
+ * Low priority normally, but escalates when stuck.
  *
  * This goal is satisfied when the bot is not idle (consecutiveIdleTicks == 0).
  * The patrol action resets idle ticks, so completing a patrol satisfies this goal.
- * This prevents the "already satisfied" problem when trees exist but other goals fail.
+ *
+ * Key behavior: When actions keep failing (idleTicks > 3), utility increases
+ * to beat ObtainAxe (50) and break out of stuck states where trees are
+ * reported but not actually reachable.
  */
 export class PatrolForestGoal extends BaseGoal {
   name = 'PatrolForest';
@@ -330,12 +369,17 @@ export class PatrolForestGoal extends BaseGoal {
     const idleTicks = ws.getNumber('state.consecutiveIdleTicks');
 
     // High utility if no reachable trees - we need to find some
-    if (reachableTreeCount === 0) return 25;
+    if (reachableTreeCount === 0) return 45;
 
-    // When we have trees but keep being idle (planning failures), increase utility
-    // This helps break out of "stuck" states
-    if (idleTicks > 5) {
-      return 15 + Math.min(25, idleTicks / 2);
+    // When we have trees but keep being idle (action failures), increase utility
+    // This helps break out of "stuck" states where trees are reported but unreachable
+    // Needs to beat ObtainAxe's utility of 50 when stuck
+    if (idleTicks > 3) {
+      // At idleTicks=4: 40 + 8 = 48
+      // At idleTicks=6: 40 + 12 = 52 (beats ObtainAxe)
+      // At idleTicks=10: 40 + 20 = 60
+      // Cap at 70 to not override critical goals
+      return 40 + Math.min(30, idleTicks * 2);
     }
 
     // Low base utility when everything is working
@@ -360,6 +404,7 @@ export function createLumberjackGoals(): BaseGoal[] {
     new DepositLogsGoal(),
     new ChopTreeGoal(),
     new PlantSaplingsGoal(),
+    new WriteKnowledgeSignGoal(),
     new CraftInfrastructureGoal(),
     new ProcessWoodGoal(),
     new PatrolForestGoal(), // Always last - lowest priority fallback

@@ -11,6 +11,14 @@ export interface ExplorationMemory {
     reason?: string;
 }
 
+/**
+ * Pending sign write entry - queued when infrastructure is placed
+ */
+export interface PendingSignWrite {
+    type: 'VILLAGE' | 'CRAFT' | 'CHEST';
+    pos: Vec3;
+}
+
 export interface LumberjackBlackboard {
     // Perception data (refreshed each tick)
     nearbyTrees: Block[];       // Log blocks that could be tree bases
@@ -55,6 +63,11 @@ export interface LumberjackBlackboard {
     // Action tracking
     lastAction: string;
     consecutiveIdleTicks: number;
+
+    // Sign-based persistent knowledge system
+    spawnPosition: Vec3 | null;           // Where bot spawned (sign location)
+    pendingSignWrites: PendingSignWrite[]; // Queue of signs to write
+    signPositions: Map<string, Vec3>;     // type -> sign block position (for updates)
 }
 
 export function createLumberjackBlackboard(): LumberjackBlackboard {
@@ -91,6 +104,11 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
 
         lastAction: 'none',
         consecutiveIdleTicks: 0,
+
+        // Sign-based persistent knowledge
+        spawnPosition: null,
+        pendingSignWrites: [],
+        signPositions: new Map(),
     };
 }
 
