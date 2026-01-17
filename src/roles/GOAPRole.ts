@@ -152,13 +152,25 @@ export abstract class GOAPRole implements Role {
       }
 
       // PHASE 3: ACT
+      let actionExecuted = false;
       if (this.executor && this.executor.isExecuting() && this.currentWorldState) {
         await this.executor.tick(this.currentWorldState);
+        actionExecuted = true;
       }
 
       // PHASE 4: MONITOR
       if (this.executor && this.executor.isExecuting() && this.currentWorldState) {
         this.executor.checkWorldStateChange(this.currentWorldState);
+      }
+
+      // PHASE 5: IDLE TRACKING
+      // Increment idle ticks when no action is executing (helps PatrolForest trigger)
+      if (this.blackboard && 'consecutiveIdleTicks' in this.blackboard) {
+        if (actionExecuted) {
+          this.blackboard.consecutiveIdleTicks = 0;
+        } else {
+          this.blackboard.consecutiveIdleTicks++;
+        }
       }
     } catch (error) {
       console.error('[GOAP] Error in tick:', error);

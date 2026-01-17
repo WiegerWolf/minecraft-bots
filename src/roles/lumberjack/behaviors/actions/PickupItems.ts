@@ -39,7 +39,8 @@ export class PickupItems implements BehaviorNode {
         try {
             await bot.pathfinder.goto(new GoalNear(drop.position.x, drop.position.y, drop.position.z, 1));
             return 'success';
-        } catch {
+        } catch (error) {
+            console.log(`[Lumberjack] Pickup path failed: ${error instanceof Error ? error.message : 'unknown'}`);
             return 'failure';
         }
     }

@@ -76,14 +76,23 @@ export class PatrolForest implements BehaviorNode {
         console.log(`[Lumberjack] Patrolling to ${target.pos.floored()} (score: ${target.score})`);
 
         try {
-            // Find a safe Y level
+            // Find a safe Y level - search from target Y downward to find ground
+            // This handles cases where bot is on tree canopy and needs to get down
             let targetY = target.pos.y;
-            for (let dy = -3; dy <= 10; dy++) {
-                const checkPos = new Vec3(target.pos.x, center.y + dy, target.pos.z);
+            const searchStart = Math.max(target.pos.y, bot.entity.position.y);
+
+            // Search downward from higher of target/bot position to find walkable ground
+            for (let y = searchStart; y >= searchStart - 20; y--) {
+                const checkPos = new Vec3(target.pos.x, y, target.pos.z);
                 const block = bot.blockAt(checkPos);
                 const above = bot.blockAt(checkPos.offset(0, 1, 0));
-                if (block && !block.boundingBox && above && !above.boundingBox) {
-                    targetY = checkPos.y;
+                const below = bot.blockAt(checkPos.offset(0, -1, 0));
+
+                // Need: solid ground below, air at feet and head level
+                if (below && below.boundingBox === 'block' &&
+                    block && block.name === 'air' &&
+                    above && (above.name === 'air' || above.name.includes('leaves'))) {
+                    targetY = y;
                     break;
                 }
             }
@@ -92,7 +101,8 @@ export class PatrolForest implements BehaviorNode {
             recordExploredPosition(bb, bot.entity.position);
             return 'success';
         } catch (error) {
-            // Path failed, record as explored anyway
+            // Path failed, record as explored anyway and log the error
+            console.log(`[Lumberjack] Patrol path failed: ${error instanceof Error ? error.message : 'unknown'}`);
             recordExploredPosition(bb, target.pos, 'unreachable');
             return 'failure';
         }
