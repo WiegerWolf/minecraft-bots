@@ -380,43 +380,95 @@ export class TerraformArea implements BehaviorNode {
     }
 
     /**
-     * Gather dirt from OUTSIDE the 9x9 work area
+     * Gather dirt from OUTSIDE the 9x9 work area.
+     * Prefers: surface grass blocks, inland (away from water), close to bot.
      */
     private async gatherDirtFromNearby(bot: Bot, bb: LandscaperBlackboard, task: TerraformTask): Promise<boolean> {
         const waterCenter = task.waterCenter;
         const targetY = task.targetY;
         const workRadius = 4; // The 9x9 work area
-        const searchRadius = 12;
+        const searchRadius = 16;
 
-        const dirtPositions: Vec3[] = [];
+        interface DirtCandidate {
+            pos: Vec3;
+            isSurface: boolean;      // grass_block on top = surface
+            distFromWater: number;   // prefer far from water (inland)
+            distFromBot: number;
+        }
+
+        const candidates: DirtCandidate[] = [];
 
         for (let dx = -searchRadius; dx <= searchRadius; dx++) {
             for (let dz = -searchRadius; dz <= searchRadius; dz++) {
-                // Skip blocks INSIDE the work area - don't dig from there!
+                // Skip blocks INSIDE the work area
                 if (Math.abs(dx) <= workRadius && Math.abs(dz) <= workRadius) continue;
 
                 const x = Math.floor(waterCenter.x) + dx;
                 const z = Math.floor(waterCenter.z) + dz;
 
-                for (let dy = -2; dy <= 2; dy++) {
+                // Check surface first (grass blocks), then underground
+                for (let dy = 3; dy >= -3; dy--) {
                     const pos = new Vec3(x, targetY + dy, z);
                     const block = bot.blockAt(pos);
+                    const above = bot.blockAt(pos.offset(0, 1, 0));
 
-                    if (block && (block.name === 'dirt' || block.name === 'grass_block')) {
-                        dirtPositions.push(pos.clone());
+                    if (!block) continue;
+
+                    // Check if this is a valid dirt source
+                    const isDirt = block.name === 'dirt' || block.name === 'grass_block';
+                    if (!isDirt) continue;
+
+                    // Check if it's a surface block (air or plants above)
+                    const isSurface = above && (
+                        above.name === 'air' ||
+                        above.name.includes('grass') ||
+                        above.name.includes('flower') ||
+                        above.name.includes('fern')
+                    );
+
+                    // Skip if there's water nearby (within 2 blocks) - avoid shoreline
+                    let nearWater = false;
+                    for (let wx = -2; wx <= 2 && !nearWater; wx++) {
+                        for (let wz = -2; wz <= 2 && !nearWater; wz++) {
+                            for (let wy = -1; wy <= 1; wy++) {
+                                const checkBlock = bot.blockAt(pos.offset(wx, wy, wz));
+                                if (checkBlock && (checkBlock.name === 'water' || checkBlock.name === 'flowing_water')) {
+                                    nearWater = true;
+                                    break;
+                                }
+                            }
+                        }
                     }
+                    if (nearWater) continue;
+
+                    candidates.push({
+                        pos: pos.clone(),
+                        isSurface: isSurface || false,
+                        distFromWater: pos.distanceTo(waterCenter),
+                        distFromBot: pos.distanceTo(bot.entity.position)
+                    });
+
+                    // Only take topmost block at each x,z
+                    if (isSurface) break;
                 }
             }
         }
 
-        if (dirtPositions.length === 0) {
+        if (candidates.length === 0) {
             return false;
         }
 
-        // Sort by distance
-        dirtPositions.sort((a, b) =>
-            bot.entity.position.distanceTo(a) - bot.entity.position.distanceTo(b)
-        );
+        // Sort: surface blocks first, then by distance from water (far = better), then by bot distance
+        candidates.sort((a, b) => {
+            // Surface blocks are much better (don't dig underground)
+            if (a.isSurface !== b.isSurface) return a.isSurface ? -1 : 1;
+            // Prefer further from water (inland)
+            if (Math.abs(a.distFromWater - b.distFromWater) > 3) {
+                return b.distFromWater - a.distFromWater;
+            }
+            // Then by distance to bot
+            return a.distFromBot - b.distFromBot;
+        });
 
         const neededDirt = Math.min(task.blocksToFill.length, 16);
         let gathered = 0;
@@ -428,18 +480,18 @@ export class TerraformArea implements BehaviorNode {
             } catch (e) { /* continue */ }
         }
 
-        for (const dirtPos of dirtPositions) {
+        for (const candidate of candidates) {
             if (gathered >= neededDirt) break;
             if (bb.inventoryFull) break;
 
-            const block = bot.blockAt(dirtPos);
+            const block = bot.blockAt(candidate.pos);
             if (!block || (block.name !== 'dirt' && block.name !== 'grass_block')) continue;
 
-            const dist = bot.entity.position.distanceTo(dirtPos);
+            const dist = bot.entity.position.distanceTo(candidate.pos);
             if (dist > 4) {
                 const result = await smartPathfinderGoto(
                     bot,
-                    new GoalNear(dirtPos.x, dirtPos.y, dirtPos.z, 3),
+                    new GoalNear(candidate.pos.x, candidate.pos.y, candidate.pos.z, 3),
                     { timeoutMs: 15000 }
                 );
                 if (!result.success) continue;
@@ -448,7 +500,7 @@ export class TerraformArea implements BehaviorNode {
             try {
                 await bot.dig(block);
                 gathered++;
-                console.log(`[Landscaper] Gathered dirt ${gathered}/${neededDirt} from ${dirtPos.floored()}`);
+                console.log(`[Landscaper] Gathered ${block.name} ${gathered}/${neededDirt} from ${candidate.pos.floored()}${candidate.isSurface ? ' (surface)' : ''}`);
                 await sleep(100);
             } catch (error) {
                 // Skip

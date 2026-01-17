@@ -259,13 +259,28 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         }
     }
 
-    // Find dropped items - filter to only include reachable ones
+    // Building materials - farmer should NOT pick these up (landscaper needs them)
+    const LANDSCAPER_MATERIALS = ['dirt', 'cobblestone', 'stone', 'gravel', 'sand', 'andesite', 'diorite', 'granite'];
+
+    // Find dropped items - filter to only include reachable farming-related items
     bb.nearbyDrops = Object.values(bot.entities).filter(e => {
         if (e.name !== 'item' || !e.position) return false;
         if (e.position.distanceTo(pos) >= 16) return false;
 
         // Skip items marked as unreachable
         if (bb.unreachableDrops.has(e.id)) return false;
+
+        // Skip landscaper materials - let the landscaper pick these up
+        const metadata = (e as any).metadata;
+        if (metadata) {
+            const itemStack = metadata.find((m: any) => m && typeof m === 'object' && 'itemId' in m);
+            if (itemStack) {
+                const itemName = bot.registry?.items?.[itemStack.itemId]?.name;
+                if (itemName && LANDSCAPER_MATERIALS.includes(itemName)) {
+                    return false;
+                }
+            }
+        }
 
         // Check if the item is on a walkable surface
         const itemPos = e.position;
