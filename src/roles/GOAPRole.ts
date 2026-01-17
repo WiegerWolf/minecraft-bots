@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import type { Role } from './Role';
+import type { Role, RoleStartOptions } from './Role';
 import { WorldState } from '../planning/WorldState';
 import { WorldStateBuilder } from '../planning/WorldStateBuilder';
 import { GOAPPlanner } from '../planning/GOAPPlanner';
@@ -7,6 +7,7 @@ import { GoalArbiter } from '../planning/GoalArbiter';
 import { PlanExecutor, ReplanReason } from '../planning/PlanExecutor';
 import type { GOAPAction } from '../planning/Action';
 import type { Goal } from '../planning/Goal';
+import { createChildLogger, type Logger } from '../shared/logger';
 
 /**
  * Configuration for GOAP-based roles.
@@ -26,6 +27,11 @@ export interface GOAPRoleConfig {
    * Maximum planning iterations before giving up.
    */
   maxPlanIterations?: number;
+
+  /**
+   * Optional logger instance for structured logging.
+   */
+  logger?: Logger;
 }
 
 /**
@@ -42,7 +48,11 @@ export abstract class GOAPRole implements Role {
 
   protected bot: Bot | null = null;
   protected blackboard: any = null;
-  protected config: Required<GOAPRoleConfig>;
+  protected config: Required<Omit<GOAPRoleConfig, 'logger'>>;
+
+  // Logging
+  protected logger: Logger | null = null;
+  protected log: Logger | null = null; // Child logger for this role
 
   // Planning components
   protected planner: GOAPPlanner | null = null;
@@ -68,19 +78,37 @@ export abstract class GOAPRole implements Role {
       tickInterval: config?.tickInterval ?? 100,
       maxPlanIterations: config?.maxPlanIterations ?? 1000,
     };
+
+    // Store logger if provided (will be used when role starts)
+    if (config?.logger) {
+      this.logger = config.logger;
+    }
   }
 
-  start(bot: Bot, options?: any): void {
+  start(bot: Bot, options?: RoleStartOptions): void {
     this.bot = bot;
     this.blackboard = this.createBlackboard();
+
+    // Initialize logger from options or config
+    if (options?.logger) {
+      this.logger = options.logger;
+    }
+    if (this.logger) {
+      this.log = createChildLogger(this.logger, 'GOAP');
+    }
 
     // Initialize planning components now that we have bot and blackboard
     const actions = this.getActions();
     const goals = this.getGoals();
 
+    // Create child loggers for planning components
+    const plannerLogger = this.logger ? createChildLogger(this.logger, 'Planner') : undefined;
+    const executorLogger = this.logger ? createChildLogger(this.logger, 'Executor') : undefined;
+
     this.planner = new GOAPPlanner(actions, {
       maxIterations: this.config.maxPlanIterations,
       debug: this.config.debug,
+      logger: plannerLogger,
     });
 
     this.arbiter = new GoalArbiter(goals, {
@@ -95,11 +123,12 @@ export abstract class GOAPRole implements Role {
       {
         maxFailures: 3,
         debug: this.config.debug,
+        logger: executorLogger,
       }
     );
 
     this.running = true;
-    console.log('[GOAP] Role started');
+    this.log?.info({ role: this.name }, 'Role started');
 
     // Start the main loop
     // Note: We use a guard to prevent overlapping ticks since pathfinding
@@ -109,7 +138,7 @@ export abstract class GOAPRole implements Role {
       this.ticking = true;
       this.tick()
         .catch(err => {
-          console.error('[GOAP] Tick error:', err);
+          this.log?.error({ err }, 'Tick error');
         })
         .finally(() => {
           this.ticking = false;
@@ -130,7 +159,7 @@ export abstract class GOAPRole implements Role {
       this.executor.cancel();
     }
 
-    console.log('[GOAP] Role stopped');
+    this.log?.info({ role: this.name }, 'Role stopped');
   }
 
   /**
@@ -170,7 +199,7 @@ export abstract class GOAPRole implements Role {
 
     // Check for zombie state - bot object exists but connection is dead
     if (!this.isBotConnected()) {
-      console.error(`[GOAP] Connection lost - stopping ${this.name}`);
+      this.log?.error({ role: this.name }, 'Connection lost, stopping role');
       this.stop(this.bot);
       return;
     }
@@ -207,7 +236,7 @@ export abstract class GOAPRole implements Role {
         }
       }
     } catch (error) {
-      console.error('[GOAP] Error in tick:', error);
+      this.log?.error({ err: error }, 'Error in tick');
     }
   }
 
@@ -230,7 +259,7 @@ export abstract class GOAPRole implements Role {
 
     // Log cooldowns if any
     if (goalsOnCooldown.size > 0 && this.config.debug) {
-      console.log(`[GOAP] Goals on cooldown: ${Array.from(goalsOnCooldown).join(', ')}`);
+      this.log?.debug({ goalsOnCooldown: Array.from(goalsOnCooldown) }, 'Goals on cooldown');
     }
 
     // Select the best goal, skipping any on cooldown
@@ -238,7 +267,7 @@ export abstract class GOAPRole implements Role {
 
     if (!goalResult) {
       if (this.config.debug) {
-        console.log('[GOAP] No valid goals, idling');
+        this.log?.debug('No valid goals, idling');
       }
       return;
     }
@@ -247,16 +276,14 @@ export abstract class GOAPRole implements Role {
 
     // Log goal selection
     if (this.config.debug || reason === 'switch') {
-      console.log(
-        `[GOAP] Goal: ${goal.name} (utility: ${utility.toFixed(1)}, reason: ${reason})`
-      );
+      this.log?.info({ goal: goal.name, utility: utility.toFixed(1), reason }, 'Goal selected');
     }
 
     // Plan actions to achieve goal
     const planResult = this.planner.plan(this.currentWorldState, goal);
 
     if (!planResult.success) {
-      console.log(`[GOAP] Failed to plan for goal: ${goal.name}`);
+      this.log?.warn({ goal: goal.name }, 'Failed to plan for goal');
       // Put goal on cooldown (5 seconds) before trying again
       this.failedGoalCooldowns.set(goal.name, now + 5000);
       // Clear current goal so we can try another
@@ -269,9 +296,9 @@ export abstract class GOAPRole implements Role {
 
     // Load plan into executor
     if (this.config.debug) {
-      console.log(
-        `[GOAP] Plan: ${planResult.plan.map(a => a.name).join(' → ')} ` +
-        `(cost: ${planResult.cost.toFixed(1)})`
+      this.log?.debug(
+        { plan: planResult.plan.map(a => a.name), cost: planResult.cost.toFixed(1) },
+        'Plan created'
       );
     }
 
@@ -285,7 +312,7 @@ export abstract class GOAPRole implements Role {
     // Check if there were failures during plan execution
     const hadFailures = this.executor?.hadRecentFailures() ?? false;
 
-    console.log(`[GOAP] Replan requested: ${reason}, hadFailures: ${hadFailures}`);
+    this.log?.info({ reason, hadFailures }, 'Replan requested');
 
     // Clear current goal and apply cooldown if needed
     if (this.arbiter) {
@@ -296,7 +323,7 @@ export abstract class GOAPRole implements Role {
       if (currentGoal && (reason === ReplanReason.ACTION_FAILED ||
           (reason === ReplanReason.PLAN_EXHAUSTED && hadFailures))) {
         this.failedGoalCooldowns.set(currentGoal.name, Date.now() + 5000);
-        console.log(`[GOAP] Goal ${currentGoal.name} on cooldown for 5s (${reason})`);
+        this.log?.debug({ goal: currentGoal.name, reason }, 'Goal placed on 5s cooldown');
       }
 
       // Clear current goal so arbiter picks a new one

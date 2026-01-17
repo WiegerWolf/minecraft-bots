@@ -3,6 +3,7 @@ import type { GOAPAction, ActionResult } from './Action';
 import { ActionResult as ActionResultEnum } from './Action';
 import { WorldState } from './WorldState';
 import type { FarmingBlackboard } from '../roles/farming/Blackboard';
+import type { Logger } from '../shared/logger';
 
 /**
  * Reason for replanning.
@@ -32,6 +33,11 @@ export interface PlanExecutorConfig {
    * Enable debug logging.
    */
   debug: boolean;
+
+  /**
+   * Optional logger for structured logging.
+   */
+  logger?: Logger;
 }
 
 /**
@@ -51,8 +57,9 @@ export interface ExecutionStats {
 export class PlanExecutor {
   private bot: Bot;
   private blackboard: FarmingBlackboard;
-  private config: PlanExecutorConfig;
+  private config: Omit<PlanExecutorConfig, 'logger'>;
   private onReplan: ReplanCallback;
+  private log: Logger | null = null;
 
   // Execution state
   private currentPlan: GOAPAction[] = [];
@@ -82,6 +89,7 @@ export class PlanExecutor {
       maxFailures: config?.maxFailures ?? 3,
       debug: config?.debug ?? false,
     };
+    this.log = config?.logger ?? null;
   }
 
   /**
@@ -95,9 +103,7 @@ export class PlanExecutor {
     this.initialWorldState = initialState.clone();
 
     if (this.config.debug) {
-      console.log(
-        `[PlanExecutor] Loaded plan: ${plan.map(a => a.name).join(' → ')}`
-      );
+      this.log?.debug({ plan: plan.map(a => a.name) }, 'Loaded plan');
     }
   }
 
@@ -135,7 +141,7 @@ export class PlanExecutor {
     // Plan exhausted
     if (this.currentActionIndex >= this.currentPlan.length) {
       if (this.currentAction === null) {
-        console.log(`[PlanExecutor] Plan exhausted (failures: ${this.consecutiveFailures})`);
+        this.log?.info({ failures: this.consecutiveFailures }, 'Plan exhausted');
         this.requestReplan(ReplanReason.PLAN_EXHAUSTED);
         return false;
       }
@@ -153,8 +159,9 @@ export class PlanExecutor {
       this.currentAction = nextAction;
 
       if (this.config.debug) {
-        console.log(
-          `[PlanExecutor] Starting action ${this.currentActionIndex + 1}/${this.currentPlan.length}: ${this.currentAction.name}`
+        this.log?.debug(
+          { action: this.currentAction.name, step: this.currentActionIndex + 1, total: this.currentPlan.length },
+          'Starting action'
         );
       }
 
@@ -182,7 +189,7 @@ export class PlanExecutor {
         return true;
       }
     } catch (error) {
-      console.error(`[PlanExecutor] Action ${this.currentAction.name} threw error:`, error);
+      this.log?.error({ action: this.currentAction.name, err: error }, 'Action threw error');
       this.handleActionFailure();
       return true;
     }
@@ -200,7 +207,7 @@ export class PlanExecutor {
     this.consecutiveFailures = 0;
 
     if (this.config.debug) {
-      console.log(`[PlanExecutor] Action ${this.currentAction.name} succeeded`);
+      this.log?.debug({ action: this.currentAction.name }, 'Action succeeded');
     }
 
     // Move to next action
@@ -217,9 +224,9 @@ export class PlanExecutor {
     this.stats.actionsFailed++;
     this.consecutiveFailures++;
 
-    console.log(
-      `[PlanExecutor] Action ${this.currentAction.name} failed ` +
-      `(consecutive failures: ${this.consecutiveFailures})`
+    this.log?.warn(
+      { action: this.currentAction.name, consecutiveFailures: this.consecutiveFailures },
+      'Action failed'
     );
 
     // Cancel current action if it supports cancellation
@@ -229,8 +236,9 @@ export class PlanExecutor {
 
     // Check if we've exceeded failure threshold
     if (this.consecutiveFailures >= this.config.maxFailures) {
-      console.log(
-        `[PlanExecutor] Max failures (${this.config.maxFailures}) reached, requesting replan`
+      this.log?.warn(
+        { maxFailures: this.config.maxFailures },
+        'Max failures reached, requesting replan'
       );
       this.requestReplan(ReplanReason.ACTION_FAILED);
       return;
@@ -255,9 +263,7 @@ export class PlanExecutor {
 
     if (changes >= CHANGE_THRESHOLD) {
       if (this.config.debug) {
-        console.log(
-          `[PlanExecutor] World state changed significantly (${changes} differences), requesting replan`
-        );
+        this.log?.debug({ changes }, 'World state changed significantly, requesting replan');
       }
       this.requestReplan(ReplanReason.WORLD_CHANGED);
     }

@@ -7,13 +7,18 @@ import { GOAPFarmingRole } from './roles/GOAPFarmingRole';
 import { GOAPLumberjackRole } from './roles/GOAPLumberjackRole';
 import { GOAPLandscaperRole } from './roles/GOAPLandscaperRole';
 import type { Role } from './roles/Role';
+import { createBotLogger, createChildLogger, type Logger } from './shared/logger';
 const { GoalNear } = goals;
 
 // Read configuration from environment variables (set by manager)
 const BOT_ROLE = process.env.BOT_ROLE || 'farming';
 const BOT_NAME = process.env.BOT_NAME || faker.internet.username().slice(0, 16);
 
-console.log(`🎲 Bot name: ${BOT_NAME}, Role: ${BOT_ROLE}`);
+// Create bot-wide logger
+const logger: Logger = createBotLogger({ botName: BOT_NAME, role: BOT_ROLE });
+const botLog = createChildLogger(logger, 'Bot');
+
+botLog.info({ botName: BOT_NAME, role: BOT_ROLE }, 'Bot starting');
 
 const config: BotOptions = {
     host: 'localhost',
@@ -30,10 +35,10 @@ bot.loadPlugin(pathfinder);
 const roles: Record<string, Role> = {
     farming: new FarmingRole(),
     lumberjack: new LumberjackRole(),
-    landscaper: new GOAPLandscaperRole({ debug: true }),
-    'goap-farming': new GOAPFarmingRole({ debug: true }),
-    'goap-lumberjack': new GOAPLumberjackRole({ debug: true }),
-    'goap-landscaper': new GOAPLandscaperRole({ debug: true }),
+    landscaper: new GOAPLandscaperRole({ debug: true, logger }),
+    'goap-farming': new GOAPFarmingRole({ debug: true, logger }),
+    'goap-lumberjack': new GOAPLumberjackRole({ debug: true, logger }),
+    'goap-landscaper': new GOAPLandscaperRole({ debug: true, logger }),
 };
 
 let currentRole: Role | null = null;
@@ -52,12 +57,14 @@ function setRole(roleName: string | null, options?: any) {
 }
 
 bot.once('spawn', () => {
+    // Keep console.log for this message - manager watches for it to reset backoff
     console.log('✅ Bot has spawned!');
+    botLog.info('Bot spawned');
 
     // Auto-start the configured role after a short delay
     bot.waitForTicks(40).then(() => {
-        console.log(`🤖 Auto-starting ${BOT_ROLE} role...`);
-        setRole(BOT_ROLE);
+        botLog.info({ role: BOT_ROLE }, 'Auto-starting role');
+        setRole(BOT_ROLE, { logger });
     });
 });
 
@@ -125,16 +132,16 @@ let isConnected = false;
 bot.on('spawn', () => { isConnected = true; });
 bot.on('kicked', (reason) => {
     isConnected = false;
-    console.log('❌ Kicked:', reason);
+    botLog.error({ reason }, 'Kicked from server');
     process.exit(1);
 });
 bot.on('error', (err) => {
-    console.error('❌ Error:', err);
+    botLog.error({ err }, 'Bot error');
     // Don't exit on error - might be recoverable
 });
 bot.on('end', () => {
     isConnected = false;
-    console.log('🔌 Disconnected');
+    botLog.warn('Disconnected from server');
     process.exit(1);
 });
 
@@ -162,7 +169,7 @@ async function emergencyDropAndExit() {
     if (isDropping) return;
     isDropping = true;
 
-    console.log("🚨 Termination signal received. Initiating emergency inventory dump...");
+    botLog.warn('Termination signal received, initiating emergency inventory dump');
 
     // 1. Stop all bot actions
     setRole(null);
@@ -180,15 +187,15 @@ async function emergencyDropAndExit() {
                 try {
                     await bot.tossStack(item);
                 } catch (e) {
-                    console.error(`Failed to drop ${item.name}`);
+                    botLog.error({ item: item.name }, 'Failed to drop item');
                 }
             }
         } catch (e) {
-            console.error("Error during drop sequence:", e);
+            botLog.error({ err: e }, 'Error during drop sequence');
         }
     }
 
-    console.log("👋 Inventory cleared. Exiting now.");
+    botLog.info('Inventory cleared, exiting');
     process.exit(0);
 }
 

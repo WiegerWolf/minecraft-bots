@@ -11,11 +11,47 @@ const BOT_PATH = resolve(__dirname, "bot.ts");
 
 // Bot configurations - each entry spawns a separate bot with its own role
 // roleLabel must be short to fit within Minecraft's 16 character username limit
-const BOT_CONFIGS = [
-    { role: 'goap-farming', roleLabel: 'Farmer' },
-    { role: 'goap-lumberjack', roleLabel: 'Lmbr' },
-    { role: 'landscaper', roleLabel: 'Land' },
+const ALL_BOT_CONFIGS = [
+    { role: 'goap-farming', roleLabel: 'Farmer', aliases: ['farmer', 'farm'] },
+    { role: 'goap-lumberjack', roleLabel: 'Lmbr', aliases: ['lumberjack', 'lumber', 'lmbr'] },
+    { role: 'landscaper', roleLabel: 'Land', aliases: ['landscaper', 'land'] },
 ];
+
+/**
+ * Parse CLI arguments to determine which bot(s) to launch.
+ * Usage: bun run start [bot-alias]
+ *
+ * Examples:
+ *   bun run start           -> launches all bots
+ *   bun run start farmer    -> launches only farmer bot
+ *   bun run start lumberjack -> launches only lumberjack bot
+ */
+function parseBotSelection(): typeof ALL_BOT_CONFIGS {
+    const args = process.argv.slice(2); // Skip 'bun' and script path
+
+    if (args.length === 0) {
+        // No arguments: launch all bots
+        return ALL_BOT_CONFIGS;
+    }
+
+    const alias = args[0]!.toLowerCase();
+
+    // Find matching bot config
+    const matchedConfig = ALL_BOT_CONFIGS.find(config =>
+        config.aliases.includes(alias) || config.role === alias
+    );
+
+    if (!matchedConfig) {
+        console.error(`Unknown bot: "${alias}"`);
+        console.error(`Available bots: ${ALL_BOT_CONFIGS.map(c => c.aliases.join('/')).join(', ')}`);
+        process.exit(1);
+    }
+
+    return [matchedConfig];
+}
+
+// Determine which bots to launch based on CLI args
+const BOT_CONFIGS = parseBotSelection();
 
 // Track multiple bot processes
 const botProcesses: Map<string, Subprocess> = new Map();
@@ -144,7 +180,9 @@ async function startAllBots() {
 // Initial start
 startAllBots();
 
-console.log(`👀 Watching ${__dirname} for changes...`);
+const botCount = BOT_CONFIGS.length;
+const botNames = BOT_CONFIGS.map(c => c.roleLabel).join(', ');
+console.log(`👀 Watching ${__dirname} for changes... (${botCount} bot${botCount > 1 ? 's' : ''}: ${botNames})`);
 let watchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 watch(__dirname, { recursive: true }, (event, filename) => {

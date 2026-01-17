@@ -1,6 +1,7 @@
 import type { GOAPAction } from './Action';
 import type { Goal } from './Goal';
 import { WorldState } from './WorldState';
+import type { Logger } from '../shared/logger';
 
 /**
  * A node in the planning search tree.
@@ -30,6 +31,7 @@ export interface PlanResult {
 export interface GOAPPlannerConfig {
   maxIterations: number; // Prevent infinite loops
   debug: boolean;
+  logger?: Logger;
 }
 
 /**
@@ -38,7 +40,8 @@ export interface GOAPPlannerConfig {
  */
 export class GOAPPlanner {
   private actions: GOAPAction[];
-  private config: GOAPPlannerConfig;
+  private config: Omit<GOAPPlannerConfig, 'logger'>;
+  private log: Logger | null = null;
 
   constructor(actions: GOAPAction[], config?: Partial<GOAPPlannerConfig>) {
     this.actions = actions;
@@ -46,6 +49,7 @@ export class GOAPPlanner {
       maxIterations: config?.maxIterations ?? 1000,
       debug: config?.debug ?? false,
     };
+    this.log = config?.logger ?? null;
   }
 
   /**
@@ -57,7 +61,7 @@ export class GOAPPlanner {
     // Quick check: is goal already satisfied?
     if (this.isGoalSatisfied(currentState, goal)) {
       if (this.config.debug) {
-        console.log(`[Planner] Goal ${goal.name} already satisfied`);
+        this.log?.debug({ goal: goal.name }, 'Goal already satisfied');
       }
       return {
         success: true,
@@ -95,7 +99,7 @@ export class GOAPPlanner {
 
       if (this.config.debug) {
         const actionName = current.action?.name ?? 'START';
-        console.log(`[Planner] Iteration ${iterations}: popped ${actionName} (fCost=${current.fCost.toFixed(1)}, openSet size=${openSet.length})`);
+        this.log?.debug({ iteration: iterations, action: actionName, fCost: current.fCost.toFixed(1), openSetSize: openSet.length }, 'A* iteration');
       }
 
       // Check if we've reached the goal
@@ -104,10 +108,9 @@ export class GOAPPlanner {
         const elapsed = Date.now() - startTime;
 
         if (this.config.debug) {
-          console.log(
-            `[Planner] Success! Found plan for ${goal.name}: ` +
-            `${plan.map(a => a.name).join(' → ')} ` +
-            `(cost: ${current.gCost.toFixed(1)}, nodes: ${nodesExplored}, time: ${elapsed}ms)`
+          this.log?.debug(
+            { goal: goal.name, plan: plan.map(a => a.name), cost: current.gCost.toFixed(1), nodes: nodesExplored, timeMs: elapsed },
+            'Plan found'
           );
         }
 
@@ -137,13 +140,13 @@ export class GOAPPlanner {
         // Debug: Check if this action satisfies the goal
         if (this.config.debug) {
           const satisfies = this.isGoalSatisfied(newState, goal);
-          console.log(`[Planner] After ${action.name}: goal satisfied = ${satisfies}`);
+          this.log?.debug({ action: action.name, satisfies }, 'Checking action result');
           if (!satisfies) {
             // Check each condition
             for (const condition of goal.conditions) {
               const value = newState.get(condition.key);
               const passes = condition.check(value);
-              console.log(`[Planner]   Condition ${condition.key}: value=${value} (${typeof value}), passes=${passes}`);
+              this.log?.debug({ condition: condition.key, value, valueType: typeof value, passes }, 'Condition check');
             }
           }
         }
@@ -151,7 +154,7 @@ export class GOAPPlanner {
         const newStateKey = this.getStateKey(newState);
         if (closedSet.has(newStateKey)) {
           if (this.config.debug) {
-            console.log(`[Planner] Skipping ${action.name}: state already in closed set`);
+            this.log?.debug({ action: action.name }, 'Skipping action, state in closed set');
           }
           continue; // Already explored
         }
@@ -168,19 +171,19 @@ export class GOAPPlanner {
           if (gCost < existingNode.gCost) {
             // Found better path to this state
             if (this.config.debug) {
-              console.log(`[Planner] Replacing ${action.name} in open set (gCost ${existingNode.gCost.toFixed(1)} -> ${gCost.toFixed(1)})`);
+              this.log?.debug({ action: action.name, oldCost: existingNode.gCost.toFixed(1), newCost: gCost.toFixed(1) }, 'Replacing action in open set');
             }
             openSet.splice(existingIdx, 1);
           } else {
             if (this.config.debug) {
-              console.log(`[Planner] Skipping ${action.name}: already in open set with gCost=${existingNode.gCost.toFixed(1)} <= ${gCost.toFixed(1)}`);
+              this.log?.debug({ action: action.name, existingCost: existingNode.gCost.toFixed(1), newCost: gCost.toFixed(1) }, 'Skipping action, existing path better');
             }
             continue; // Existing path is better
           }
         }
 
         if (this.config.debug) {
-          console.log(`[Planner] Adding ${action.name} to open set (fCost=${fCost.toFixed(1)})`);
+          this.log?.debug({ action: action.name, fCost: fCost.toFixed(1) }, 'Adding action to open set');
         }
 
         // Add new node to open set
@@ -196,16 +199,16 @@ export class GOAPPlanner {
       }
 
       if (this.config.debug) {
-        console.log(`[Planner] After expansion: openSet size=${openSet.length}`);
+        this.log?.debug({ openSetSize: openSet.length }, 'After expansion');
       }
     }
 
     // Failed to find plan
     const elapsed = Date.now() - startTime;
     if (this.config.debug) {
-      console.log(
-        `[Planner] Failed to find plan for ${goal.name} ` +
-        `(nodes: ${nodesExplored}, iterations: ${iterations}, time: ${elapsed}ms)`
+      this.log?.debug(
+        { goal: goal.name, nodes: nodesExplored, iterations, timeMs: elapsed },
+        'Failed to find plan'
       );
     }
 
