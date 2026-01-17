@@ -151,28 +151,6 @@ export class GOAPPlanner {
           continue; // Already explored
         }
 
-        // Check if this state is already in open set with better cost
-        const existingIdx = openSet.findIndex(n => this.getStateKey(n.state) === newStateKey);
-        if (existingIdx >= 0) {
-          const existingNode = openSet[existingIdx];
-          if (existingNode && gCost < existingNode.gCost) {
-            // Found better path to this state
-            if (this.config.debug) {
-              console.log(`[Planner] Replacing ${action.name} in open set with better cost`);
-            }
-            openSet.splice(existingIdx, 1);
-          } else {
-            if (this.config.debug) {
-              console.log(`[Planner] Skipping ${action.name}: better path exists in open set`);
-            }
-            continue; // Existing path is better
-          }
-        }
-
-        if (this.config.debug) {
-          console.log(`[Planner] Adding ${action.name} to open set (fCost=${fCost.toFixed(1)})`);
-        }
-
         // Calculate costs
         const gCost = current.gCost + action.getCost(current.state);
         const hCost = this.heuristic(newState, goal);
@@ -188,6 +166,10 @@ export class GOAPPlanner {
           } else {
             continue; // Existing path is better
           }
+        }
+
+        if (this.config.debug) {
+          console.log(`[Planner] Adding ${action.name} to open set (fCost=${fCost.toFixed(1)})`);
         }
 
         // Add new node to open set
