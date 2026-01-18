@@ -143,8 +143,7 @@ The bot manager (`src/manager/`) provides an interactive terminal interface for 
 | `[R]` | Running |
 | `[S]` | Stopped |
 | `[C]` | Crashed (will auto-restart with backoff) |
-| `[+]` | Starting |
-| `[~]` | Restarting |
+| `[.]` | Starting or Restarting (yellow, animated) |
 
 ### Design Decisions
 
