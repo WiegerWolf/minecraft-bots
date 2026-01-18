@@ -53,6 +53,14 @@ export class WorldState {
   }
 
   /**
+   * Get a fact value as a string (returns empty string if not a string).
+   */
+  getString(key: string): string {
+    const value = this.get(key);
+    return typeof value === 'string' ? value : '';
+  }
+
+  /**
    * Set a fact value.
    */
   set(key: string, value: FactValue): void {

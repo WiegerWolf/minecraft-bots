@@ -12,3 +12,6 @@ export { WriteKnowledgeSign } from './WriteKnowledgeSign';
 export { StudySpawnSigns } from './StudySpawnSigns';
 export { WithdrawSupplies } from './WithdrawSupplies';
 export { ReadUnknownSign } from './ReadUnknownSign';
+
+// Trade behaviors
+export { BroadcastOffer, RespondToOffer, CompleteTrade } from './TradeActions';

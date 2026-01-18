@@ -13,7 +13,10 @@ export {
     DepositLogs,
     CraftAxe,
     ProcessWood,
-    PatrolForest
+    PatrolForest,
+    BroadcastOffer,
+    RespondToOffer,
+    CompleteTrade
 } from './actions';
 
 // Import for tree building
@@ -30,29 +33,44 @@ import {
     CraftAndPlaceCraftingTable,
     ProcessWood,
     PatrolForest,
-    PlantSaplings
+    PlantSaplings,
+    BroadcastOffer,
+    RespondToOffer,
+    CompleteTrade
 } from './actions';
 
 /**
  * Creates the lumberjack behavior tree with the following priority order:
- * 1. Pick up nearby items (logs, saplings)
- * 2. Fulfill requests from other bots (only if we have materials and shared chest)
- * 3. Finish harvesting a tree if we started one (clear leaves, replant)
- * 4. Plant saplings if we have them and no active tree harvest
- * 5. Craft and place crafting table at village center if needed
- * 6. Craft chest at village center if needed
- * 7. Deposit logs/planks/sticks if inventory getting full (keeps saplings)
- * 8. Craft axe if no axe and have materials
- * 9. Chop tree - find and chop trees (works with or without village center)
- * 10. Process wood - craft planks/sticks if excess logs
- * 11. Patrol forest - explore for more trees
+ * 1. Complete active trade (highest priority - finish what we started)
+ * 2. Pick up nearby items (logs, saplings)
+ * 3. Fulfill requests from other bots (only if we have materials and shared chest)
+ * 4. Respond to trade offers for items we want
+ * 5. Finish harvesting a tree if we started one (clear leaves, replant)
+ * 6. Plant saplings if we have them and no active tree harvest
+ * 7. Craft and place crafting table at village center if needed
+ * 8. Craft chest at village center if needed
+ * 9. Deposit logs/planks/sticks if inventory getting full (keeps saplings)
+ * 10. Craft axe if no axe and have materials
+ * 11. Chop tree - find and chop trees (works with or without village center)
+ * 12. Process wood - craft planks/sticks if excess logs
+ * 13. Broadcast trade offer (if have 4+ unwanted items)
+ * 14. Patrol forest - explore for more trees
  */
 export function createLumberjackBehaviorTree(): BehaviorNode {
     return new Selector('Root', [
-        // Priority 1: Pick up nearby items (always do this first)
+        // Priority 1: Complete active trade (highest priority - finish what we started)
+        new Sequence('CompleteTrade', [
+            new Condition('IsInActiveTrade', bb =>
+                bb.activeTrade !== null &&
+                ['accepted', 'traveling', 'ready', 'dropping', 'picking_up'].includes(bb.activeTrade.status)
+            ),
+            new CompleteTrade(),
+        ]),
+
+        // Priority 2: Pick up nearby items (always do this first)
         new PickupItems(),
 
-        // Priority 2: Fulfill requests from other bots (only if we have shared chest and materials)
+        // Priority 3: Fulfill requests from other bots (only if we have shared chest and materials)
         new Sequence('FulfillPendingRequests', [
             new Condition('HasPendingRequests', bb => bb.hasPendingRequests),
             new Condition('HasChestAccess', bb => bb.sharedChest !== null || bb.nearbyChests.length > 0),
@@ -60,20 +78,29 @@ export function createLumberjackBehaviorTree(): BehaviorNode {
             new FulfillRequests(),
         ]),
 
-        // Priority 3: Finish harvesting a tree we started (leaves, replant)
+        // Priority 4: Respond to trade offers for items we want (medium priority)
+        new Sequence('RespondToTradeOffer', [
+            new Condition('HasWantedOffer', bb =>
+                bb.pendingTradeOffers.length > 0 &&
+                (!bb.villageChat || !bb.villageChat.isInTrade())
+            ),
+            new RespondToOffer(),
+        ]),
+
+        // Priority 5: Finish harvesting a tree we started (leaves, replant)
         new Sequence('FinishTreeHarvest', [
             new Condition('HasActiveTreeHarvest', bb => bb.currentTreeHarvest !== null),
             new FinishTreeHarvest(),
         ]),
 
-        // Priority 4: Plant saplings if we have them and no active tree harvest
+        // Priority 6: Plant saplings if we have them and no active tree harvest
         new Sequence('PlantSaplings', [
             new Condition('HasSaplings', bb => bb.saplingCount > 0),
             new Condition('NoActiveTreeHarvest', bb => bb.currentTreeHarvest === null),
             new PlantSaplings(),
         ]),
 
-        // Priority 5: Craft and place crafting table at village center if needed
+        // Priority 7: Craft and place crafting table at village center if needed
         new Sequence('CraftAndPlaceCraftingTable', [
             new Condition('HasVillageCenter', bb => bb.villageCenter !== null),
             new Condition('HasMaterialsForCraftingTable', bb => bb.plankCount >= 4 || bb.logCount >= 1),
@@ -81,7 +108,7 @@ export function createLumberjackBehaviorTree(): BehaviorNode {
             new CraftAndPlaceCraftingTable(),
         ]),
 
-        // Priority 6: Craft chest if needed and we have materials
+        // Priority 8: Craft chest if needed and we have materials
         new Sequence('CraftChestIfNeeded', [
             new Condition('HasVillageCenter', bb => bb.villageCenter !== null),
             new Condition('HasMaterialsForChest', bb => bb.plankCount >= 8 || bb.logCount >= 2),
@@ -89,27 +116,27 @@ export function createLumberjackBehaviorTree(): BehaviorNode {
             new CraftChest(),
         ]),
 
-        // Priority 7: Deposit items if inventory getting full and we have a chest (keeps saplings)
+        // Priority 9: Deposit items if inventory getting full and we have a chest (keeps saplings)
         new Sequence('DepositWhenFull', [
             new Condition('NeedsToDeposit', bb => bb.needsToDeposit),
             new Condition('HasChest', bb => bb.sharedChest !== null || bb.nearbyChests.length > 0),
             new DepositLogs(),
         ]),
 
-        // Priority 8: Craft axe if needed
+        // Priority 10: Craft axe if needed
         new Sequence('GetAxe', [
             new Condition('NoAxe', bb => !bb.hasAxe),
             new Condition('HasMaterialsForAxe', bb => bb.logCount > 0 || bb.plankCount >= 3),
             new CraftAxe(),
         ]),
 
-        // Priority 9: Chop trees (works anywhere - doesn't require village center)
+        // Priority 11: Chop trees (works anywhere - doesn't require village center)
         new Sequence('ChopTrees', [
             new Condition('NotFullInventory', bb => !bb.inventoryFull),
             new ChopTree(),
         ]),
 
-        // Priority 10: Process wood if we need planks for chest/crafting table or have excess logs
+        // Priority 12: Process wood if we need planks for chest/crafting table or have excess logs
         new Sequence('ProcessWoodForChest', [
             new Condition('NeedToProcessWood', bb =>
                 (bb.plankCount < 8 && bb.logCount >= 2) || // Need planks for chest
@@ -119,7 +146,17 @@ export function createLumberjackBehaviorTree(): BehaviorNode {
             new ProcessWood(),
         ]),
 
-        // Priority 11: Patrol forest for more trees
+        // Priority 13: Broadcast trade offer when idle with unwanted items
+        new Sequence('BroadcastTradeOffer', [
+            new Condition('HasTradeableItems', bb =>
+                bb.tradeableItemCount >= 4 &&
+                (!bb.villageChat || !bb.villageChat.isInTrade()) &&
+                Date.now() - bb.lastOfferTime >= 30000  // 30s cooldown
+            ),
+            new BroadcastOffer(),
+        ]),
+
+        // Priority 14: Patrol forest for more trees
         new PatrolForest(),
     ]);
 }

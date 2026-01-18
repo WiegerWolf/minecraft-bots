@@ -1,10 +1,11 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
-import type { VillageChat, TerraformRequest } from '../../shared/VillageChat';
+import type { VillageChat, TerraformRequest, TradeOffer, ActiveTrade } from '../../shared/VillageChat';
 import type { Logger } from '../../shared/logger';
 import { type StuckTracker, createStuckTracker } from '../../shared/PathfindingUtils';
 import { readAllSignsNear, SIGN_SEARCH_RADIUS } from '../../shared/SignKnowledge';
+import { type InventoryItem, getTradeableItems, isWantedByRole } from '../../shared/ItemCategories';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -77,6 +78,15 @@ export interface LandscaperBlackboard {
     knownFarms: Vec3[];                      // Farm locations from FARM signs
     lastFarmCheckTimes: Map<string, number>; // Farm pos key -> last check timestamp
     farmsNeedingCheck: Vec3[];               // Farms that should be checked for terraform needs
+
+    // ═══════════════════════════════════════════════════════════════
+    // TRADE STATE
+    // ═══════════════════════════════════════════════════════════════
+    tradeableItems: InventoryItem[];            // Items we can offer for trade
+    tradeableItemCount: number;                 // Total count of tradeable items
+    pendingTradeOffers: TradeOffer[];           // Active offers from other bots we might want
+    activeTrade: ActiveTrade | null;            // Current trade state (if any)
+    lastOfferTime: number;                      // When we last broadcast an offer (cooldown)
 }
 
 export function createLandscaperBlackboard(): LandscaperBlackboard {
@@ -123,6 +133,13 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
         knownFarms: [],
         lastFarmCheckTimes: new Map(),
         farmsNeedingCheck: [],
+
+        // Trade state
+        tradeableItems: [],
+        tradeableItemCount: 0,
+        pendingTradeOffers: [],
+        activeTrade: null,
+        lastOfferTime: 0,
     };
 }
 
@@ -260,6 +277,26 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
     bb.needsTools = !bb.hasShovel || !bb.hasPickaxe;
     bb.canTerraform = (bb.hasShovel || bb.hasPickaxe) && bb.hasPendingTerraformRequest;
     bb.needsToDeposit = bb.dirtCount >= 64 || bb.cobblestoneCount >= 64 || bb.inventoryFull;
+
+    // ═══════════════════════════════════════════════
+    // TRADE STATE
+    // ═══════════════════════════════════════════════
+    // Convert inventory to InventoryItem format
+    const invItems: InventoryItem[] = inv.map(i => ({ name: i.name, count: i.count }));
+
+    // Get items we can trade (unwanted + helpful items)
+    bb.tradeableItems = getTradeableItems(invItems, 'landscaper');
+    bb.tradeableItemCount = bb.tradeableItems.reduce((sum, item) => sum + item.count, 0);
+
+    // Get trade state from villageChat
+    if (bb.villageChat) {
+        bb.pendingTradeOffers = bb.villageChat.getActiveOffers()
+            .filter(o => isWantedByRole(o.item, 'landscaper')); // Only offers for items we want
+        bb.activeTrade = bb.villageChat.getActiveTrade();
+
+        // Clean up stale offers
+        bb.villageChat.cleanupOldTradeOffers();
+    }
 }
 
 // ═══════════════════════════════════════════════

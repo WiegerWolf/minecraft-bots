@@ -15,6 +15,9 @@ import {
   CheckFarmForTerraformNeeds,
   GatherDirt,
   CraftSlabs,
+  BroadcastOffer,
+  RespondToOffer,
+  CompleteTrade,
 } from '../../roles/landscaper/behaviors/actions';
 
 /**
@@ -458,11 +461,110 @@ export class CraftSlabsAction extends BaseGOAPAction {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TRADE ACTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * GOAP Action: Broadcast a trade offer for unwanted items
+ */
+export class BroadcastTradeOfferAction extends BaseGOAPAction {
+  name = 'BroadcastTradeOffer';
+  private impl = new BroadcastOffer();
+
+  preconditions = [
+    numericPrecondition('trade.tradeableCount', v => v >= 4, 'has tradeable items'),
+    booleanPrecondition('trade.inTrade', false, 'not in trade'),
+    booleanPrecondition('trade.onCooldown', false, 'not on cooldown'),
+  ];
+
+  effects = [
+    setEffect('trade.status', 'offering', 'started offering'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    return 1.0;
+  }
+
+  override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    if (result === 'running') return ActionResult.RUNNING;
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
+ * GOAP Action: Respond to a trade offer for items we want
+ */
+export class RespondToTradeOfferAction extends BaseGOAPAction {
+  name = 'RespondToTradeOffer';
+  private impl = new RespondToOffer();
+
+  preconditions = [
+    numericPrecondition('trade.pendingOffers', v => v > 0, 'has pending offers'),
+    booleanPrecondition('trade.inTrade', false, 'not in trade'),
+  ];
+
+  effects = [
+    setEffect('trade.status', 'wanting', 'responded to offer'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    return 0.5;
+  }
+
+  override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
+ * GOAP Action: Complete an active trade
+ */
+export class CompleteTradeAction extends BaseGOAPAction {
+  name = 'CompleteTrade';
+  private impl = new CompleteTrade();
+
+  preconditions = [
+    // Active trade statuses
+    {
+      key: 'trade.status',
+      check: (value: any) => {
+        const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+        return activeStatuses.includes(value);
+      },
+      description: 'has active trade',
+    },
+  ];
+
+  effects = [
+    setEffect('trade.status', 'done', 'trade completed'),
+    setEffect('trade.inTrade', false, 'no longer in trade'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    return 0.5; // Very low cost - completing trades is important
+  }
+
+  override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    if (result === 'running') return ActionResult.RUNNING;
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
 /**
  * Create all landscaper actions for the planner.
  */
 export function createLandscaperActions(): BaseGOAPAction[] {
   return [
+    // Trade actions (high priority when applicable)
+    new CompleteTradeAction(),
+    new RespondToTradeOfferAction(),
+    new BroadcastTradeOfferAction(),
+
+    // Regular actions
     new StudySpawnSignsAction(),
     new CheckFarmForTerraformNeedsAction(),
     new PickupItemsAction(),

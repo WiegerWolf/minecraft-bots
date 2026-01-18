@@ -1,11 +1,12 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
-import type { VillageChat } from '../../shared/VillageChat';
+import type { VillageChat, TradeOffer, ActiveTrade } from '../../shared/VillageChat';
 import { LOG_NAMES, LEAF_NAMES, SAPLING_NAMES, type TreeHarvestState } from '../shared/TreeHarvest';
 import type { Logger } from '../../shared/logger';
 import { SIGN_SEARCH_RADIUS } from '../../shared/SignKnowledge';
 import { type StuckTracker, createStuckTracker } from '../../shared/PathfindingUtils';
+import { type InventoryItem, getTradeableItems, isWantedByRole } from '../../shared/ItemCategories';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -88,6 +89,15 @@ export interface LumberjackBlackboard {
 
     // Stuck detection for hole escape
     stuckTracker: StuckTracker;
+
+    // ═══════════════════════════════════════════════════════════════
+    // TRADE STATE
+    // ═══════════════════════════════════════════════════════════════
+    tradeableItems: InventoryItem[];            // Items we can offer for trade
+    tradeableItemCount: number;                 // Total count of tradeable items
+    pendingTradeOffers: TradeOffer[];           // Active offers from other bots we might want
+    activeTrade: ActiveTrade | null;            // Current trade state (if any)
+    lastOfferTime: number;                      // When we last broadcast an offer (cooldown)
 }
 
 export function createLumberjackBlackboard(): LumberjackBlackboard {
@@ -147,6 +157,13 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
 
         // Stuck detection
         stuckTracker: createStuckTracker(),
+
+        // Trade state
+        tradeableItems: [],
+        tradeableItemCount: 0,
+        pendingTradeOffers: [],
+        activeTrade: null,
+        lastOfferTime: 0,
     };
 }
 
@@ -353,6 +370,26 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     // ═══════════════════════════════════════════════
     bb.canChop = bb.nearbyTrees.length > 0 || bb.currentTreeHarvest !== null;
     bb.needsToDeposit = bb.logCount >= 32 || bb.inventoryFull;
+
+    // ═══════════════════════════════════════════════
+    // TRADE STATE
+    // ═══════════════════════════════════════════════
+    // Convert inventory to InventoryItem format
+    const invItems: InventoryItem[] = inv.map(i => ({ name: i.name, count: i.count }));
+
+    // Get items we can trade (unwanted + helpful items)
+    bb.tradeableItems = getTradeableItems(invItems, 'lumberjack');
+    bb.tradeableItemCount = bb.tradeableItems.reduce((sum, item) => sum + item.count, 0);
+
+    // Get trade state from villageChat
+    if (bb.villageChat) {
+        bb.pendingTradeOffers = bb.villageChat.getActiveOffers()
+            .filter(o => isWantedByRole(o.item, 'lumberjack')); // Only offers for items we want
+        bb.activeTrade = bb.villageChat.getActiveTrade();
+
+        // Clean up stale offers
+        bb.villageChat.cleanupOldTradeOffers();
+    }
 }
 
 // ═══════════════════════════════════════════════

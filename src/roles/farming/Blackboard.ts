@@ -1,10 +1,11 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
-import type { VillageChat } from '../../shared/VillageChat';
+import type { VillageChat, TradeOffer, ActiveTrade } from '../../shared/VillageChat';
 import type { Logger } from '../../shared/logger';
 import { SIGN_SEARCH_RADIUS } from '../../shared/SignKnowledge';
 import { type StuckTracker, createStuckTracker } from '../../shared/PathfindingUtils';
+import { type InventoryItem, getTradeableItems, isWantedByRole, getItemCount } from '../../shared/ItemCategories';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -101,6 +102,15 @@ export interface FarmingBlackboard {
     pendingSignWrites: PendingSignWrite[];      // Queue of signs to write
     signPositions: Map<string, Vec3>;           // type -> sign position (for updates)
     farmSignWritten: boolean;                   // Has farm center sign been written?
+
+    // ═══════════════════════════════════════════════════════════════
+    // TRADE STATE
+    // ═══════════════════════════════════════════════════════════════
+    tradeableItems: InventoryItem[];            // Items we can offer for trade
+    tradeableItemCount: number;                 // Total count of tradeable items
+    pendingTradeOffers: TradeOffer[];           // Active offers from other bots we might want
+    activeTrade: ActiveTrade | null;            // Current trade state (if any)
+    lastOfferTime: number;                      // When we last broadcast an offer (cooldown)
 }
 
 export function createBlackboard(): FarmingBlackboard {
@@ -166,6 +176,13 @@ export function createBlackboard(): FarmingBlackboard {
         pendingSignWrites: [],
         signPositions: new Map(),
         farmSignWritten: false,
+
+        // Trade state
+        tradeableItems: [],
+        tradeableItemCount: 0,
+        pendingTradeOffers: [],
+        activeTrade: null,
+        lastOfferTime: 0,
     };
 }
 
@@ -462,6 +479,26 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
             bb.log?.warn({ blockName: block?.name ?? 'null' }, 'Farm center invalid, clearing');
             bb.farmCenter = null;
         }
+    }
+
+    // ═══════════════════════════════════════════════
+    // TRADE STATE
+    // ═══════════════════════════════════════════════
+    // Convert inventory to InventoryItem format
+    const invItems: InventoryItem[] = inv.map(i => ({ name: i.name, count: i.count }));
+
+    // Get items we can trade (unwanted + helpful items)
+    bb.tradeableItems = getTradeableItems(invItems, 'farmer');
+    bb.tradeableItemCount = bb.tradeableItems.reduce((sum, item) => sum + item.count, 0);
+
+    // Get trade state from villageChat
+    if (bb.villageChat) {
+        bb.pendingTradeOffers = bb.villageChat.getActiveOffers()
+            .filter(o => isWantedByRole(o.item, 'farmer')); // Only offers for items we want
+        bb.activeTrade = bb.villageChat.getActiveTrade();
+
+        // Clean up stale offers
+        bb.villageChat.cleanupOldTradeOffers();
     }
 }
 

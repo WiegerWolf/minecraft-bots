@@ -7,7 +7,7 @@ import type { Bot } from 'mineflayer';
 /**
  * Converts a Blackboard to a WorldState for GOAP planning.
  *
- * Supports both FarmingBlackboard and LumberjackBlackboard.
+ * Supports FarmingBlackboard, LumberjackBlackboard, and LandscaperBlackboard.
  *
  * Facts are organized into categories:
  * - inv.*: Inventory state (seeds, produce, tools, materials)
@@ -16,6 +16,7 @@ import type { Bot } from 'mineflayer';
  * - pos.*: Important positions (farmCenter, sharedChest, etc.)
  * - state.*: Bot state (lastAction, consecutiveIdleTicks, etc.)
  * - tree.*: Tree harvesting state
+ * - trade.*: Trade state (status, inTrade, tradeableCount, pendingOffers, onCooldown)
  * - can.*: Computed ability flags
  * - needs.*: Computed need flags
  * - derived.*: Derived convenience facts
@@ -71,6 +72,15 @@ export class WorldStateBuilder {
     if (bb.sharedCraftingTable) {
       ws.set('pos.sharedCraftingTable', bb.sharedCraftingTable.clone());
     }
+
+    // ═══════════════════════════════════════════════
+    // TRADE STATE (shared between roles)
+    // ═══════════════════════════════════════════════
+    ws.set('trade.status', bb.activeTrade?.status ?? 'idle');
+    ws.set('trade.inTrade', bb.activeTrade !== null);
+    ws.set('trade.tradeableCount', bb.tradeableItemCount);
+    ws.set('trade.pendingOffers', bb.pendingTradeOffers.length);
+    ws.set('trade.onCooldown', Date.now() - bb.lastOfferTime < 30000);
 
     // Tree harvesting state (used by farming and lumberjack roles)
     if ('currentTreeHarvest' in bb && bb.currentTreeHarvest) {
@@ -363,6 +373,10 @@ export class WorldStateBuilder {
       'pos.farmCenter',
       'tree.active',
       'derived.hasFarmEstablished',
+      // Trade-related facts
+      'trade.inTrade',
+      'trade.status',
+      'trade.pendingOffers',
     ];
 
     let changes = 0;

@@ -361,19 +361,116 @@ export class ExploreGoal extends BaseGoal {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TRADE GOALS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Goal: Complete an active trade.
+ * HIGHEST priority when in a trade - finish what we started.
+ */
+export class CompleteTradeGoal extends BaseGoal {
+  name = 'CompleteTrade';
+  description = 'Complete an active trade exchange';
+
+  conditions = [
+    booleanGoalCondition('trade.status', false, 'no active trade'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const tradeStatus = ws.getString('trade.status');
+    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+
+    if (!activeStatuses.includes(tradeStatus)) return 0;
+
+    // Very high priority - finish what we started
+    return 150;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const tradeStatus = ws.getString('trade.status');
+    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+    return activeStatuses.includes(tradeStatus);
+  }
+}
+
+/**
+ * Goal: Respond to trade offers for items we want.
+ * MEDIUM priority when there's an offer for something we need.
+ */
+export class RespondToTradeOfferGoal extends BaseGoal {
+  name = 'RespondToTradeOffer';
+  description = 'Respond to trade offers for items we want';
+
+  conditions = [
+    numericGoalCondition('trade.pendingOffers', v => v === 0, 'no pending offers'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const pendingOffers = ws.getNumber('trade.pendingOffers');
+    const isInTrade = ws.getBool('trade.inTrade');
+
+    if (pendingOffers === 0 || isInTrade) return 0;
+
+    // Medium-high priority - get items we want
+    return 70;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const pendingOffers = ws.getNumber('trade.pendingOffers');
+    const isInTrade = ws.getBool('trade.inTrade');
+    return pendingOffers > 0 && !isInTrade;
+  }
+}
+
+/**
+ * Goal: Broadcast trade offer for unwanted items.
+ * LOW priority - only when idle with unwanted items.
+ */
+export class BroadcastTradeOfferGoal extends BaseGoal {
+  name = 'BroadcastTradeOffer';
+  description = 'Offer unwanted items for trade';
+
+  conditions = [
+    numericGoalCondition('trade.tradeableCount', v => v < 4, 'no excess items'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const tradeableCount = ws.getNumber('trade.tradeableCount');
+    const isInTrade = ws.getBool('trade.inTrade');
+    const offerCooldown = ws.getBool('trade.onCooldown');
+
+    if (tradeableCount < 4 || isInTrade || offerCooldown) return 0;
+
+    // Low priority - do when idle
+    // Scale slightly with tradeable items (30-50)
+    return 30 + Math.min(tradeableCount / 4, 5) * 4;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const tradeableCount = ws.getNumber('trade.tradeableCount');
+    const isInTrade = ws.getBool('trade.inTrade');
+    const offerCooldown = ws.getBool('trade.onCooldown');
+    return tradeableCount >= 4 && !isInTrade && !offerCooldown;
+  }
+}
+
 /**
  * Registry of all landscaper goals.
  */
 export function createLandscaperGoals(): BaseGoal[] {
   return [
+    new CompleteTradeGoal(),      // Highest priority - finish active trades
     new StudySpawnSignsGoal(),    // Highest priority on spawn
     new FulfillTerraformRequestGoal(),
+    new RespondToTradeOfferGoal(),// Respond to trade offers
     new CheckKnownFarmsGoal(),    // Proactive farm checking
     new ObtainToolsGoal(),
     new DepositItemsGoal(),
     new CollectDropsGoal(),
     new GatherDirtGoal(),         // Proactive dirt gathering when idle
     new CraftSlabsGoal(),         // Craft slabs for navigation scaffolding
+    new BroadcastTradeOfferGoal(),// Offer unwanted items when idle
     new ExploreGoal(),            // Always last - lowest priority fallback
   ];
 }
