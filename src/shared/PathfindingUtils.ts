@@ -440,6 +440,228 @@ export async function clearPath(bot: Bot, log?: Logger | null): Promise<void> {
     }
 }
 
+// ============================================================================
+// Hole Escape Functions
+// ============================================================================
+
+/**
+ * Check if the bot is stuck in a vertical hole (1x1 or 1x2 pit).
+ * Returns true if solid blocks surround the bot on all 4 horizontal sides.
+ */
+export function isInHole(bot: Bot): boolean {
+    const pos = bot.entity.position.floored();
+    const directions = [
+        { x: 1, z: 0 },
+        { x: -1, z: 0 },
+        { x: 0, z: 1 },
+        { x: 0, z: -1 },
+    ];
+
+    let blockedSides = 0;
+    for (const dir of directions) {
+        // Check both feet level and head level
+        const feetBlock = bot.blockAt(pos.offset(dir.x, 0, dir.z));
+        const headBlock = bot.blockAt(pos.offset(dir.x, 1, dir.z));
+
+        // If either feet or head level is blocked, count as blocked
+        if ((feetBlock && feetBlock.boundingBox === 'block') ||
+            (headBlock && headBlock.boundingBox === 'block')) {
+            blockedSides++;
+        }
+    }
+
+    // Stuck if blocked on 3 or more sides
+    return blockedSides >= 3;
+}
+
+/**
+ * Blocks that can be broken to escape a hole.
+ * Includes common terrain blocks but excludes bedrock, obsidian, etc.
+ */
+const ESCAPABLE_BLOCKS = [
+    'dirt', 'grass_block', 'sand', 'gravel', 'clay',
+    'stone', 'cobblestone', 'andesite', 'diorite', 'granite',
+    'oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log',
+    'oak_planks', 'birch_planks', 'spruce_planks', 'jungle_planks',
+    'oak_leaves', 'birch_leaves', 'spruce_leaves', 'jungle_leaves',
+    'netherrack', 'sandstone', 'red_sandstone',
+    'terracotta', 'snow_block', 'snow', 'ice', 'packed_ice',
+    'moss_block', 'mud', 'muddy_mangrove_roots',
+];
+
+function canBreakToEscape(block: any): boolean {
+    if (!block || block.name === 'air' || block.name === 'water' || block.name === 'lava') {
+        return false;
+    }
+    // Check if block name matches any escapable block
+    return ESCAPABLE_BLOCKS.some(name => block.name.includes(name)) ||
+           block.name.includes('log') ||
+           block.name.includes('leaves') ||
+           block.name.includes('dirt') ||
+           block.name.includes('sand');
+}
+
+/**
+ * Attempt to escape from a hole by breaking blocks above and to the sides.
+ * Returns true if escape was successful (bot moved to a new position).
+ */
+export async function escapeFromHole(bot: Bot, log?: Logger | null): Promise<boolean> {
+    const startPos = bot.entity.position.clone();
+    log?.info('Attempting to escape from hole');
+
+    // Step 1: Clear space above (break blocks at y+2 and y+3 to allow jumping)
+    for (let dy = 2; dy <= 3; dy++) {
+        const abovePos = bot.entity.position.offset(0, dy, 0).floored();
+        const aboveBlock = bot.blockAt(abovePos);
+
+        if (aboveBlock && canBreakToEscape(aboveBlock)) {
+            try {
+                log?.debug({ block: aboveBlock.name, pos: abovePos.toString() }, 'Breaking block above');
+                await bot.dig(aboveBlock);
+                await sleep(100);
+            } catch (err) {
+                log?.debug({ err }, 'Failed to break block above');
+            }
+        }
+    }
+
+    // Step 2: Try to break blocks in each horizontal direction (create exit)
+    const directions = [
+        { x: 1, z: 0, name: 'east' },
+        { x: -1, z: 0, name: 'west' },
+        { x: 0, z: 1, name: 'south' },
+        { x: 0, z: -1, name: 'north' },
+    ];
+
+    for (const dir of directions) {
+        // Break blocks at feet and head level in this direction
+        for (let dy = 0; dy <= 1; dy++) {
+            const blockPos = bot.entity.position.offset(dir.x, dy, dir.z).floored();
+            const block = bot.blockAt(blockPos);
+
+            if (block && canBreakToEscape(block)) {
+                try {
+                    log?.debug({ block: block.name, pos: blockPos.toString(), dir: dir.name }, 'Breaking block to side');
+                    await bot.dig(block);
+                    await sleep(100);
+                } catch (err) {
+                    log?.debug({ err }, 'Failed to break side block');
+                }
+            }
+        }
+
+        // After breaking, try to walk out in this direction
+        const exitPos = bot.entity.position.offset(dir.x, 0, dir.z);
+        const exitFeet = bot.blockAt(exitPos.floored());
+        const exitHead = bot.blockAt(exitPos.offset(0, 1, 0).floored());
+
+        // Check if we can walk out
+        if ((!exitFeet || exitFeet.name === 'air' || exitFeet.boundingBox !== 'block') &&
+            (!exitHead || exitHead.name === 'air' || exitHead.boundingBox !== 'block')) {
+
+            // Try to walk out
+            log?.debug({ dir: dir.name }, 'Attempting to walk out');
+            const yaw = Math.atan2(-dir.x, -dir.z);
+            await bot.look(yaw, 0);
+
+            bot.setControlState('forward', true);
+            bot.setControlState('jump', true);
+            await sleep(500);
+            bot.clearControlStates();
+            await sleep(200);
+
+            // Check if we moved
+            const newPos = bot.entity.position;
+            if (newPos.distanceTo(startPos) > 0.5) {
+                log?.info({ from: startPos.floored().toString(), to: newPos.floored().toString() }, 'Escaped from hole');
+                return true;
+            }
+        }
+    }
+
+    // Step 3: If still stuck, try jumping repeatedly while breaking above
+    log?.debug('Still stuck, trying jump escape');
+    for (let attempt = 0; attempt < 3; attempt++) {
+        // Break block above
+        const abovePos = bot.entity.position.offset(0, 2, 0).floored();
+        const aboveBlock = bot.blockAt(abovePos);
+        if (aboveBlock && canBreakToEscape(aboveBlock)) {
+            try {
+                await bot.dig(aboveBlock);
+            } catch { /* ignore */ }
+        }
+
+        // Jump
+        bot.setControlState('jump', true);
+        await sleep(400);
+        bot.setControlState('jump', false);
+        await sleep(200);
+
+        // Check if we escaped
+        if (bot.entity.position.distanceTo(startPos) > 1) {
+            log?.info('Escaped from hole via jumping');
+            return true;
+        }
+    }
+
+    log?.warn('Failed to escape from hole');
+    return false;
+}
+
+/**
+ * Track consecutive pathfinding failures and attempt hole escape when stuck.
+ */
+export interface StuckTracker {
+    consecutiveFailures: number;
+    lastPosition: Vec3 | null;
+    lastFailureTime: number;
+}
+
+export function createStuckTracker(): StuckTracker {
+    return {
+        consecutiveFailures: 0,
+        lastPosition: null,
+        lastFailureTime: 0,
+    };
+}
+
+/**
+ * Record a pathfinding failure and check if hole escape should be attempted.
+ * Returns true if hole escape should be attempted.
+ */
+export function recordPathfindingFailure(
+    tracker: StuckTracker,
+    currentPos: Vec3,
+    threshold: number = 3
+): boolean {
+    const now = Date.now();
+
+    // Reset if too much time passed (bot was doing other things)
+    if (now - tracker.lastFailureTime > 30000) {
+        tracker.consecutiveFailures = 0;
+    }
+
+    // Check if position changed significantly since last failure
+    if (tracker.lastPosition && currentPos.distanceTo(tracker.lastPosition) > 2) {
+        // Bot moved, reset counter
+        tracker.consecutiveFailures = 0;
+    }
+
+    tracker.consecutiveFailures++;
+    tracker.lastPosition = currentPos.clone();
+    tracker.lastFailureTime = now;
+
+    return tracker.consecutiveFailures >= threshold;
+}
+
+/**
+ * Reset the stuck tracker after successful movement or escape.
+ */
+export function resetStuckTracker(tracker: StuckTracker): void {
+    tracker.consecutiveFailures = 0;
+    tracker.lastPosition = null;
+}
+
 export function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }

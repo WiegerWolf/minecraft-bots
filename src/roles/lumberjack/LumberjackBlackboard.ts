@@ -5,6 +5,7 @@ import type { VillageChat } from '../../shared/VillageChat';
 import { LOG_NAMES, LEAF_NAMES, SAPLING_NAMES, type TreeHarvestState } from '../shared/TreeHarvest';
 import type { Logger } from '../../shared/logger';
 import { SIGN_SEARCH_RADIUS } from '../../shared/SignKnowledge';
+import { type StuckTracker, createStuckTracker } from '../../shared/PathfindingUtils';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -84,6 +85,9 @@ export interface LumberjackBlackboard {
     // Curious bot - sign tracking
     readSignPositions: Set<string>;       // Sign positions we've read (stringified: "x,y,z")
     unknownSigns: Vec3[];                 // Signs spotted but not yet read
+
+    // Stuck detection for hole escape
+    stuckTracker: StuckTracker;
 }
 
 export function createLumberjackBlackboard(): LumberjackBlackboard {
@@ -140,6 +144,9 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         // Curious bot - sign tracking
         readSignPositions: new Set(),
         unknownSigns: [],
+
+        // Stuck detection
+        stuckTracker: createStuckTracker(),
     };
 }
 

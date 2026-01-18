@@ -8,6 +8,13 @@ import { PlanExecutor, ReplanReason } from '../planning/PlanExecutor';
 import type { GOAPAction } from '../planning/Action';
 import type { Goal } from '../planning/Goal';
 import { createChildLogger, type Logger } from '../shared/logger';
+import {
+  isInHole,
+  escapeFromHole,
+  recordPathfindingFailure,
+  resetStuckTracker,
+  type StuckTracker,
+} from '../shared/PathfindingUtils';
 
 /**
  * Configuration for GOAP-based roles.
@@ -317,6 +324,30 @@ export abstract class GOAPRole implements Role {
     const hadFailures = this.executor?.hadRecentFailures() ?? false;
 
     this.log?.info({ reason, hadFailures }, 'Replan requested');
+
+    // Check for hole escape on action failures
+    if (this.bot && hadFailures && this.blackboard?.stuckTracker) {
+      const shouldAttemptEscape = recordPathfindingFailure(
+        this.blackboard.stuckTracker,
+        this.bot.entity.position,
+        3 // threshold
+      );
+
+      if (shouldAttemptEscape && isInHole(this.bot)) {
+        this.log?.warn('Bot appears stuck in a hole, attempting escape');
+        // Attempt escape asynchronously (don't block replan)
+        escapeFromHole(this.bot, this.log).then(escaped => {
+          if (escaped) {
+            this.log?.info('Successfully escaped from hole');
+            if (this.blackboard?.stuckTracker) {
+              resetStuckTracker(this.blackboard.stuckTracker);
+            }
+          }
+        }).catch(err => {
+          this.log?.warn({ err }, 'Hole escape attempt failed');
+        });
+      }
+    }
 
     // Clear current goal and apply cooldown if needed
     if (this.arbiter) {

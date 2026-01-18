@@ -39,6 +39,9 @@ export const SAPLING_MAP: Record<string, string> = {
 
 export const SAPLING_NAMES = Object.values(SAPLING_MAP);
 
+// Max consecutive pathfinding failures before giving up on replanting
+const MAX_REPLANT_FAILURES = 3;
+
 // Blocks that can be cleared to make room for sapling
 export const CLEARABLE_VEGETATION = [
     'short_grass', 'grass', 'tall_grass', 'fern', 'large_fern',
@@ -58,6 +61,11 @@ export interface TreeHarvestState {
      * immediately without starting new operations.
      */
     busy?: boolean;
+    /**
+     * Track consecutive pathfinding failures in replanting phase.
+     * After MAX_REPLANT_FAILURES, give up and mark harvest as done.
+     */
+    replantFailures?: number;
 }
 
 export type TreeHarvestResult = 'success' | 'failure' | 'done';
@@ -333,8 +341,16 @@ export async function replantSapling(
         // Move close to the planting spot
         const success = await pathfinderGotoWithRetry(bot, new GoalNear(plantSpot.x, plantSpot.y, plantSpot.z, 3));
         if (!success) {
-            moduleLog?.warn('Failed to reach planting spot after retries');
+            state.replantFailures = (state.replantFailures || 0) + 1;
+            moduleLog?.warn({ failures: state.replantFailures, max: MAX_REPLANT_FAILURES }, 'Failed to reach planting spot');
             state.busy = false;
+
+            // Give up after too many consecutive failures (likely stuck in a hole)
+            if (state.replantFailures >= MAX_REPLANT_FAILURES) {
+                moduleLog?.warn('Too many pathfinding failures, giving up on replanting');
+                state.phase = 'done';
+                return { result: 'done', planted: false };
+            }
             return { result: 'success', planted: false };
         }
 
@@ -351,13 +367,22 @@ export async function replantSapling(
             await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
             plantedPositions.push(plantSpot.clone());
             moduleLog?.info({ count: plantedPositions.length, pos: plantSpot.toString() }, 'Planted sapling');
+            state.replantFailures = 0; // Reset on success
             state.busy = false;
             return { result: 'success', planted: true };
         }
         state.busy = false;
     } catch (err) {
         state.busy = false;
-        moduleLog?.warn({ err }, 'Failed to plant sapling');
+        state.replantFailures = (state.replantFailures || 0) + 1;
+        moduleLog?.warn({ err, failures: state.replantFailures }, 'Failed to plant sapling');
+
+        // Give up after too many consecutive failures
+        if (state.replantFailures >= MAX_REPLANT_FAILURES) {
+            moduleLog?.warn('Too many planting failures, giving up on replanting');
+            state.phase = 'done';
+            return { result: 'done', planted: false };
+        }
     }
 
     // Stay in replanting phase to plant more saplings
