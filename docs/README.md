@@ -105,7 +105,7 @@ LOG_LEVEL=debug bun run start farmer  # Set log level
 | Seed threshold | 10 | Comfortable farming buffer |
 | Sign search radius | 25 blocks | Area around spawn to find knowledge signs |
 | Sign types | VILLAGE, CRAFT, CHEST, FOREST, MINE, FARM, WATER | Infrastructure + landmarks |
-| WriteKnowledgeSign utility | 55-65 | Medium priority, after critical tasks (lumberjack) |
+| WriteKnowledgeSign utility | 35-65 | Medium priority, after critical tasks (both bots) |
 | StudySpawnSigns utility | 200 | High priority on spawn, before other work (both bots) |
 | ReadUnknownSign utility | 45-60 | Low priority curiosity behavior (both bots) |
 | Sign crafting materials | 6 planks + 1 stick | ProcessWood can chain to satisfy this |

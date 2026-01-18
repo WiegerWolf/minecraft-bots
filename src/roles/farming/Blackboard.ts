@@ -11,6 +11,14 @@ export interface ExplorationMemory {
     reason?: string;  // Why this location was recorded (e.g., 'visited', 'bad_water')
 }
 
+/**
+ * Pending sign write entry - queued when farm/water is established
+ */
+export interface PendingSignWrite {
+    type: 'FARM' | 'WATER';
+    pos: Vec3;
+}
+
 export interface TreeHarvestState {
     basePos: Vec3;
     logType: string;
@@ -84,6 +92,11 @@ export interface FarmingBlackboard {
     // Knowledge from signs
     knownFarms: Vec3[];                   // Farm locations from signs
     knownWaterSources: Vec3[];            // Water source locations from signs
+
+    // Sign writing (persistent knowledge for other bots/restarts)
+    pendingSignWrites: PendingSignWrite[];      // Queue of signs to write
+    signPositions: Map<string, Vec3>;           // type -> sign position (for updates)
+    farmSignWritten: boolean;                   // Has farm center sign been written?
 }
 
 export function createBlackboard(): FarmingBlackboard {
@@ -142,6 +155,11 @@ export function createBlackboard(): FarmingBlackboard {
         // Knowledge from signs
         knownFarms: [],
         knownWaterSources: [],
+
+        // Sign writing
+        pendingSignWrites: [],
+        signPositions: new Map(),
+        farmSignWritten: false,
     };
 }
 
@@ -416,6 +434,16 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
             const tillable = countTillableAround(bot, best.position);
             bb.farmCenter = best.position.clone();
             bb.log?.info({ pos: bb.farmCenter.toString(), tillable }, 'Established farm center');
+
+            // Queue sign write for the new farm center (if we have spawn position)
+            if (bb.spawnPosition && !bb.farmSignWritten) {
+                bb.pendingSignWrites.push({
+                    type: 'FARM',
+                    pos: bb.farmCenter.clone()
+                });
+                bb.farmSignWritten = true;
+                bb.log?.info({ pos: bb.farmCenter.toString() }, 'Queued FARM sign write');
+            }
         } else if (bb.nearbyWater.length > 0) {
             bb.log?.debug({ waterSources: bb.nearbyWater.length }, 'Found water but none under clear sky');
         }

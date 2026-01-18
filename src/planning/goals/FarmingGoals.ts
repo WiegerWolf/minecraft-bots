@@ -292,6 +292,48 @@ export class ReadUnknownSignGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Write knowledge signs at spawn to share discoveries.
+ * Medium priority - after core farming work but before exploration.
+ *
+ * When the farmer establishes a farm center, it queues a FARM sign write.
+ * This persists the knowledge for other bots and future restarts.
+ */
+export class WriteKnowledgeSignGoal extends BaseGoal {
+  name = 'WriteKnowledgeSign';
+  description = 'Write a knowledge sign at spawn';
+
+  conditions = [
+    numericGoalCondition('pending.signWrites', v => v === 0, 'no pending sign writes'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const pendingCount = ws.getNumber('pending.signWrites');
+    if (pendingCount === 0) return 0;
+
+    // Check if we have materials or can get them
+    const hasSign = ws.getBool('has.sign');
+    const canCraftSign = ws.getBool('derived.canCraftSign');
+    const hasStorage = ws.getBool('derived.hasStorageAccess');
+
+    // Higher priority if we already have a sign ready
+    if (hasSign) return 65;
+
+    // Medium priority if we can craft
+    if (canCraftSign) return 55;
+
+    // Lower priority if we need to get materials from chest
+    if (hasStorage) return 45;
+
+    // Low priority if we need to request materials
+    return 35;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    return ws.getNumber('pending.signWrites') > 0;
+  }
+}
+
+/**
  * Goal: Explore the world to find resources.
  * LOWEST PRIORITY - fallback when nothing else to do.
  *
@@ -344,6 +386,7 @@ export function createFarmingGoals(): BaseGoal[] {
     new ObtainToolsGoal(),
     new GatherSeedsGoal(),
     new EstablishFarmGoal(),
+    new WriteKnowledgeSignGoal(), // Write farm/water signs to share knowledge
     new ReadUnknownSignGoal(),    // Curious bot - read unknown signs
     new ExploreGoal(), // Always last - lowest priority fallback
   ];

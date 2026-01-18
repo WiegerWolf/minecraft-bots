@@ -15,6 +15,7 @@ import { CheckSharedChest } from '../../roles/farming/behaviors/actions/CheckSha
 import { RequestMaterials } from '../../roles/farming/behaviors/actions/RequestMaterials';
 import { StudySpawnSigns } from '../../roles/farming/behaviors/actions/StudySpawnSigns';
 import { ReadUnknownSign } from '../../roles/farming/behaviors/actions/ReadUnknownSign';
+import { WriteKnowledgeSign } from '../../roles/farming/behaviors/actions/WriteKnowledgeSign';
 
 /**
  * GOAP Action: Pick up dropped items
@@ -407,6 +408,72 @@ export class ReadUnknownSignAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Write knowledge signs at spawn
+ * Writes FARM/WATER signs to share discoveries with other bots.
+ */
+export class WriteKnowledgeSignAction extends BaseGOAPAction {
+  name = 'WriteKnowledgeSign';
+  private impl = new WriteKnowledgeSign();
+
+  // Preconditions array is empty because we use custom checkPreconditions for OR logic
+  preconditions = [
+    numericPrecondition('pending.signWrites', v => v > 0, 'has pending sign writes'),
+  ];
+
+  effects = [
+    incrementEffect('pending.signWrites', -1, 'wrote sign'),
+    // Assume we need to craft (pessimistic for planning)
+    // If we already have a sign, these won't actually be consumed at runtime
+    incrementEffect('inv.planks', -6, 'used planks for sign'),
+    incrementEffect('inv.sticks', -1, 'used stick for sign'),
+  ];
+
+  /**
+   * Custom precondition check with OR logic:
+   * - has.sign == true (already have a sign), OR
+   * - derived.canCraftSign == true (can craft: 6 planks + 1 stick + crafting table)
+   *
+   * For planner chaining, we also accept raw material checks:
+   * - inv.planks >= 6 AND inv.sticks >= 1 (with implicit crafting table)
+   */
+  override checkPreconditions(ws: WorldState): boolean {
+    const pendingWrites = ws.getNumber('pending.signWrites');
+    if (pendingWrites <= 0) return false;
+
+    // Already have a sign - can write immediately
+    const hasSign = ws.getBool('has.sign');
+    if (hasSign) return true;
+
+    // Can craft a sign (has materials + crafting table)
+    const canCraft = ws.getBool('derived.canCraftSign');
+    if (canCraft) return true;
+
+    // For planner chaining: check raw materials (ProcessWood could satisfy this)
+    const planks = ws.getNumber('inv.planks');
+    const sticks = ws.getNumber('inv.sticks');
+    const hasCraftingTable = ws.getNumber('nearby.craftingTables') > 0 ||
+                             ws.get('pos.sharedCraftingTable') !== undefined;
+
+    return planks >= 6 && sticks >= 1 && hasCraftingTable;
+  }
+
+  override getCost(ws: WorldState): number {
+    const hasSign = ws.getBool('has.sign');
+    if (hasSign) return 2.0; // Just need to walk and place
+
+    const canCraft = ws.getBool('derived.canCraftSign');
+    if (canCraft) return 4.0; // Need to craft first
+
+    return 8.0; // Need to get materials from somewhere
+  }
+
+  override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * Create all farming actions for the planner.
  * Note: Wood gathering is handled by the lumberjack bot - farmer requests logs via chat.
  */
@@ -423,6 +490,7 @@ export function createFarmingActions(): BaseGOAPAction[] {
     new RequestMaterialsAction(),
     new CraftHoeAction(),
     new FindFarmCenterAction(),
+    new WriteKnowledgeSignAction(),  // Write farm/water signs
     new ReadUnknownSignAction(),  // Curious bot - read unknown signs
     new ExploreAction(),
   ];

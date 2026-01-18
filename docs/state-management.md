@@ -356,6 +356,11 @@ bb.knownWaterSources: Vec3[];            // Water source locations from signs
 // Sign tracking
 bb.readSignPositions: Set<string>;       // "x,y,z" keys of read signs
 bb.unknownSigns: Vec3[];                 // Signs spotted but not yet read
+
+// Sign writing (farmer writes FARM signs when establishing farm center)
+bb.pendingSignWrites: PendingSignWrite[]; // Queue of signs to write
+bb.signPositions: Map<string, Vec3>;      // type -> sign position (for updates)
+bb.farmSignWritten: boolean;              // Has farm center sign been written?
 ```
 
 **Sign types:**

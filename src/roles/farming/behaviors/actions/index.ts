@@ -16,3 +16,4 @@ export { CheckSharedChest } from './CheckSharedChest';
 export { RequestTerraform } from './RequestTerraform';
 export { StudySpawnSigns } from './StudySpawnSigns';
 export { ReadUnknownSign } from './ReadUnknownSign';
+export { WriteKnowledgeSign } from './WriteKnowledgeSign';

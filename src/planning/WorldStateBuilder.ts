@@ -139,6 +139,11 @@ export class WorldStateBuilder {
     ws.set('nearby.unknownSigns', bb.unknownSigns.length);
     ws.set('known.farms', bb.knownFarms.length);
     ws.set('known.waterSources', bb.knownWaterSources.length);
+
+    // Sign writing
+    ws.set('pending.signWrites', bb.pendingSignWrites.length);
+    ws.set('has.sign', this.hasSign(bot));
+    ws.set('derived.canCraftSign', this.canCraftSign(bb, bot));
   }
 
   /**
@@ -297,7 +302,7 @@ export class WorldStateBuilder {
    * Check if bot can craft a sign (has materials).
    * Sign recipe: 6 planks + 1 stick = 3 signs (requires crafting table)
    */
-  private static canCraftSign(bb: LumberjackBlackboard): boolean {
+  private static canCraftSign(bb: LumberjackBlackboard | FarmingBlackboard, bot?: Bot): boolean {
     const hasPlanks = bb.plankCount >= 6;
     const hasSticks = bb.stickCount >= 1;
     const hasCraftingTable = bb.nearbyCraftingTables.length > 0 || bb.sharedCraftingTable !== null;
