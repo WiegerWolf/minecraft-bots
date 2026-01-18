@@ -369,7 +369,11 @@ export class GatherDirtGoal extends BaseGoal {
   description = 'Gather dirt to prepare for terraforming';
 
   conditions = [
-    numericGoalCondition('inv.dirt', v => v >= 64, 'has enough dirt'),
+    numericGoalCondition('inv.dirt', v => v >= 64, 'has enough dirt', {
+      value: 64,
+      comparison: 'gte',
+      estimatedDelta: 16, // GatherDirt gives ~16 dirt per action
+    }),
   ];
 
   getUtility(ws: WorldState): number {
