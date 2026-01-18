@@ -343,7 +343,7 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
 
         // Skip landscaper materials - let the landscaper pick these up
         const metadata = (e as any).metadata;
-        if (metadata) {
+        if (metadata && Array.isArray(metadata)) {
             const itemStack = metadata.find((m: any) => m && typeof m === 'object' && 'itemId' in m);
             if (itemStack) {
                 const itemName = bot.registry?.items?.[itemStack.itemId]?.name;

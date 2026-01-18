@@ -20,10 +20,61 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-- **Run all bots**: `bun run start` (uses `src/index.ts` manager)
+- **Run all bots**: `bun run start` (TUI dashboard with keyboard controls)
 - **Run single bot**: `bun run start farmer` / `lumberjack` / `landscaper`
+- **Old manager**: `bun run start:old` (simple hot-reload manager without TUI)
 - **Development mode**: `bun run dev:farmer` / `dev:lumberjack` / `dev:landscaper`
 - **Type check**: `bunx tsc --noEmit`
+
+## Bot Management
+
+### Launching Bots
+
+```bash
+# Launch all bots with TUI dashboard (default)
+bun run start
+
+# Launch a specific bot with TUI
+bun run start farmer
+bun run start lumberjack
+bun run start landscaper
+
+# Launch without TUI (old manager - simpler output)
+bun run start:old
+bun run start:old farmer
+```
+
+### Restarting Bots
+
+**From TUI Dashboard** (`bun run start`):
+- `r` - Restart selected bot
+- `R` - Restart all bots
+- `x` - Stop selected bot
+- `s` - Start selected bot
+- `h` - Toggle hot-reload on/off
+- `q` - Quit (stops all bots first)
+
+**From command line** (while bots are running):
+```bash
+# Touch the .restart file to trigger a restart of all bots
+touch .restart
+
+# Send SIGUSR1 signal to the manager process
+kill -USR1 <manager-pid>
+```
+
+**Automatic restarts**:
+- Hot-reload: Bots auto-restart when `.ts`, `.js`, or `.json` files change
+- Crash recovery: Crashed bots auto-restart with exponential backoff (1s → 2s → 4s → ... → 30s max)
+
+### Monitoring Bot Status
+
+**TUI Dashboard** (`bun run start`):
+- Shows all bots with status indicators: `[R]` Running, `[S]` Stopped, `[C]` Crashed, `[.]` Starting/Restarting
+- Real-time log viewer with level filtering (`l` to cycle: TRACE→DEBUG→INFO→WARN→ERROR)
+- Filter logs by bot (`f` to toggle)
+- Clear logs (`c`)
+- Add/delete bots (`a`/`d`) - session-only, not persisted
 
 ## Logging
 
@@ -80,6 +131,41 @@ ls -t logs/ | head -5
 diff <(cat logs/2026-01-17_20-44-32/Farmer.log | jq .msg) \
      <(cat logs/2026-01-17_20-45-10/Farmer.log | jq .msg)
 ```
+
+### Using the /logs Skill
+
+The `/logs` skill provides AI-powered log analysis. Use it to debug bot behavior, find errors, and understand what happened during a session.
+
+**Basic usage**:
+```
+/logs                           # Analyze latest session logs
+/logs find errors               # Find all errors in latest session
+/logs what is the farmer doing  # Understand current bot behavior
+```
+
+**Filtering by bot or level**:
+```
+/logs farmer errors             # Errors from farmer bot only
+/logs lumberjack last 5 minutes # Recent lumberjack activity
+/logs warn and above            # All warnings and errors
+```
+
+**Comparing sessions**:
+```
+/logs compare last two sessions     # Diff behavior between runs
+/logs why did farmer crash          # Investigate crash causes
+/logs show goal changes for farmer  # Track goal selection over time
+```
+
+**Common debugging queries**:
+```
+/logs why is the bot idle           # Diagnose idle behavior
+/logs show pathfinding failures     # Find navigation issues
+/logs what goals were selected      # Trace decision-making
+/logs show trade activity           # Debug bot-to-bot trading
+```
+
+The skill reads from `logs/latest/` by default and understands the Pino JSON log format with fields like `level`, `msg`, `goal`, `action`, `component`, etc.
 
 ## Architecture
 

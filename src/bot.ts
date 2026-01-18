@@ -29,6 +29,19 @@ const logger: Logger = createBotLogger({
 });
 const botLog = createChildLogger(logger, 'Bot');
 
+// Global error handlers to catch silent crashes
+process.on('unhandledRejection', (reason: any) => {
+    botLog.fatal({ err: reason, stack: reason?.stack }, 'Unhandled promise rejection - crashing');
+    console.error('Unhandled rejection:', reason);
+    process.exit(1);
+});
+
+process.on('uncaughtException', (err: Error) => {
+    botLog.fatal({ err, stack: err.stack }, 'Uncaught exception - crashing');
+    console.error('Uncaught exception:', err);
+    process.exit(1);
+});
+
 botLog.info({ botName: BOT_NAME, role: BOT_ROLE }, 'Bot starting');
 
 const config: BotOptions = {
