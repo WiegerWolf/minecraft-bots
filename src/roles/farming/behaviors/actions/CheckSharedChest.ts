@@ -1,7 +1,16 @@
 import type { Bot } from 'mineflayer';
+import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
+import { goals } from 'mineflayer-pathfinder';
 import type { FarmingBlackboard } from '../../Blackboard';
-import { BaseCheckChest } from '../../../../shared/actions';
+import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
+
+const { GoalLookAtBlock } = goals;
+
+type BehaviorStatus = 'success' | 'failure' | 'running';
+
+// Cooldown between material requests
+const REQUEST_COOLDOWN_MS = 30000;
 
 /**
  * CheckSharedChest - Check shared chest for materials and withdraw them.
@@ -10,24 +19,16 @@ import { BaseCheckChest } from '../../../../shared/actions';
  * - Only checks when needs tools and doesn't have enough materials
  * - Withdraws logs (priority 1), planks (priority 2), sticks (priority 3)
  * - Uses village chat shared chest or finds chest near farm center
+ * - If chest is empty, requests materials from lumberjack and returns 'running'
+ *
+ * This avoids the problem where CheckSharedChest fails on empty chest,
+ * putting ObtainTools on cooldown while the farmer wanders off.
  */
-export class CheckSharedChest extends BaseCheckChest<FarmingBlackboard> {
-    constructor() {
-        super({
-            withdrawalPriorities: [
-                { pattern: '_log', maxAmount: 4 },
-                { pattern: '_planks', maxAmount: 8, onlyIfPreviousEmpty: true },
-                { pattern: 'stick', maxAmount: 8 },
-            ],
-            roleLabel: 'Farmer',
-            lastActionCheck: 'check_shared_chest',
-            postPathfindSleepMs: 200,
-            postOpenSleepMs: 100,
-            betweenWithdrawSleepMs: 100,
-        });
-    }
+export class CheckSharedChest {
+    readonly name = 'CheckSharedChest';
+    private lastRequestTime = 0;
 
-    protected hasSufficientMaterials(bb: FarmingBlackboard): boolean {
+    private hasSufficientMaterials(bb: FarmingBlackboard): boolean {
         // Skip if we don't need tools
         if (!bb.needsTools) return true;
 
@@ -40,7 +41,7 @@ export class CheckSharedChest extends BaseCheckChest<FarmingBlackboard> {
         );
     }
 
-    protected findChest(bot: Bot, bb: FarmingBlackboard): Vec3 | null {
+    private findChest(bot: Bot, bb: FarmingBlackboard): Vec3 | null {
         // Try village chat shared chest first
         const sharedChest = bb.villageChat?.getSharedChest();
         if (sharedChest) return sharedChest;
@@ -62,5 +63,142 @@ export class CheckSharedChest extends BaseCheckChest<FarmingBlackboard> {
         }
 
         return null;
+    }
+
+    /**
+     * Request materials from lumberjack if not already requested recently.
+     * Returns true if a new request was made or one is pending.
+     */
+    private requestMaterialsIfNeeded(bb: FarmingBlackboard): boolean {
+        if (!bb.villageChat) return false;
+
+        const now = Date.now();
+
+        // Check if we already have a pending request
+        if (bb.villageChat.hasPendingRequestFor('log')) {
+            bb.lastAction = 'waiting_for_materials';
+            bb.log?.debug('[Farmer] Already have pending log request');
+            return true;
+        }
+
+        // Rate limit requests
+        if (now - this.lastRequestTime < REQUEST_COOLDOWN_MS) {
+            bb.lastAction = 'waiting_for_materials';
+            return true;
+        }
+
+        // Send new request
+        this.lastRequestTime = now;
+        bb.lastAction = 'request_materials';
+        bb.log?.info('[Farmer] Chest empty, requesting 2 logs from lumberjack');
+        bb.villageChat.requestResource('log', 2);
+        return true;
+    }
+
+    async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
+        // Already have sufficient materials
+        if (this.hasSufficientMaterials(bb)) {
+            return 'failure';
+        }
+
+        const chestPos = this.findChest(bot, bb);
+        if (!chestPos) {
+            bb.log?.debug('[Farmer] No chest available');
+            // No chest - request materials and return 'running' to wait
+            if (this.requestMaterialsIfNeeded(bb)) {
+                return 'running';
+            }
+            return 'failure';
+        }
+
+        const chestBlock = bot.blockAt(chestPos);
+        if (!chestBlock || !['chest', 'barrel'].includes(chestBlock.name)) {
+            bb.log?.debug(`[Farmer] Chest not found at ${chestPos}`);
+            return 'failure';
+        }
+
+        bb.lastAction = 'check_shared_chest';
+        bb.log?.debug(`[Farmer] Checking chest for materials at ${chestPos}`);
+
+        try {
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalLookAtBlock(chestPos, bot.world, { reach: 4 }),
+                { timeoutMs: 15000 }
+            );
+
+            if (!result.success) {
+                bb.log?.debug(`[Farmer] Failed to reach chest: ${result.failureReason}`);
+                return 'failure';
+            }
+
+            await sleep(200);
+
+            // Re-check chest exists after pathfinding
+            const currentChestBlock = bot.blockAt(chestPos);
+            if (!currentChestBlock || !['chest', 'barrel'].includes(currentChestBlock.name)) {
+                bb.log?.debug(`[Farmer] Chest at ${chestPos} disappeared`);
+                return 'failure';
+            }
+
+            const container = await bot.openContainer(currentChestBlock);
+            await sleep(100);
+
+            const chestItems = container.containerItems();
+            let totalWithdrawn = 0;
+
+            // Withdrawal priorities: logs first, then planks if no logs, then sticks
+            const priorities = [
+                { pattern: '_log', maxAmount: 4, onlyIfPreviousEmpty: false },
+                { pattern: '_planks', maxAmount: 8, onlyIfPreviousEmpty: true },
+                { pattern: 'stick', maxAmount: 8, onlyIfPreviousEmpty: false },
+            ];
+
+            let previousEmpty = false;
+
+            for (const priority of priorities) {
+                if (priority.onlyIfPreviousEmpty && !previousEmpty && totalWithdrawn > 0) {
+                    continue;
+                }
+
+                let withdrawnThisPriority = 0;
+                const remaining = priority.maxAmount;
+
+                for (const item of chestItems) {
+                    if (!item.name.includes(priority.pattern)) continue;
+                    if (withdrawnThisPriority >= remaining) break;
+
+                    const toWithdraw = Math.min(item.count, remaining - withdrawnThisPriority);
+                    try {
+                        await container.withdraw(item.type, null, toWithdraw);
+                        withdrawnThisPriority += toWithdraw;
+                        totalWithdrawn += toWithdraw;
+                        bb.log?.debug(`[Farmer] Withdrew ${toWithdraw} ${item.name}`);
+                        await sleep(100);
+                    } catch (err) {
+                        bb.log?.debug(`[Farmer] Failed to withdraw ${item.name}: ${err}`);
+                    }
+                }
+
+                previousEmpty = withdrawnThisPriority === 0;
+            }
+
+            container.close();
+
+            if (totalWithdrawn > 0) {
+                bb.log?.info(`[Farmer] Withdrew ${totalWithdrawn} items from chest`);
+                return 'success';
+            } else {
+                // Chest was empty - request materials from lumberjack
+                bb.log?.debug('[Farmer] Chest empty, requesting materials');
+                if (this.requestMaterialsIfNeeded(bb)) {
+                    return 'running';  // Wait for lumberjack to deposit
+                }
+                return 'failure';
+            }
+        } catch (error) {
+            bb.log?.warn({ err: error }, '[Farmer] Error checking chest');
+            return 'failure';
+        }
     }
 }

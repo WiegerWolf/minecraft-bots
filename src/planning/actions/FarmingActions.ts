@@ -241,6 +241,8 @@ export class CraftHoeAction extends BaseGOAPAction {
  * GOAP Action: Check shared chest for crafting materials (logs, planks, sticks)
  *
  * This action withdraws materials from the shared chest that the lumberjack deposits.
+ * If the chest is empty, it requests materials from the lumberjack and returns RUNNING
+ * to keep the goal active while waiting.
  */
 export class CheckSharedChestAction extends BaseGOAPAction {
   name = 'CheckSharedChest';
@@ -248,7 +250,6 @@ export class CheckSharedChestAction extends BaseGOAPAction {
 
   preconditions = [
     booleanPrecondition('needs.tools', true, 'needs tools'),
-    booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
   ];
 
   effects = [
@@ -256,12 +257,16 @@ export class CheckSharedChestAction extends BaseGOAPAction {
   ];
 
   override getCost(ws: WorldState): number {
-    return 2.0; // Low cost - just walking to chest
+    // Lower cost if we have chest access
+    const hasStorage = ws.getBool('derived.hasStorageAccess');
+    return hasStorage ? 2.0 : 3.0;
   }
 
   override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
     const result = await this.impl.tick(bot, bb);
-    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+    if (result === 'success') return ActionResult.SUCCESS;
+    if (result === 'running') return ActionResult.RUNNING;  // Waiting for lumberjack
+    return ActionResult.FAILURE;
   }
 }
 
