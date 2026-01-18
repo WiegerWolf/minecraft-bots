@@ -86,10 +86,16 @@ export interface SpawnBotOptions {
   getNextLogId: () => number;
 }
 
+export interface SpawnedBot {
+  process: Subprocess;
+  cleanup: () => void;
+}
+
 /**
  * Spawn a bot process and set up log streaming.
+ * Returns the process and a cleanup function to cancel readers.
  */
-export function spawnBot(options: SpawnBotOptions): Subprocess {
+export function spawnBot(options: SpawnBotOptions): SpawnedBot {
   const { config, sessionId, botName, onLog, onExit, onSpawnSuccess, getNextLogId } = options;
 
   const botProcess = spawn(['bun', 'run', BOT_PATH], {
@@ -104,41 +110,51 @@ export function spawnBot(options: SpawnBotOptions): Subprocess {
     },
   });
 
-  // Handle stdout
+  // Track readers for cleanup (using any to handle Bun's stream types)
+  const readers: { cancel: () => void; releaseLock: () => void }[] = [];
+
+  // Handle stdout/stderr
   const handleOutput = async (stream: ReadableStream<Uint8Array> | null) => {
     if (!stream) return;
     const reader = stream.getReader();
+    readers.push(reader);
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        if (!line) continue;
+        for (const line of lines) {
+          if (!line) continue;
 
-        // Check for spawn marker
-        if (line.includes('✅ Bot has spawned!')) {
-          onSpawnSuccess();
+          // Check for spawn marker
+          if (line.includes('✅ Bot has spawned!')) {
+            onSpawnSuccess();
+          }
+
+          const entry = parseLogLine(line, botName, getNextLogId);
+          if (entry) {
+            onLog(entry);
+          }
         }
+      }
 
-        const entry = parseLogLine(line, botName, getNextLogId);
+      if (buffer) {
+        const entry = parseLogLine(buffer, botName, getNextLogId);
         if (entry) {
           onLog(entry);
         }
       }
-    }
-
-    if (buffer) {
-      const entry = parseLogLine(buffer, botName, getNextLogId);
-      if (entry) {
-        onLog(entry);
-      }
+    } catch {
+      // Reader was cancelled or process died - this is expected
+    } finally {
+      reader.releaseLock();
     }
   };
 
@@ -147,5 +163,17 @@ export function spawnBot(options: SpawnBotOptions): Subprocess {
 
   botProcess.exited.then(onExit);
 
-  return botProcess;
+  // Cleanup function to cancel readers and release memory
+  const cleanup = () => {
+    for (const reader of readers) {
+      try {
+        reader.cancel();
+      } catch {
+        // Ignore errors - reader may already be closed
+      }
+    }
+    readers.length = 0;
+  };
+
+  return { process: botProcess, cleanup };
 }

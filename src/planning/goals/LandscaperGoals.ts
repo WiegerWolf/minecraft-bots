@@ -49,11 +49,25 @@ export class FulfillTerraformRequestGoal extends BaseGoal {
 
     if (!hasPending && !terraformActive) return 0;
 
+    // Check if we can get tools if we're missing them
+    // Need materials OR storage access to craft tools
+    const logCount = ws.getNumber('inv.logs');
+    const plankCount = ws.getNumber('inv.planks');
+    const plankEquivalent = plankCount + (logCount * 4);
+    const hasStorageAccess = ws.getBool('derived.hasStorageAccess');
+    const canObtainTools = plankEquivalent >= 3 || hasStorageAccess;
+
     // Continue active terraform - but ONLY if we have BOTH tools
     // Terraforming needs shovel (for dirt/grass) AND pickaxe (for stone)
     if (terraformActive) {
       if (hasShovel && hasPickaxe) {
         return 120; // Have both tools, highest priority
+      }
+      // Missing a tool - can we get one?
+      if (!canObtainTools) {
+        // Can't get tools - return 0 to avoid stuck loop
+        // This goal will become plannable once tools become available
+        return 0;
       }
       // Missing a tool - LOW priority so ObtainTools can craft it
       // Must be low enough to overcome hysteresis (20% threshold)
@@ -67,7 +81,11 @@ export class FulfillTerraformRequestGoal extends BaseGoal {
     // Have at least one tool
     if (hasAnyTool) return 80;
 
-    // Have pending request but no tools - still important
+    // Have pending request but no tools
+    if (!canObtainTools) {
+      // Can't get tools - return 0 to avoid stuck loop
+      return 0;
+    }
     return 50;
   }
 }
@@ -260,6 +278,10 @@ export class MaintainFarmsGoal extends BaseGoal {
   getUtility(ws: WorldState): number {
     const knownFarmCount = ws.getNumber('state.knownFarmCount');
     const hasStudied = ws.getBool('has.studiedSigns');
+    const maintenanceNeeded = ws.getBool('state.farmMaintenanceNeeded');
+
+    // No maintenance needed (all farms checked recently)
+    if (!maintenanceNeeded) return 0;
 
     // No farms to maintain
     if (!hasStudied || knownFarmCount === 0) return 0;
@@ -285,7 +307,8 @@ export class MaintainFarmsGoal extends BaseGoal {
     const knownFarmCount = ws.getNumber('state.knownFarmCount');
     const hasStudied = ws.getBool('has.studiedSigns');
     const dirtCount = ws.getNumber('inv.dirt');
-    return hasStudied && knownFarmCount > 0 && dirtCount >= 4;
+    const maintenanceNeeded = ws.getBool('state.farmMaintenanceNeeded');
+    return maintenanceNeeded && hasStudied && knownFarmCount > 0 && dirtCount >= 4;
   }
 }
 

@@ -7,6 +7,7 @@ import { RoleSelector } from './components/RoleSelector';
 import { useBotManager } from './hooks/useBotManager';
 import { useLogBuffer } from './hooks/useLogBuffer';
 import { useFileWatcher } from './hooks/useFileWatcher';
+import { useRestartTrigger } from './hooks/useRestartTrigger';
 import type { BotConfig, LogEntry, LogLevelName } from './types';
 import { DEFAULT_BOT_CONFIGS, BOT_SPAWN_DELAY, LOG_LEVELS } from './types';
 
@@ -83,6 +84,22 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
     enabled: true,
     onFileChange: handleFileChange,
   });
+
+  // Manual restart trigger via `touch .restart`
+  const handleRestartTrigger = useCallback(() => {
+    handleLog({
+      id: logActions.getNextId(),
+      timestamp: new Date(),
+      botName: 'Manager',
+      level: 30,
+      message: 'Restart triggered via .restart file',
+      extras: {},
+      raw: '',
+    });
+    botActions.restartAll();
+  }, [handleLog, logActions, botActions]);
+
+  useRestartTrigger({ onTrigger: handleRestartTrigger });
 
   // Auto-start bots on mount
   useEffect(() => {

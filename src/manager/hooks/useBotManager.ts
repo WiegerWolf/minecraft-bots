@@ -37,6 +37,7 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
 
   const retryTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const processesRef = useRef<Map<string, Subprocess>>(new Map());
+  const cleanupFunctionsRef = useRef<Map<string, () => void>>(new Map());
   const nextBotIdRef = useRef(initialConfigs.length);
   const reconnectAttemptsRef = useRef<Map<string, number>>(new Map());
   const botsRef = useRef<ManagedBot[]>(bots);
@@ -69,7 +70,7 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
     const botName = generateBotName(bot.config.roleLabel);
     updateBot(botId, { status: 'starting', name: botName });
 
-    const process = spawnBot({
+    const { process, cleanup } = spawnBot({
       config: bot.config,
       sessionId,
       botName,
@@ -82,6 +83,13 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
       onExit: (exitCode: number) => {
         // Check if this is still the current process
         if (processesRef.current.get(botId) !== process) return;
+
+        // Clean up readers to prevent memory leaks
+        const cleanupFn = cleanupFunctionsRef.current.get(botId);
+        if (cleanupFn) {
+          cleanupFn();
+          cleanupFunctionsRef.current.delete(botId);
+        }
 
         processesRef.current.delete(botId);
 
@@ -108,6 +116,7 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
     });
 
     processesRef.current.set(botId, process);
+    cleanupFunctionsRef.current.set(botId, cleanup);
     updateBot(botId, { process });
   }, [sessionId, onLog, getNextLogId, updateBot]);
 
@@ -118,6 +127,13 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
     if (existingTimeout) {
       clearTimeout(existingTimeout);
       retryTimeoutsRef.current.delete(botId);
+    }
+
+    // Clean up readers first to prevent memory leaks
+    const cleanupFn = cleanupFunctionsRef.current.get(botId);
+    if (cleanupFn) {
+      cleanupFn();
+      cleanupFunctionsRef.current.delete(botId);
     }
 
     const process = processesRef.current.get(botId);
@@ -187,6 +203,11 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
       for (const timeout of retryTimeoutsRef.current.values()) {
         clearTimeout(timeout);
       }
+      // Clean up all readers to prevent memory leaks
+      for (const cleanup of cleanupFunctionsRef.current.values()) {
+        cleanup();
+      }
+      cleanupFunctionsRef.current.clear();
       for (const process of processesRef.current.values()) {
         process.kill();
       }
