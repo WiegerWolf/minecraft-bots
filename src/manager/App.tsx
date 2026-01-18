@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Box, useInput, useApp, useStdout } from 'ink';
 import { Header } from './components/Header';
 import { BotList } from './components/BotList';
@@ -50,6 +50,20 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
     getNextLogId: logActions.getNextId,
   });
 
+  // Compute visual order: bots grouped by role, flattened to original indices
+  // This matches the display order in BotList
+  const visualOrder = useMemo(() => {
+    const groups = new Map<string, number[]>();
+    bots.forEach((bot, index) => {
+      const role = bot.config.role;
+      if (!groups.has(role)) {
+        groups.set(role, []);
+      }
+      groups.get(role)!.push(index);
+    });
+    return Array.from(groups.values()).flat();
+  }, [bots]);
+
   // File watcher for hot-reload
   const handleFileChange = useCallback((filename: string) => {
     // Add a log entry for the file change
@@ -95,11 +109,19 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
       return;
     }
 
-    // Navigation
+    // Navigation (follows visual grouped order)
     if (input === 'j' || key.downArrow) {
-      setSelectedIndex(i => Math.min(i + 1, bots.length - 1));
+      setSelectedIndex(currentIndex => {
+        const visualPos = visualOrder.indexOf(currentIndex);
+        const nextVisualPos = Math.min(visualPos + 1, visualOrder.length - 1);
+        return visualOrder[nextVisualPos] ?? currentIndex;
+      });
     } else if (input === 'k' || key.upArrow) {
-      setSelectedIndex(i => Math.max(i - 1, 0));
+      setSelectedIndex(currentIndex => {
+        const visualPos = visualOrder.indexOf(currentIndex);
+        const prevVisualPos = Math.max(visualPos - 1, 0);
+        return visualOrder[prevVisualPos] ?? currentIndex;
+      });
     }
 
     // Bot actions
@@ -121,7 +143,8 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
       const bot = bots[selectedIndex];
       if (bot) {
         botActions.deleteBot(bot.id);
-        setSelectedIndex(i => Math.max(0, Math.min(i, bots.length - 2)));
+        // Select first bot after deletion (safe default)
+        setSelectedIndex(0);
       }
     }
 
