@@ -26,13 +26,44 @@ export class ChopTree implements BehaviorNode {
         // Don't start new trees if inventory full
         if (bb.inventoryFull) return 'failure';
 
-        // Find a tree to harvest within village radius if we have a center
-        const maxDistance = bb.villageCenter ? 50 : 32;
+        // Use trees from blackboard (already filtered for village distance and reachability)
+        // This avoids the issue where startTreeHarvest searches from bot position
+        // but we need trees near village center
+        if (bb.nearbyTrees.length > 0) {
+            // Find closest tree from the pre-filtered list
+            const botPos = bot.entity.position;
+            const sortedTrees = [...bb.nearbyTrees].sort((a, b) =>
+                a.position.distanceTo(botPos) - b.position.distanceTo(botPos)
+            );
 
+            for (const tree of sortedTrees) {
+                // Double-check village distance if we have a center
+                if (bb.villageCenter) {
+                    const treeDistFromVillage = tree.position.distanceTo(bb.villageCenter);
+                    if (treeDistFromVillage > 60) {
+                        bb.log?.debug(`[Lumberjack] Tree at ${tree.position.floored()} too far from village (${Math.round(treeDistFromVillage)} blocks), skipping`);
+                        continue;
+                    }
+                }
+
+                bb.currentTreeHarvest = {
+                    basePos: tree.position.clone(),
+                    logType: tree.name,
+                    phase: 'chopping'
+                };
+                bb.lastAction = 'chop_tree';
+                bb.log?.debug(`[Lumberjack] Starting tree harvest at ${tree.position.floored()}`);
+                return this.continueHarvest(bot, bb);
+            }
+        }
+
+        // Fallback: use startTreeHarvest if no pre-filtered trees
+        // (this can happen if blackboard wasn't updated yet)
+        const maxDistance = bb.villageCenter ? 50 : 32;
         const state = startTreeHarvest(bot, maxDistance);
         if (!state) return 'failure';
 
-        // If we have a village center, prefer trees near it
+        // If we have a village center, check distance
         if (bb.villageCenter) {
             const treeDistFromVillage = state.basePos.distanceTo(bb.villageCenter);
             if (treeDistFromVillage > 60) {

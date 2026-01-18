@@ -13,6 +13,7 @@ import {
   RequestMaterials,
   StudySpawnSigns,
   CheckFarmForTerraformNeeds,
+  GatherDirt,
 } from '../../roles/landscaper/behaviors/actions';
 
 /**
@@ -400,6 +401,35 @@ export class CheckFarmForTerraformNeedsAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Gather dirt proactively when idle
+ */
+export class GatherDirtAction extends BaseGOAPAction {
+  name = 'GatherDirt';
+  private impl = new GatherDirt();
+
+  preconditions = [
+    booleanPrecondition('has.shovel', true, 'has shovel'),
+    numericPrecondition('inv.dirt', v => v < 64, 'needs more dirt'),
+    booleanPrecondition('state.inventoryFull', false, 'inventory not full'),
+  ];
+
+  effects = [
+    // Optimistically assume we gather a batch of dirt
+    incrementEffect('inv.dirt', 16, 'gathered dirt'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Moderate cost - better than idling but not urgent
+    return 4.0;
+  }
+
+  override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * Create all landscaper actions for the planner.
  */
 export function createLandscaperActions(): BaseGOAPAction[] {
@@ -414,6 +444,7 @@ export function createLandscaperActions(): BaseGOAPAction[] {
     new CraftPickaxeFromPlanksAction(),
     new DepositItemsAction(),
     new CheckSharedChestAction(),
+    new GatherDirtAction(),
     new ExploreAction(),
   ];
 }

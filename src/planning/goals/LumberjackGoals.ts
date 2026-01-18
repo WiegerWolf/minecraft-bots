@@ -149,11 +149,16 @@ export class DepositLogsGoal extends BaseGoal {
 
     if (logCount === 0 || !hasStorage) return 0;
 
+    // Goal condition is "logs < 5" - if satisfied, utility must be 0
+    // to avoid empty plans being created repeatedly
+    if (logCount < 5 && !inventoryFull && !hasPendingRequests) return 0;
+
     // Very high priority when inventory full
     if (inventoryFull) return 90;
 
     // High priority when there are pending requests - farmer is waiting!
-    if (hasPendingRequests && logCount > 0) return 85;
+    // Deposit any logs we have so farmer can pick them up
+    if (hasPendingRequests && logCount >= 5) return 85;
 
     // High priority when we have many logs (lowered threshold: 16->8)
     if (needsToDeposit || logCount >= 32) return 80;

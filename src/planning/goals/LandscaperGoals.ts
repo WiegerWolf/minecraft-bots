@@ -235,6 +235,57 @@ export class CheckKnownFarmsGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Gather dirt proactively when idle.
+ * LOW-MEDIUM priority - better than idling, ensures readiness.
+ *
+ * When the landscaper has nothing better to do, gathering dirt prepares
+ * them for incoming terraform requests. Having dirt on hand means they
+ * can start filling immediately without searching.
+ */
+export class GatherDirtGoal extends BaseGoal {
+  name = 'GatherDirt';
+  description = 'Gather dirt to prepare for terraforming';
+
+  conditions = [
+    numericGoalCondition('inv.dirt', v => v >= 64, 'has enough dirt'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const dirtCount = ws.getNumber('inv.dirt');
+
+    // Already have enough dirt
+    if (dirtCount >= 64) return 0;
+
+    // Don't gather if we have pending terraform work
+    const hasPendingRequest = ws.getBool('has.pendingTerraformRequest');
+    if (hasPendingRequest) return 0;
+
+    // Don't gather if we're actively terraforming
+    const terraformActive = ws.getBool('terraform.active');
+    if (terraformActive) return 0;
+
+    // Don't gather if we need tools (get tools first)
+    const hasShovel = ws.getBool('has.shovel');
+    if (!hasShovel) return 0;
+
+    // Don't gather if inventory is full
+    const inventoryFull = ws.getBool('state.inventoryFull');
+    if (inventoryFull) return 0;
+
+    // Higher priority when we have less dirt
+    // Range: 30-50 (below farming checking but above idle)
+    const urgency = Math.max(0, (64 - dirtCount) / 64);
+    return 30 + urgency * 20;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const dirtCount = ws.getNumber('inv.dirt');
+    const hasShovel = ws.getBool('has.shovel');
+    return dirtCount < 64 && hasShovel;
+  }
+}
+
+/**
  * Goal: Wait at spawn for terraform requests.
  * The landscaper should idle until called by other bots or until
  * materials are available in the shared chest.
@@ -277,6 +328,7 @@ export function createLandscaperGoals(): BaseGoal[] {
     new ObtainToolsGoal(),
     new DepositItemsGoal(),
     new CollectDropsGoal(),
+    new GatherDirtGoal(),         // Proactive dirt gathering when idle
     new ExploreGoal(),            // Always last - lowest priority fallback
   ];
 }
