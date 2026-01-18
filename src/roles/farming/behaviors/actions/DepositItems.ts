@@ -1,88 +1,56 @@
 import type { Bot } from 'mineflayer';
-import type { FarmingBlackboard } from '../../Blackboard';
-import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
-import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
+import type { FarmingBlackboard } from '../../Blackboard';
+import { BaseDepositItems } from '../../../../shared/actions';
 
-const { GoalLookAtBlock } = goals;
+/**
+ * DepositItems - Deposit crops and excess seeds to farm chest.
+ *
+ * Farmer-specific behavior:
+ * - Deposits when: inventory full OR 16+ produce OR 64+ seeds
+ * - Prefers farm chest, falls back to nearby chests
+ * - Keeps 32 seeds for planting
+ */
+export class DepositItems extends BaseDepositItems<FarmingBlackboard> {
+    constructor() {
+        super({
+            depositFilter: {
+                patterns: [
+                    'wheat', 'carrot', 'potato', 'beetroot', 'poisonous_potato', 'melon_slice',
+                    'wheat_seeds', 'beetroot_seeds'
+                ],
+                keepAmounts: {
+                    'wheat_seeds': 32,
+                    'beetroot_seeds': 32,
+                    'carrot': 32,  // Carrots are both crop and seed
+                    'potato': 32,  // Potatoes are both crop and seed
+                },
+            },
+            roleLabel: 'Farmer',
+            lastActionDeposit: 'deposit',
+            postPathfindSleepMs: 200,
+            betweenDepositSleepMs: 50,
+        });
+    }
 
-export class DepositItems implements BehaviorNode {
-    name = 'DepositItems';
+    protected shouldDeposit(bb: FarmingBlackboard): boolean {
+        return bb.inventoryFull || bb.produceCount >= 16 || bb.seedCount >= 64;
+    }
 
-    async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
-        // Deposit if inventory is full OR we have some produce OR lots of seeds
-        // Lower threshold (16) to deposit more frequently
-        const shouldDeposit = bb.inventoryFull || bb.produceCount >= 16 || bb.seedCount >= 64;
-        if (!shouldDeposit) return 'failure';
-
+    protected findChest(bot: Bot, bb: FarmingBlackboard): Vec3 | null {
         // Prefer farm chest, fall back to nearby chests
-        let chestPos: Vec3 | null = bb.farmChest;
-        if (!chestPos && bb.nearbyChests.length > 0 && bb.nearbyChests[0]) {
-            chestPos = bb.nearbyChests[0].position;
+        if (bb.farmChest) return bb.farmChest;
+        if (bb.nearbyChests.length > 0 && bb.nearbyChests[0]) {
+            return bb.nearbyChests[0].position;
         }
-        if (!chestPos) return 'failure';
+        return null;
+    }
 
-        const chestBlock = bot.blockAt(chestPos);
-        if (!chestBlock || chestBlock.name !== 'chest') {
-            // Chest was destroyed, clear the POI
-            if (bb.farmChest) {
-                bb.log?.debug(`[BT] Farm chest missing, clearing POI`);
-                bb.farmChest = null;
-            }
-            return 'failure';
-        }
-
-        bb.log?.debug(`[BT] Depositing items at farm chest ${chestPos}`);
-        bb.lastAction = 'deposit';
-
-        try {
-            const result = await smartPathfinderGoto(
-                bot,
-                new GoalLookAtBlock(chestPos, bot.world),
-                { timeoutMs: 15000 }
-            );
-            if (!result.success) {
-                bb.log?.debug(`[BT] Failed to reach deposit chest: ${result.failureReason}`);
-                return 'failure';
-            }
-            bot.pathfinder.stop();
-            await sleep(200);
-
-            const container = await bot.openContainer(chestBlock);
-
-            // Deposit all produce
-            const crops = ['wheat', 'carrot', 'potato', 'beetroot', 'poisonous_potato', 'melon_slice'];
-            for (const item of bot.inventory.items()) {
-                if (crops.includes(item.name)) {
-                    try {
-                        await container.deposit(item.type, null, item.count);
-                    } catch { /* ignore if chest full */ }
-                }
-            }
-
-            // Deposit excess seeds (keep 32 for planting)
-            const seedTypes = ['wheat_seeds', 'beetroot_seeds', 'carrot', 'potato'];
-            for (const seedType of seedTypes) {
-                const seedItems = bot.inventory.items().filter(i => i.name === seedType);
-                const totalSeeds = seedItems.reduce((sum, i) => sum + i.count, 0);
-                if (totalSeeds > 32) {
-                    const toDeposit = totalSeeds - 32;
-                    for (const item of seedItems) {
-                        if (toDeposit <= 0) break;
-                        const amount = Math.min(item.count, toDeposit);
-                        try {
-                            await container.deposit(item.type, null, amount);
-                        } catch { /* ignore if chest full */ }
-                    }
-                }
-            }
-
-            container.close();
-            return 'success';
-        } catch (err) {
-            bb.log?.debug(`[BT] Failed to deposit: ${err}`);
-            return 'failure';
+    protected override onChestMissing(bb: FarmingBlackboard, chestPos: Vec3): void {
+        // Clear farm chest POI if it was destroyed
+        if (bb.farmChest && bb.farmChest.equals(chestPos)) {
+            bb.log?.debug(`[Farmer] Farm chest missing, clearing POI`);
+            bb.farmChest = null;
         }
     }
 }

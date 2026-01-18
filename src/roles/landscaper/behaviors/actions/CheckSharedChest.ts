@@ -1,137 +1,77 @@
 import type { Bot } from 'mineflayer';
+import { Vec3 } from 'vec3';
 import type { LandscaperBlackboard } from '../../LandscaperBlackboard';
-import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
-import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
-
-const { GoalNear } = goals;
-
-function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
+import { BaseCheckChest } from '../../../../shared/actions';
 
 /**
- * CheckSharedChest - Go to the shared chest and withdraw logs/planks for tool crafting
+ * CheckSharedChest - Check shared chest for logs/planks for tool crafting.
+ *
+ * Landscaper-specific behavior:
+ * - Checks when needs tools and doesn't have enough logs/planks
+ * - Withdraws logs (priority 1), planks (priority 2, if no logs)
+ * - Updates blackboard counts after withdrawal
+ * - Requests logs from lumberjack if chest is empty
  */
-export class CheckSharedChest implements BehaviorNode {
-    name = 'CheckSharedChest';
+export class CheckSharedChest extends BaseCheckChest<LandscaperBlackboard> {
+    constructor() {
+        super({
+            withdrawalPriorities: [
+                { pattern: '_log', maxAmount: 4 },
+                { pattern: '_planks', maxAmount: 8, onlyIfPreviousEmpty: true },
+            ],
+            roleLabel: 'Landscaper',
+            lastActionCheck: 'check_chest',
+            postPathfindSleepMs: 200,
+            postOpenSleepMs: 300,
+            betweenWithdrawSleepMs: 100,
+        });
+    }
 
-    async tick(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
-        // Already have enough materials
-        if (bb.logCount >= 2 || bb.plankCount >= 7) {
-            return 'failure';
-        }
+    protected hasSufficientMaterials(bb: LandscaperBlackboard): boolean {
+        // Have enough if we have 2+ logs or 7+ planks
+        return bb.logCount >= 2 || bb.plankCount >= 7;
+    }
 
-        // Find a chest to check - prefer shared chest, fall back to nearby chests
-        let chestBlock = null;
-
+    protected findChest(bot: Bot, bb: LandscaperBlackboard): Vec3 | null {
+        // Prefer shared chest
         if (bb.sharedChest) {
-            chestBlock = bot.blockAt(bb.sharedChest);
-            if (!chestBlock || !['chest', 'barrel'].includes(chestBlock.name)) {
-                bb.log?.debug(`[Landscaper] Shared chest at ${bb.sharedChest} no longer exists`);
-                chestBlock = null;
+            const block = bot.blockAt(bb.sharedChest);
+            if (block && ['chest', 'barrel'].includes(block.name)) {
+                return bb.sharedChest;
             }
+            bb.log?.debug(`[Landscaper] Shared chest at ${bb.sharedChest} no longer exists`);
         }
 
-        // Try nearby chests as fallback
-        if (!chestBlock && bb.nearbyChests.length > 0) {
-            chestBlock = bb.nearbyChests[0];
-            bb.log?.debug(`[Landscaper] Using nearby chest at ${chestBlock?.position}`);
+        // Fall back to nearby chests
+        if (bb.nearbyChests.length > 0 && bb.nearbyChests[0]) {
+            return bb.nearbyChests[0].position;
         }
 
-        if (!chestBlock) {
-            bb.log?.debug('[Landscaper] No chest available');
-            return 'failure';
-        }
+        return null;
+    }
 
-        bb.lastAction = 'check_chest';
-        const chestPos = chestBlock.position;
+    protected override onWithdrawalComplete(
+        bot: Bot,
+        bb: LandscaperBlackboard,
+        withdrawnByPattern: Map<string, number>
+    ): void {
+        // Update blackboard counts from inventory
+        const inv = bot.inventory.items();
+        bb.logCount = inv.filter(i => i.name.includes('_log')).reduce((s, i) => s + i.count, 0);
+        bb.plankCount = inv.filter(i => i.name.endsWith('_planks')).reduce((s, i) => s + i.count, 0);
 
-        try {
-            // Navigate to chest
-            bb.log?.debug(`[Landscaper] Going to chest at ${chestPos}`);
-            const result = await smartPathfinderGoto(
-                bot,
-                new GoalNear(chestPos.x, chestPos.y, chestPos.z, 2),
-                { timeoutMs: 15000 }
-            );
-            if (!result.success) {
-                bb.log?.debug(`[Landscaper] Failed to reach chest: ${result.failureReason}`);
-                return 'failure';
-            }
-            await sleep(200);
+        bb.log?.debug(
+            `[Landscaper] Retrieved materials from chest - logs: ${bb.logCount}, planks: ${bb.plankCount}`
+        );
+    }
 
-            // Re-fetch block in case it changed
-            const currentChestBlock = bot.blockAt(chestPos);
-            if (!currentChestBlock || !['chest', 'barrel'].includes(currentChestBlock.name)) {
-                bb.log?.debug(`[Landscaper] Chest at ${chestPos} disappeared`);
-                return 'failure';
-            }
+    protected override onChestEmpty(bot: Bot, bb: LandscaperBlackboard): void {
+        bb.log?.debug(`[Landscaper] Chest had no logs or planks available`);
 
-            // Open chest
-            const chest = await bot.openContainer(currentChestBlock);
-            await sleep(300);
-
-            // Look for logs first, then planks
-            let withdrawnLogs = 0;
-            let withdrawnPlanks = 0;
-
-            // Withdraw logs (prefer logs since they convert to more planks)
-            for (const item of chest.containerItems()) {
-                if (item.name.includes('_log') && withdrawnLogs < 4) {
-                    const toWithdraw = Math.min(item.count, 4 - withdrawnLogs);
-                    try {
-                        await chest.withdraw(item.type, null, toWithdraw);
-                        withdrawnLogs += toWithdraw;
-                        bb.log?.debug(`[Landscaper] Withdrew ${toWithdraw} ${item.name} from chest`);
-                        await sleep(100);
-                    } catch (err) {
-                        bb.log?.warn({ err, item: item.name }, 'Failed to withdraw item');
-                    }
-                }
-            }
-
-            // If we didn't get enough logs, try planks
-            if (withdrawnLogs < 2) {
-                for (const item of chest.containerItems()) {
-                    if (item.name.endsWith('_planks') && withdrawnPlanks < 8) {
-                        const toWithdraw = Math.min(item.count, 8 - withdrawnPlanks);
-                        try {
-                            await chest.withdraw(item.type, null, toWithdraw);
-                            withdrawnPlanks += toWithdraw;
-                            bb.log?.debug(`[Landscaper] Withdrew ${toWithdraw} ${item.name} from chest`);
-                            await sleep(100);
-                        } catch (err) {
-                            bb.log?.warn({ err, item: item.name }, 'Failed to withdraw item');
-                        }
-                    }
-                }
-            }
-
-            // Close chest
-            chest.close();
-            await sleep(100);
-
-            // Update blackboard counts
-            const inv = bot.inventory.items();
-            bb.logCount = inv.filter(i => i.name.includes('_log')).reduce((s, i) => s + i.count, 0);
-            bb.plankCount = inv.filter(i => i.name.endsWith('_planks')).reduce((s, i) => s + i.count, 0);
-
-            if (withdrawnLogs > 0 || withdrawnPlanks > 0) {
-                bb.log?.debug(`[Landscaper] Retrieved materials from chest - logs: ${bb.logCount}, planks: ${bb.plankCount}`);
-                return 'success';
-            } else {
-                // No materials in chest - request from lumberjack
-                bb.log?.debug(`[Landscaper] Chest had no logs or planks available`);
-                if (bb.villageChat && !bb.villageChat.hasPendingRequestFor('log')) {
-                    bb.log?.debug('[Landscaper] Requesting 2 logs from lumberjack');
-                    bb.villageChat.requestResource('log', 2);
-                }
-                return 'failure';
-            }
-        } catch (err) {
-            bb.log?.warn({ err }, 'Failed to check shared chest');
-            return 'failure';
+        // Request logs from lumberjack if not already requested
+        if (bb.villageChat && !bb.villageChat.hasPendingRequestFor('log')) {
+            bb.log?.debug('[Landscaper] Requesting 2 logs from lumberjack');
+            bb.villageChat.requestResource('log', 2);
         }
     }
 }

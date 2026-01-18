@@ -1,135 +1,66 @@
 import type { Bot } from 'mineflayer';
+import { Vec3 } from 'vec3';
 import type { FarmingBlackboard } from '../../Blackboard';
-import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
-import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
-
-const { GoalLookAtBlock } = goals;
-
-function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
+import { BaseCheckChest } from '../../../../shared/actions';
 
 /**
- * CheckSharedChest - Check shared chest for materials and withdraw them
+ * CheckSharedChest - Check shared chest for materials and withdraw them.
  *
- * Priority order for withdrawal:
- * 1. Logs (most efficient - 1 log = 4 planks)
- * 2. Planks (if no logs available)
- * 3. Sticks (if no planks available)
+ * Farmer-specific behavior:
+ * - Only checks when needs tools and doesn't have enough materials
+ * - Withdraws logs (priority 1), planks (priority 2), sticks (priority 3)
+ * - Uses village chat shared chest or finds chest near farm center
  */
-export class CheckSharedChest implements BehaviorNode {
-    name = 'CheckSharedChest';
+export class CheckSharedChest extends BaseCheckChest<FarmingBlackboard> {
+    constructor() {
+        super({
+            withdrawalPriorities: [
+                { pattern: '_log', maxAmount: 4 },
+                { pattern: '_planks', maxAmount: 8, onlyIfPreviousEmpty: true },
+                { pattern: 'stick', maxAmount: 8 },
+            ],
+            roleLabel: 'Farmer',
+            lastActionCheck: 'check_shared_chest',
+            postPathfindSleepMs: 200,
+            postOpenSleepMs: 100,
+            betweenWithdrawSleepMs: 100,
+        });
+    }
 
-    async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
-        // Only check if we need tools
-        if (!bb.needsTools) return 'failure';
+    protected hasSufficientMaterials(bb: FarmingBlackboard): boolean {
+        // Skip if we don't need tools
+        if (!bb.needsTools) return true;
 
-        // Check if we have enough materials to craft a hoe
-        const hasEnoughForHoe = (
-            (bb.stickCount >= 2 && bb.plankCount >= 2) ||  // Direct materials
-            bb.logCount >= 2  // 2 logs = 8 planks = enough for sticks + hoe
+        // Check if we have enough materials to craft a hoe:
+        // Need: 2 planks (head) + 2 sticks (handle)
+        // Or: 2 logs (= 8 planks = enough for sticks + hoe)
+        return (
+            (bb.stickCount >= 2 && bb.plankCount >= 2) ||
+            bb.logCount >= 2
         );
-        if (hasEnoughForHoe) return 'failure';
+    }
 
-        // Get shared chest location from chat or nearby chests
-        let sharedChest = bb.villageChat?.getSharedChest();
+    protected findChest(bot: Bot, bb: FarmingBlackboard): Vec3 | null {
+        // Try village chat shared chest first
+        const sharedChest = bb.villageChat?.getSharedChest();
+        if (sharedChest) return sharedChest;
 
-        if (!sharedChest) {
-            // Look for a chest near farm center
-            if (bb.nearbyChests.length > 0 && bb.farmCenter) {
-                // Find chest closest to farm center
-                const sortedChests = [...bb.nearbyChests].sort((a, b) =>
-                    a.position.distanceTo(bb.farmCenter!) - b.position.distanceTo(bb.farmCenter!)
-                );
-                const chest = sortedChests[0];
-                if (chest) {
-                    sharedChest = chest.position;
-                    if (bb.villageChat) {
-                        bb.villageChat.setSharedChest(chest.position);
-                        bb.villageChat.announceSharedChest(chest.position);
-                    }
-                }
-            }
-            if (!sharedChest) return 'failure';
-        }
-
-        const chest = bot.blockAt(sharedChest);
-        if (!chest || !['chest', 'barrel'].includes(chest.name)) {
-            return 'failure';
-        }
-
-        bb.lastAction = 'check_shared_chest';
-        bb.log?.debug('[Farmer] Checking shared chest for materials...');
-
-        try {
-            const result = await smartPathfinderGoto(
-                bot,
-                new GoalLookAtBlock(chest.position, bot.world, { reach: 4 }),
-                { timeoutMs: 15000 }
+        // Look for a chest near farm center
+        if (bb.nearbyChests.length > 0 && bb.farmCenter) {
+            const sortedChests = [...bb.nearbyChests].sort((a, b) =>
+                a.position.distanceTo(bb.farmCenter!) - b.position.distanceTo(bb.farmCenter!)
             );
-            if (!result.success) {
-                bb.log?.debug(`[Farmer] Failed to reach shared chest: ${result.failureReason}`);
-                return 'failure';
-            }
-
-            const chestWindow = await bot.openContainer(chest);
-            await sleep(100);
-
-            const chestItems = chestWindow.containerItems();
-            let withdrew = false;
-
-            // Priority 1: Withdraw logs (most efficient - 1 log = 4 planks)
-            // Only withdraw if we need more materials
-            if (bb.logCount < 2) {
-                const logItem = chestItems.find(i => i.name.includes('_log'));
-                if (logItem) {
-                    const toWithdraw = Math.min(logItem.count, 4); // 4 logs = 16 planks
-                    try {
-                        await chestWindow.withdraw(logItem.type, null, toWithdraw);
-                        bb.log?.debug(`[Farmer] Withdrew ${toWithdraw} logs from shared chest`);
-                        withdrew = true;
-                    } catch (err) {
-                        bb.log?.debug(`[Farmer] Failed to withdraw logs: ${err}`);
-                    }
+            const chest = sortedChests[0];
+            if (chest) {
+                // Register as shared chest
+                if (bb.villageChat) {
+                    bb.villageChat.setSharedChest(chest.position);
+                    bb.villageChat.announceSharedChest(chest.position);
                 }
+                return chest.position;
             }
-
-            // Priority 2: Withdraw planks if no logs found and we need planks
-            if (!withdrew && bb.plankCount < 4) {
-                const plankItem = chestItems.find(i => i.name.endsWith('_planks'));
-                if (plankItem) {
-                    const toWithdraw = Math.min(plankItem.count, 8);
-                    try {
-                        await chestWindow.withdraw(plankItem.type, null, toWithdraw);
-                        bb.log?.debug(`[Farmer] Withdrew ${toWithdraw} planks from shared chest`);
-                        withdrew = true;
-                    } catch (err) {
-                        bb.log?.debug(`[Farmer] Failed to withdraw planks: ${err}`);
-                    }
-                }
-            }
-
-            // Priority 3: Withdraw sticks if needed
-            if (bb.stickCount < 2) {
-                const stickItem = chestItems.find(i => i.name === 'stick');
-                if (stickItem) {
-                    const toWithdraw = Math.min(stickItem.count, 8);
-                    try {
-                        await chestWindow.withdraw(stickItem.type, null, toWithdraw);
-                        bb.log?.debug(`[Farmer] Withdrew ${toWithdraw} sticks from shared chest`);
-                        withdrew = true;
-                    } catch (err) {
-                        bb.log?.debug(`[Farmer] Failed to withdraw sticks: ${err}`);
-                    }
-                }
-            }
-
-            chestWindow.close();
-            return withdrew ? 'success' : 'failure';
-        } catch (error) {
-            bb.log?.warn({ err: error }, 'Error checking shared chest');
-            return 'failure';
         }
+
+        return null;
     }
 }
