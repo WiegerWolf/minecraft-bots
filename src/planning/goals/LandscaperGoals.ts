@@ -235,6 +235,50 @@ export class CheckKnownFarmsGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Craft wooden slabs for pathfinding scaffolding.
+ * LOW priority - slabs help navigation but aren't critical.
+ *
+ * Wooden slabs are used by the pathfinder for pillaring and bridging.
+ * They're preferred over dirt (needed for terraforming) and cobblestone
+ * (hard to break, blocks other bots).
+ */
+export class CraftSlabsGoal extends BaseGoal {
+  name = 'CraftSlabs';
+  description = 'Craft wooden slabs for navigation';
+
+  conditions = [
+    numericGoalCondition('inv.slabs', v => v >= 16, 'has enough slabs'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const slabCount = ws.getNumber('inv.slabs');
+    const plankCount = ws.getNumber('inv.planks');
+
+    // Already have enough slabs
+    if (slabCount >= 16) return 0;
+
+    // Need planks to craft (3 planks -> 6 slabs)
+    if (plankCount < 3) return 0;
+
+    // Don't craft if we're busy with terraform work
+    const hasPendingRequest = ws.getBool('has.pendingTerraformRequest');
+    const terraformActive = ws.getBool('terraform.active');
+    if (hasPendingRequest || terraformActive) return 0;
+
+    // Low priority - do this when idle
+    // Higher priority when we have more planks (might as well use them)
+    const urgency = Math.min(plankCount / 12, 1); // Max at 12 planks
+    return 20 + urgency * 15; // Range: 20-35
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const slabCount = ws.getNumber('inv.slabs');
+    const plankCount = ws.getNumber('inv.planks');
+    return slabCount < 16 && plankCount >= 3;
+  }
+}
+
+/**
  * Goal: Gather dirt proactively when idle.
  * LOW-MEDIUM priority - better than idling, ensures readiness.
  *
@@ -329,6 +373,7 @@ export function createLandscaperGoals(): BaseGoal[] {
     new DepositItemsGoal(),
     new CollectDropsGoal(),
     new GatherDirtGoal(),         // Proactive dirt gathering when idle
+    new CraftSlabsGoal(),         // Craft slabs for navigation scaffolding
     new ExploreGoal(),            // Always last - lowest priority fallback
   ];
 }

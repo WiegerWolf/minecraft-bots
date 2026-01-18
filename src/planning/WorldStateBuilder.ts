@@ -153,6 +153,8 @@ export class WorldStateBuilder {
     // Inventory
     ws.set('inv.dirt', bb.dirtCount);
     ws.set('inv.cobblestone', bb.cobblestoneCount);
+    ws.set('inv.planks', bb.plankCount);
+    ws.set('inv.slabs', bb.slabCount);
 
     // Equipment
     ws.set('has.shovel', bb.hasShovel);

@@ -36,6 +36,7 @@ export interface LandscaperBlackboard {
     logCount: number;
     plankCount: number;
     stickCount: number;
+    slabCount: number;  // Wooden slabs for pathfinding scaffolding
     emptySlots: number;
 
     // Strategic state (persists across ticks)
@@ -91,6 +92,7 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
         logCount: 0,
         plankCount: 0,
         stickCount: 0,
+        slabCount: 0,
         emptySlots: 36,
 
         villageCenter: null,
@@ -141,6 +143,7 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
     bb.logCount = inv.filter(i => i.name.includes('_log')).reduce((s, i) => s + i.count, 0);
     bb.plankCount = inv.filter(i => i.name.endsWith('_planks')).reduce((s, i) => s + i.count, 0);
     bb.stickCount = inv.filter(i => i.name === 'stick').reduce((s, i) => s + i.count, 0);
+    bb.slabCount = inv.filter(i => i.name.endsWith('_slab')).reduce((s, i) => s + i.count, 0);
 
     // ═══════════════════════════════════════════════
     // VILLAGE STATE (from chat)

@@ -48,10 +48,27 @@ export class GOAPLandscaperRole extends GOAPRole {
   }
 
   override start(bot: Bot, options?: any): void {
-    // Configure pathfinder to allow digging
+    // Configure pathfinder to allow digging and limited scaffolding
+    // Landscapers need to conserve DIRT for terraforming, but can use cobblestone for navigation
     const movements = new Movements(bot);
     movements.canDig = true;
     movements.digCost = 5; // Lower dig cost since digging is our job
+    movements.allowParkour = true;
+    movements.allowSprinting = true;
+
+    // Only allow wooden slabs for scaffolding - preserve dirt for terraforming
+    // Wooden slabs are ideal: easy to break, logs are abundant, less obstructive
+    const mcData = require('minecraft-data')(bot.version);
+    const woodenSlabTypes = [
+      'oak_slab', 'spruce_slab', 'birch_slab', 'jungle_slab',
+      'acacia_slab', 'dark_oak_slab', 'mangrove_slab', 'cherry_slab',
+      'bamboo_slab', 'crimson_slab', 'warped_slab'
+    ];
+    const slabIds = woodenSlabTypes
+      .map(name => mcData.blocksByName[name]?.id)
+      .filter((id): id is number => id !== undefined);
+    movements.scafoldingBlocks = slabIds;
+
     bot.pathfinder.setMovements(movements);
 
     this.log?.info('Starting GOAP landscaper bot');

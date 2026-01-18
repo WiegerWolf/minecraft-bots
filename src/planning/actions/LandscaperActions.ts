@@ -14,6 +14,7 @@ import {
   StudySpawnSigns,
   CheckFarmForTerraformNeeds,
   GatherDirt,
+  CraftSlabs,
 } from '../../roles/landscaper/behaviors/actions';
 
 /**
@@ -430,6 +431,34 @@ export class GatherDirtAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Craft wooden slabs for navigation scaffolding
+ */
+export class CraftSlabsAction extends BaseGOAPAction {
+  name = 'CraftSlabs';
+  private impl = new CraftSlabs();
+
+  preconditions = [
+    numericPrecondition('inv.planks', v => v >= 3, 'has planks for slabs'),
+    numericPrecondition('inv.slabs', v => v < 16, 'needs more slabs'),
+  ];
+
+  effects = [
+    // 3 planks -> 6 slabs
+    incrementEffect('inv.slabs', 6, 'crafted slabs'),
+    incrementEffect('inv.planks', -3, 'used planks'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    return 2.0;
+  }
+
+  override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * Create all landscaper actions for the planner.
  */
 export function createLandscaperActions(): BaseGOAPAction[] {
@@ -445,6 +474,7 @@ export function createLandscaperActions(): BaseGOAPAction[] {
     new DepositItemsAction(),
     new CheckSharedChestAction(),
     new GatherDirtAction(),
+    new CraftSlabsAction(),
     new ExploreAction(),
   ];
 }
