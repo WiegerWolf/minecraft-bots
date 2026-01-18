@@ -293,10 +293,16 @@ export class ReadUnknownSignGoal extends BaseGoal {
 
 /**
  * Goal: Write knowledge signs at spawn to share discoveries.
- * Medium priority - after core farming work but before exploration.
+ * HIGH PRIORITY - sharing farm locations enables other farmers and landscapers.
  *
  * When the farmer establishes a farm center, it queues a FARM sign write.
- * This persists the knowledge for other bots and future restarts.
+ * This persists the knowledge for:
+ * - Other farmers (can start farming at known locations)
+ * - Landscapers (know where to terraform 9x9 farm areas)
+ * - Future restarts (bots remember discovered resources)
+ *
+ * Priority is high (85-120) to ensure signs are written promptly after
+ * establishing a farm, before getting distracted by routine farming tasks.
  */
 export class WriteKnowledgeSignGoal extends BaseGoal {
   name = 'WriteKnowledgeSign';
@@ -315,17 +321,17 @@ export class WriteKnowledgeSignGoal extends BaseGoal {
     const canCraftSign = ws.getBool('derived.canCraftSign');
     const hasStorage = ws.getBool('derived.hasStorageAccess');
 
-    // Higher priority if we already have a sign ready
-    if (hasSign) return 65;
+    // VERY HIGH priority if we already have a sign ready - go write it now!
+    if (hasSign) return 120;
 
-    // Medium priority if we can craft
-    if (canCraftSign) return 55;
+    // HIGH priority if we can craft - do it soon
+    if (canCraftSign) return 105;
 
-    // Lower priority if we need to get materials from chest
-    if (hasStorage) return 45;
+    // MODERATE-HIGH priority if we can get materials from chest
+    if (hasStorage) return 95;
 
-    // Low priority if we need to request materials
-    return 35;
+    // MODERATE priority if we need to request materials from lumberjack
+    return 85;
   }
 
   override isValid(ws: WorldState): boolean {
