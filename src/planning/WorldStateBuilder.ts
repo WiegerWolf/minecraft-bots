@@ -80,7 +80,10 @@ export class WorldStateBuilder {
     ws.set('trade.inTrade', bb.activeTrade !== null);
     ws.set('trade.tradeableCount', bb.tradeableItemCount);
     ws.set('trade.pendingOffers', bb.pendingTradeOffers.length);
-    ws.set('trade.onCooldown', Date.now() - bb.lastOfferTime < 30000);
+    // Don't mark as cooldown if we're actively offering - need to continue the action
+    const tradeStatus = bb.activeTrade?.status ?? 'idle';
+    const isActivelyOffering = tradeStatus === 'offering';
+    ws.set('trade.onCooldown', !isActivelyOffering && Date.now() - bb.lastOfferTime < 30000);
 
     // Tree harvesting state (used by farming and lumberjack roles)
     if ('currentTreeHarvest' in bb && bb.currentTreeHarvest) {

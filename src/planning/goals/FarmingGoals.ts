@@ -462,11 +462,13 @@ export class BroadcastTradeOfferGoal extends BaseGoal {
   name = 'BroadcastTradeOffer';
   description = 'Offer unwanted items for trade';
 
+  // Goal is satisfied when offer process has completed (accepted/done)
+  // NOT when idle - idle means we haven't started yet
   conditions = [
     {
       key: 'trade.status',
-      check: (value: any) => value === 'done' || value === 'idle' || !value,
-      description: 'offer completed or idle',
+      check: (value: any) => value === 'done' || value === 'accepted',
+      description: 'offer accepted or completed',
     },
   ];
 

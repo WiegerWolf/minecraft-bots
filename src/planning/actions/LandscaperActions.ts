@@ -479,8 +479,10 @@ export class BroadcastTradeOfferAction extends BaseGOAPAction {
     booleanPrecondition('trade.onCooldown', false, 'not on cooldown'),
   ];
 
+  // Effect is 'accepted' because the action broadcasts, waits for responses,
+  // and accepts the best offer. 'offering' is just an intermediate state.
   effects = [
-    setEffect('trade.status', 'offering', 'started offering'),
+    setEffect('trade.status', 'accepted', 'trade accepted'),
   ];
 
   override getCost(ws: WorldState): number {
