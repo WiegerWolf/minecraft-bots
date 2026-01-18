@@ -83,6 +83,8 @@ export class TerraformArea implements BehaviorNode {
             blocksToRemove: [],
             waterBlocksToFill: [],  // Water blocks to seal BEFORE digging
             blocksToFill: [],       // Regular fills AFTER digging
+            pathBlocksToClear: [],  // Blocks to remove for 1-block path
+            pathBlocksToFill: [],   // Holes to fill in the path
             progress: 0
         };
         bb.lastAction = 'terraform_start';
@@ -102,6 +104,8 @@ export class TerraformArea implements BehaviorNode {
                 return this.digBlocks(bot, bb);
             case 'filling':
                 return this.fillBlocks(bot, bb);
+            case 'clearing_path':
+                return this.clearPath(bot, bb);  // Create 1-block path around farm
             case 'finishing':
                 return this.finishTask(bot, bb);
             case 'done':
@@ -212,23 +216,93 @@ export class TerraformArea implements BehaviorNode {
         task.blocksToFill = Array.from(uniqueFills.values()).sort((a, b) => a.y - b.y);
         task.blocksToRemove = blocksToRemove;
 
-        // Determine next phase - SEAL WATER FIRST, then dig, then fill remaining
+        // ═══════════════════════════════════════════════════════════════
+        // ANALYZE PATH RING (1-block walkable path around the 9x9 farm)
+        // Path is at radius 5 (immediately outside the 9x9 farm area)
+        // ═══════════════════════════════════════════════════════════════
+        const pathRadius = 5; // Just outside the 9x9 farm (radius 4)
+        const pathBlocksToClear: Vec3[] = [];
+        const pathBlocksToFill: Vec3[] = [];
+
+        // Scan the path ring (blocks at exactly distance 5 in X or Z)
+        for (let dx = -pathRadius; dx <= pathRadius; dx++) {
+            for (let dz = -pathRadius; dz <= pathRadius; dz++) {
+                // Only include blocks on the outer ring (not inside the farm)
+                const isOnPathRing = Math.abs(dx) === pathRadius || Math.abs(dz) === pathRadius;
+                if (!isOnPathRing) continue;
+
+                const x = centerX + dx;
+                const z = centerZ + dz;
+                const pathPos = new Vec3(x, targetY, z);
+                const pathBlock = bot.blockAt(pathPos);
+
+                // Clear any blocks above the path (2 blocks high for walking)
+                for (let y = targetY + 1; y <= targetY + 2; y++) {
+                    const abovePos = new Vec3(x, y, z);
+                    const aboveBlock = bot.blockAt(abovePos);
+                    if (!aboveBlock || aboveBlock.name === 'air') continue;
+
+                    // Remove solid blocks, leaves, logs, plants
+                    if (aboveBlock.boundingBox === 'block' ||
+                        aboveBlock.name.includes('leaves') || aboveBlock.name.includes('_log') ||
+                        aboveBlock.name.includes('grass') || aboveBlock.name.includes('fern') ||
+                        aboveBlock.name.includes('flower') || aboveBlock.name.includes('bush')) {
+                        pathBlocksToClear.push(abovePos.clone());
+                    }
+                }
+
+                // Check path surface: need solid walkable ground
+                if (!pathBlock || pathBlock.name === 'air') {
+                    // Hole in path - needs filling
+                    pathBlocksToFill.push(pathPos.clone());
+                } else if (pathBlock.name === 'water' || pathBlock.name === 'flowing_water') {
+                    // Water in path - needs filling
+                    pathBlocksToFill.push(pathPos.clone());
+                }
+                // If it's a solid block, path surface is OK
+
+                // Check below path surface - need support
+                const belowPath = new Vec3(x, targetY - 1, z);
+                const belowBlock = bot.blockAt(belowPath);
+                if (belowBlock && (belowBlock.name === 'air' || belowBlock.name === 'water' || belowBlock.name === 'flowing_water')) {
+                    pathBlocksToFill.push(belowPath.clone());
+                }
+            }
+        }
+
+        // Sort and dedupe path blocks
+        pathBlocksToClear.sort((a, b) => b.y - a.y); // Top-down for clearing
+
+        const uniquePathFills = new Map<string, Vec3>();
+        for (const pos of pathBlocksToFill) {
+            const key = `${pos.x},${pos.y},${pos.z}`;
+            if (!uniquePathFills.has(key)) {
+                uniquePathFills.set(key, pos);
+            }
+        }
+        task.pathBlocksToClear = pathBlocksToClear;
+        task.pathBlocksToFill = Array.from(uniquePathFills.values()).sort((a, b) => a.y - b.y);
+
+        // Determine next phase - SEAL WATER FIRST, then dig, then fill, then path
         if (task.waterBlocksToFill.length > 0) {
             task.phase = 'sealing_water';
         } else if (blocksToRemove.length > 0) {
             task.phase = 'digging';
         } else if (task.blocksToFill.length > 0) {
             task.phase = 'filling';
+        } else if (task.pathBlocksToClear.length > 0 || task.pathBlocksToFill.length > 0) {
+            task.phase = 'clearing_path';
         } else {
             task.phase = 'finishing';
         }
 
         // Log summary
         const totalWork = blocksToRemove.length + task.waterBlocksToFill.length + task.blocksToFill.length;
-        if (totalWork > 0) {
-            bb.log?.debug(`[Landscaper] Work needed: ${task.waterBlocksToFill.length} water to seal, ${blocksToRemove.length} to dig, ${task.blocksToFill.length} to fill`);
+        const pathWork = task.pathBlocksToClear.length + task.pathBlocksToFill.length;
+        if (totalWork > 0 || pathWork > 0) {
+            bb.log?.debug(`[Landscaper] Work needed: ${task.waterBlocksToFill.length} water to seal, ${blocksToRemove.length} to dig, ${task.blocksToFill.length} to fill, path: ${task.pathBlocksToClear.length} clear + ${task.pathBlocksToFill.length} fill`);
         } else {
-            bb.log?.debug(`[Landscaper] Area already suitable - 9x9 dirt with water center`);
+            bb.log?.debug(`[Landscaper] Area already suitable - 9x9 dirt with water center and path`);
         }
 
         return 'running';
@@ -480,7 +554,12 @@ export class TerraformArea implements BehaviorNode {
         }
 
         if (task.blocksToFill.length === 0) {
-            task.phase = 'finishing';
+            // Move to path clearing if there's work, otherwise finish
+            if (task.pathBlocksToClear.length > 0 || task.pathBlocksToFill.length > 0) {
+                task.phase = 'clearing_path';
+            } else {
+                task.phase = 'finishing';
+            }
             return 'running';
         }
 
@@ -753,6 +832,170 @@ export class TerraformArea implements BehaviorNode {
         return false;
     }
 
+    /**
+     * Clear and fill the 1-block path around the 9x9 farm.
+     * This ensures bots can walk around the farm perimeter.
+     */
+    private async clearPath(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
+        const task = bb.currentTerraformTask!;
+        bb.lastAction = 'terraform_clearing_path';
+
+        // First, clear any obstacles above the path
+        if (task.pathBlocksToClear.length > 0) {
+            const clearPos = task.pathBlocksToClear[0]!;
+            const block = bot.blockAt(clearPos);
+
+            // Check if already cleared
+            if (!block || block.name === 'air') {
+                task.pathBlocksToClear.shift();
+                task.progress++;
+                return 'running';
+            }
+
+            // Check inventory - stop if full
+            if (bb.inventoryFull) {
+                bb.log?.debug(`[Landscaper] Inventory full during path clearing, pausing`);
+                return 'failure'; // Let deposit action run
+            }
+
+            // Equip appropriate tool
+            const needPickaxe = HARD_BLOCKS.includes(block.name);
+            const toolType = needPickaxe ? 'pickaxe' : 'shovel';
+
+            const tool = bot.inventory.items().find(i => i.name.includes(toolType));
+            if (tool) {
+                try {
+                    await bot.equip(tool, 'hand');
+                } catch (error) {
+                    // Continue without tool
+                }
+            }
+
+            // Move close to the block
+            const dist = bot.entity.position.distanceTo(clearPos);
+            if (dist > 4) {
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(clearPos.x, clearPos.y, clearPos.z, 3),
+                    { timeoutMs: 15000 }
+                );
+                if (!result.success && dist > 6) {
+                    task.pathBlocksToClear.shift(); // Skip unreachable
+                    return 'running';
+                }
+            }
+
+            // Dig the block
+            try {
+                await bot.dig(block);
+                bb.log?.debug(`[Landscaper] Cleared path obstacle: ${block.name} at ${clearPos.floored()}`);
+                task.pathBlocksToClear.shift();
+                task.progress++;
+                await sleep(100);
+            } catch (error) {
+                bb.log?.debug(`[Landscaper] Path clear failed at ${clearPos.floored()}: ${error instanceof Error ? error.message : 'unknown'}`);
+                task.pathBlocksToClear.shift();
+            }
+
+            return 'running';
+        }
+
+        // Then, fill any holes in the path
+        if (task.pathBlocksToFill.length > 0) {
+            const fillPos = task.pathBlocksToFill[0]!;
+            const block = bot.blockAt(fillPos);
+
+            // Check if already filled
+            if (block && block.name !== 'air' && block.name !== 'water' && block.name !== 'flowing_water') {
+                task.pathBlocksToFill.shift();
+                task.progress++;
+                return 'running';
+            }
+
+            // Check if we have dirt
+            const dirtItem = bot.inventory.items().find(i => i.name === 'dirt');
+            if (!dirtItem) {
+                bb.log?.debug(`[Landscaper] Need dirt for path - gathering`);
+                const gathered = await this.gatherDirtFromNearby(bot, bb, task);
+                if (!gathered) {
+                    bb.log?.debug(`[Landscaper] No dirt found for path - skipping remaining fills`);
+                    task.pathBlocksToFill = [];
+                    task.phase = 'finishing';
+                    return 'running';
+                }
+                return 'running';
+            }
+
+            // Find a surface to place against
+            const adjacentOffsets = [
+                new Vec3(0, -1, 0), // below (preferred)
+                new Vec3(1, 0, 0), new Vec3(-1, 0, 0),
+                new Vec3(0, 0, 1), new Vec3(0, 0, -1),
+                new Vec3(0, 1, 0), // above
+            ];
+
+            let referenceBlock = null;
+            let faceVector = null;
+
+            for (const offset of adjacentOffsets) {
+                const checkPos = fillPos.plus(offset);
+                const checkBlock = bot.blockAt(checkPos);
+                if (checkBlock && checkBlock.boundingBox === 'block' &&
+                    checkBlock.name !== 'water' && checkBlock.name !== 'flowing_water') {
+                    referenceBlock = checkBlock;
+                    faceVector = offset.scaled(-1);
+                    break;
+                }
+            }
+
+            if (!referenceBlock) {
+                bb.log?.debug(`[Landscaper] No reference block for path fill at ${fillPos.floored()}, skipping`);
+                task.pathBlocksToFill.shift();
+                return 'running';
+            }
+
+            // Move close
+            const dist = bot.entity.position.distanceTo(fillPos);
+            if (dist > 4) {
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(fillPos.x, fillPos.y, fillPos.z, 3),
+                    { timeoutMs: 15000 }
+                );
+                if (!result.success) {
+                    // Try placing anyway if somewhat close
+                }
+            }
+
+            // Equip and place dirt
+            const dirtToPlace = bot.inventory.items().find(i => i.name === 'dirt');
+            if (!dirtToPlace) {
+                task.pathBlocksToFill.shift();
+                return 'running';
+            }
+
+            try {
+                await bot.equip(dirtToPlace, 'hand');
+                await sleep(50);
+                await bot.placeBlock(referenceBlock, faceVector!);
+                bb.log?.debug(`[Landscaper] Filled path at ${fillPos.floored()}`);
+                task.pathBlocksToFill.shift();
+                task.progress++;
+                await sleep(100);
+            } catch (error) {
+                bb.log?.debug(`[Landscaper] Path fill failed at ${fillPos.floored()}: ${error instanceof Error ? error.message : 'unknown'}`);
+                task.pathBlocksToFill.shift();
+            }
+
+            return 'running';
+        }
+
+        // Path complete, move to finishing
+        bb.log?.debug(`[Landscaper] Path clearing complete`);
+        task.phase = 'finishing';
+        return 'running';
+    }
+
     private async finishTask(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
         const task = bb.currentTerraformTask!;
         bb.lastAction = 'terraform_done';
@@ -762,7 +1005,7 @@ export class TerraformArea implements BehaviorNode {
             bb.villageChat.announceTerraformDone(task.waterCenter);
         }
 
-        bb.log?.debug(`[Landscaper] Terraform complete - 9x9 farm at ${task.waterCenter.floored()}`);
+        bb.log?.debug(`[Landscaper] Terraform complete - 9x9 farm with path at ${task.waterCenter.floored()}`);
 
         task.phase = 'done';
         bb.currentTerraformTask = null;

@@ -83,12 +83,21 @@ export class SetupFarmChest implements BehaviorNode {
     private async placeChest(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
         const farmCenter = bb.farmCenter!;
 
-        // Find a spot just outside the farm (6 blocks from center)
+        // Place chest on the path ring (radius 5 from center)
+        // The 9x9 farm has radius 4, and the landscaper clears a 1-block path at radius 5
+        // Prefer corners for better accessibility and to avoid blocking the path
+        const pathRadius = 5;
         const placements = [
-            farmCenter.offset(6, 0, 0),
-            farmCenter.offset(-6, 0, 0),
-            farmCenter.offset(0, 0, 6),
-            farmCenter.offset(0, 0, -6),
+            // Corners first (less likely to block walking path)
+            farmCenter.offset(pathRadius, 0, pathRadius),
+            farmCenter.offset(-pathRadius, 0, pathRadius),
+            farmCenter.offset(pathRadius, 0, -pathRadius),
+            farmCenter.offset(-pathRadius, 0, -pathRadius),
+            // Then cardinal directions
+            farmCenter.offset(pathRadius, 0, 0),
+            farmCenter.offset(-pathRadius, 0, 0),
+            farmCenter.offset(0, 0, pathRadius),
+            farmCenter.offset(0, 0, -pathRadius),
         ];
 
         for (const pos of placements) {
