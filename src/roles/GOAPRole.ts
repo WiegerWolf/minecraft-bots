@@ -238,9 +238,12 @@ export abstract class GOAPRole implements Role {
       }
 
       // PHASE 5: IDLE TRACKING
-      // Increment idle ticks when no action is executing (helps PatrolForest trigger)
+      // Only reset idle ticks on SUCCESSFUL action execution, not on failures.
+      // This ensures ExploreGoal triggers after repeated action failures,
+      // allowing the bot to move and find resources (grass, water) when stuck.
       if (this.blackboard && 'consecutiveIdleTicks' in this.blackboard) {
-        if (actionExecuted) {
+        const actionSucceeded = actionExecuted && this.executor && !this.executor.hadRecentFailures();
+        if (actionSucceeded) {
           this.blackboard.consecutiveIdleTicks = 0;
         } else {
           this.blackboard.consecutiveIdleTicks++;
