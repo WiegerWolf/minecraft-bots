@@ -336,6 +336,8 @@ export class GOAPPlanner {
       'derived.hasAnyTool', 'derived.hasStorageAccess', // Derived states
       'state.consecutiveIdleTicks',
       'state.farmsNeedingCheck', // Landscaper farm checking
+      'state.farmsWithIssues', // Issue-based farm maintenance
+      'state.farmMaintenanceNeeded', // Whether any farm needs work
       'pending.signWrites', // Sign knowledge persistence
       'trade.status', 'trade.inTrade', // Trade state (different statuses need different plans)
     ];

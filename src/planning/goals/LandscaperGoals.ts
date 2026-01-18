@@ -269,22 +269,22 @@ export class MaintainFarmsGoal extends BaseGoal {
   name = 'MaintainFarms';
   description = 'Actively maintain and repair known farms';
 
-  // Goal is satisfied when we've done a maintenance pass
-  // (tracked via lastFarmCheckTimes, but we use a simple boolean effect)
+  // Goal is satisfied when all farms with issues are repaired
+  // (issue-based, not time-based)
   conditions = [
     booleanGoalCondition('state.farmMaintenanceNeeded', false, 'farms maintained'),
   ];
 
   getUtility(ws: WorldState): number {
-    const knownFarmCount = ws.getNumber('state.knownFarmCount');
+    const farmsWithIssues = ws.getNumber('state.farmsWithIssues');
     const hasStudied = ws.getBool('has.studiedSigns');
     const maintenanceNeeded = ws.getBool('state.farmMaintenanceNeeded');
 
-    // No maintenance needed (all farms checked recently)
-    if (!maintenanceNeeded) return 0;
+    // No farms with actual issues detected
+    if (!maintenanceNeeded || farmsWithIssues === 0) return 0;
 
-    // No farms to maintain
-    if (!hasStudied || knownFarmCount === 0) return 0;
+    // Haven't studied signs yet
+    if (!hasStudied) return 0;
 
     // Don't maintain if we have pending terraform work (do that first)
     const hasPendingRequest = ws.getBool('has.pendingTerraformRequest');
@@ -294,21 +294,22 @@ export class MaintainFarmsGoal extends BaseGoal {
     const terraformActive = ws.getBool('terraform.active');
     if (terraformActive) return 0;
 
-    // Need dirt to fix issues
+    // Need dirt to fix issues (but can start with less now since we also dig)
     const dirtCount = ws.getNumber('inv.dirt');
-    if (dirtCount < 4) return 0;
+    if (dirtCount < 2) return 0;
 
-    // Medium-high priority - farms need regular care
-    // Scale with number of farms (more farms = more important)
-    return 55 + Math.min(knownFarmCount * 5, 20); // 55-75
+    // HIGH priority - farms with actual issues need immediate attention
+    // Higher than GatherDirt (30-50) and most other idle tasks
+    // Scale with number of farms with issues
+    return 80 + Math.min(farmsWithIssues * 10, 30); // 80-110
   }
 
   override isValid(ws: WorldState): boolean {
-    const knownFarmCount = ws.getNumber('state.knownFarmCount');
+    const farmsWithIssues = ws.getNumber('state.farmsWithIssues');
     const hasStudied = ws.getBool('has.studiedSigns');
     const dirtCount = ws.getNumber('inv.dirt');
     const maintenanceNeeded = ws.getBool('state.farmMaintenanceNeeded');
-    return maintenanceNeeded && hasStudied && knownFarmCount > 0 && dirtCount >= 4;
+    return maintenanceNeeded && hasStudied && farmsWithIssues > 0 && dirtCount >= 2;
   }
 }
 

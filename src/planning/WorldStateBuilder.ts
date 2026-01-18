@@ -203,16 +203,11 @@ export class WorldStateBuilder {
     ws.set('state.knownFarmCount', bb.knownFarms.length);
     ws.set('state.farmsNeedingCheck', bb.farmsNeedingCheck.length);
 
-    // Farm maintenance state
-    // Maintenance is needed if any farm hasn't been checked in 5 minutes
-    const now = Date.now();
-    const maintenanceInterval = 5 * 60 * 1000; // 5 minutes
-    const farmMaintenanceNeeded = bb.knownFarms.some(farmPos => {
-      const key = `${Math.floor(farmPos.x)},${Math.floor(farmPos.y)},${Math.floor(farmPos.z)}`;
-      const lastCheck = bb.lastFarmCheckTimes.get(key) || 0;
-      return (now - lastCheck) > maintenanceInterval;
-    });
+    // Farm maintenance state - ISSUE-BASED, not time-based
+    // Maintenance is needed if any farm has actual detected issues
+    const farmMaintenanceNeeded = bb.farmsWithIssues.length > 0;
     ws.set('state.farmMaintenanceNeeded', farmMaintenanceNeeded);
+    ws.set('state.farmsWithIssues', bb.farmsWithIssues.length);
   }
 
   /**

@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import type { LandscaperBlackboard } from '../../LandscaperBlackboard';
+import type { LandscaperBlackboard, FarmIssue } from '../../LandscaperBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
@@ -11,29 +11,25 @@ function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Farm structure:
- * - Top layer (Y): 9x9 dirt with single water source in center
- * - Bottom layer (Y-1): solid blocks (NO water)
- *
- * Common issues to fix:
- * - Stacked water (water at Y-1 under the water source) - fill lower one
- * - Holes in the farm surface - fill with dirt
- * - Water spreading into farm area - seal it
- */
-
-interface FarmIssue {
-    type: 'stacked_water' | 'hole' | 'spreading_water';
-    pos: Vec3;
-}
+// Blocks that need pickaxe
+const HARD_BLOCKS = ['stone', 'cobblestone', 'andesite', 'diorite', 'granite', 'sandstone'];
 
 /**
- * MaintainFarm - Proactively maintain and repair known farms.
+ * Farm structure (based on TerraformArea):
+ * - 9x9 area centered on water at targetY
+ * - All 80 surrounding blocks are dirt/grass/farmland
+ * - 2 blocks of clearance above the farm surface
+ * - 1-block walkable path around the farm at radius 5
+ * - Solid support below the farm surface
  *
- * This runs periodically to:
- * 1. Check each known farm for issues
- * 2. Fix small problems directly (no terraform request needed)
- * 3. Ensure farm structure is correct (2 blocks high, water only on top)
+ * Issue types handled:
+ * - stacked_water: Water below the center water source - fill with dirt
+ * - spreading_water: Water in farm area (not center) - fill with dirt
+ * - hole: Air/missing block in farm surface or support - fill with dirt
+ * - non_farmable: Stone/gravel/etc in farm surface - dig and replace with dirt
+ * - obstacle: Solid blocks above farm surface - dig to clear
+ * - path_hole: Air/water in path around farm - fill with dirt
+ * - path_obstacle: Solid blocks above path - dig to clear
  */
 export class MaintainFarm implements BehaviorNode {
     name = 'MaintainFarm';
@@ -43,8 +39,8 @@ export class MaintainFarm implements BehaviorNode {
     private currentFarmPos: Vec3 | null = null;
 
     async tick(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
-        // No known farms to maintain
-        if (bb.knownFarms.length === 0) {
+        // No farms with issues to maintain
+        if (bb.farmsWithIssues.length === 0) {
             return 'failure';
         }
 
@@ -53,27 +49,25 @@ export class MaintainFarm implements BehaviorNode {
             return this.fixNextIssue(bot, bb);
         }
 
-        // Check if it's time to visit a farm
-        // Rotate through farms, checking each every 5 minutes
-        const farmPos = bb.knownFarms[this.currentFarmIndex % bb.knownFarms.length]!;
-        const farmKey = `${Math.floor(farmPos.x)},${Math.floor(farmPos.y)},${Math.floor(farmPos.z)}`;
-        const lastCheck = bb.lastFarmCheckTimes.get(farmKey) || 0;
-        const timeSinceCheck = Date.now() - lastCheck;
+        // Pick a farm with issues (prioritize closest)
+        const sortedFarms = [...bb.farmsWithIssues].sort((a, b) =>
+            bot.entity.position.distanceTo(a) - bot.entity.position.distanceTo(b)
+        );
 
-        // Check farm every 5 minutes
-        if (timeSinceCheck < 5 * 60 * 1000) {
-            // Move to next farm
-            this.currentFarmIndex++;
-            if (this.currentFarmIndex >= bb.knownFarms.length) {
-                this.currentFarmIndex = 0;
-            }
-            return 'failure'; // Nothing to do right now
+        const farmPos = sortedFarms[0]!;
+        const farmKey = `${Math.floor(farmPos.x)},${Math.floor(farmPos.y)},${Math.floor(farmPos.z)}`;
+
+        // Get cached issues
+        const cached = bb.farmIssuesCache.get(farmKey);
+        if (!cached || cached.issues.length === 0) {
+            // No issues cached, skip
+            return 'failure';
         }
 
         // Move to the farm if far away
         const distToFarm = bot.entity.position.distanceTo(farmPos);
         if (distToFarm > 16) {
-            bb.log?.debug({ pos: farmPos.floored().toString() }, 'Moving to farm for maintenance check');
+            bb.log?.debug({ pos: farmPos.floored().toString() }, 'Moving to farm for maintenance');
             const result = await smartPathfinderGoto(
                 bot,
                 new GoalNear(farmPos.x, farmPos.y, farmPos.z, 8),
@@ -81,23 +75,15 @@ export class MaintainFarm implements BehaviorNode {
             );
             if (!result.success) {
                 bb.log?.warn({ pos: farmPos.floored().toString() }, 'Failed to reach farm for maintenance');
-                bb.lastFarmCheckTimes.set(farmKey, Date.now());
-                this.currentFarmIndex++;
+                // Invalidate cache so we don't keep trying
+                bb.farmIssuesCache.delete(farmKey);
                 return 'failure';
             }
         }
 
-        // Scan farm for issues
+        // Load issues from cache
         this.currentFarmPos = farmPos.clone();
-        this.issuesToFix = this.scanFarmForIssues(bot, farmPos);
-        bb.lastFarmCheckTimes.set(farmKey, Date.now());
-
-        if (this.issuesToFix.length === 0) {
-            bb.log?.debug({ pos: farmPos.floored().toString() }, 'Farm is in good condition');
-            this.currentFarmIndex++;
-            this.currentFarmPos = null;
-            return 'success';
-        }
+        this.issuesToFix = [...cached.issues]; // Clone the array
 
         bb.log?.info(
             { pos: farmPos.floored().toString(), issues: this.issuesToFix.length },
@@ -108,90 +94,143 @@ export class MaintainFarm implements BehaviorNode {
     }
 
     /**
-     * Scan a farm for maintenance issues.
-     * Farm structure should be:
-     * - Top layer (farmPos.y): 9x9 dirt with single water source in center
-     * - Bottom layer (farmPos.y - 1): solid blocks (NO water)
-     */
-    private scanFarmForIssues(bot: Bot, farmCenter: Vec3): FarmIssue[] {
-        const issues: FarmIssue[] = [];
-        const radius = 4; // 9x9 area
-        const centerX = Math.floor(farmCenter.x);
-        const centerY = Math.floor(farmCenter.y);
-        const centerZ = Math.floor(farmCenter.z);
-
-        for (let dx = -radius; dx <= radius; dx++) {
-            for (let dz = -radius; dz <= radius; dz++) {
-                const x = centerX + dx;
-                const z = centerZ + dz;
-
-                const topPos = new Vec3(x, centerY, z);
-                const bottomPos = new Vec3(x, centerY - 1, z);
-
-                const topBlock = bot.blockAt(topPos);
-                const bottomBlock = bot.blockAt(bottomPos);
-
-                const isCenter = dx === 0 && dz === 0;
-
-                // Check for stacked water (water below the center water source)
-                if (isCenter) {
-                    // Center should have water on top
-                    if (topBlock && (topBlock.name === 'water' || topBlock.name === 'flowing_water')) {
-                        // But should NOT have water below
-                        if (bottomBlock && (bottomBlock.name === 'water' || bottomBlock.name === 'flowing_water')) {
-                            issues.push({ type: 'stacked_water', pos: bottomPos.clone() });
-                        }
-                    }
-                    continue; // Don't check center for other issues
-                }
-
-                // Check top layer (should be farmable: dirt, grass, or farmland)
-                if (topBlock) {
-                    // Water spreading into farm area - needs sealing
-                    if (topBlock.name === 'water' || topBlock.name === 'flowing_water') {
-                        issues.push({ type: 'spreading_water', pos: topPos.clone() });
-                    }
-                    // Hole in farm surface
-                    else if (topBlock.name === 'air') {
-                        issues.push({ type: 'hole', pos: topPos.clone() });
-                    }
-                }
-
-                // Check bottom layer (should be solid, NOT water or air)
-                if (bottomBlock) {
-                    if (bottomBlock.name === 'water' || bottomBlock.name === 'flowing_water') {
-                        issues.push({ type: 'stacked_water', pos: bottomPos.clone() });
-                    } else if (bottomBlock.name === 'air') {
-                        issues.push({ type: 'hole', pos: bottomPos.clone() });
-                    }
-                }
-            }
-        }
-
-        // Sort: stacked water first (most important), then spreading water, then holes
-        // Also sort by Y (lower first for bottom-up filling)
-        issues.sort((a, b) => {
-            const typePriority = { 'stacked_water': 0, 'spreading_water': 1, 'hole': 2 };
-            const typeCompare = typePriority[a.type] - typePriority[b.type];
-            if (typeCompare !== 0) return typeCompare;
-            return a.pos.y - b.pos.y; // Fill from bottom up
-        });
-
-        return issues;
-    }
-
-    /**
      * Fix the next issue in the queue.
+     * Handles both filling (placing dirt) and digging (removing blocks).
      */
     private async fixNextIssue(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
         if (this.issuesToFix.length === 0) {
             bb.log?.debug({ pos: this.currentFarmPos?.floored().toString() }, 'All farm issues fixed');
+
+            // Clear the cache entry to trigger re-scan
+            if (this.currentFarmPos) {
+                const farmKey = `${Math.floor(this.currentFarmPos.x)},${Math.floor(this.currentFarmPos.y)},${Math.floor(this.currentFarmPos.z)}`;
+                bb.farmIssuesCache.delete(farmKey);
+            }
+
             this.currentFarmPos = null;
             this.currentFarmIndex++;
             return 'success';
         }
 
         const issue = this.issuesToFix[0]!;
+
+        // Determine if this is a digging or filling issue
+        const needsDigging = ['obstacle', 'path_obstacle', 'non_farmable'].includes(issue.type);
+
+        if (needsDigging) {
+            return this.digIssue(bot, bb, issue);
+        } else {
+            return this.fillIssue(bot, bb, issue);
+        }
+    }
+
+    /**
+     * Handle issues that require digging (obstacles, non-farmable blocks).
+     */
+    private async digIssue(bot: Bot, bb: LandscaperBlackboard, issue: FarmIssue): Promise<BehaviorStatus> {
+        const block = bot.blockAt(issue.pos);
+
+        // Check if already cleared
+        if (!block || block.name === 'air') {
+            // For non_farmable, we need to place dirt after digging
+            if (issue.type === 'non_farmable') {
+                // Convert to a hole issue to fill
+                issue.type = 'hole';
+                return this.fillIssue(bot, bb, issue);
+            }
+            this.issuesToFix.shift();
+            return 'running';
+        }
+
+        // Check inventory - stop if full
+        if (bb.inventoryFull) {
+            bb.log?.debug('Inventory full during farm maintenance, pausing');
+            return 'failure'; // Let deposit action run
+        }
+
+        // Equip appropriate tool
+        const needPickaxe = HARD_BLOCKS.includes(block.name);
+        const toolType = needPickaxe ? 'pickaxe' : 'shovel';
+
+        if (needPickaxe && !bb.hasPickaxe) {
+            bb.log?.debug(`Need pickaxe for ${block.name}`);
+            return 'failure';
+        }
+
+        if (!needPickaxe && !bb.hasShovel && !bb.hasPickaxe) {
+            bb.log?.debug(`Need shovel for ${block.name}`);
+            return 'failure';
+        }
+
+        const tool = bot.inventory.items().find(i => i.name.includes(toolType));
+        if (tool) {
+            try {
+                await bot.equip(tool, 'hand');
+            } catch (error) {
+                // Continue without tool
+            }
+        }
+
+        // Move close to the block
+        const dist = bot.entity.position.distanceTo(issue.pos);
+        if (dist > 4) {
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(issue.pos.x, issue.pos.y, issue.pos.z, 3),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success && dist > 6) {
+                bb.log?.warn({ pos: issue.pos.floored().toString() }, 'Cannot reach issue location');
+                this.issuesToFix.shift();
+                return 'running';
+            }
+        }
+
+        // Dig the block
+        try {
+            await bot.dig(block);
+
+            const issueNames: Record<FarmIssue['type'], string> = {
+                'obstacle': 'cleared obstacle',
+                'path_obstacle': 'cleared path obstacle',
+                'non_farmable': 'removed non-farmable block',
+                'stacked_water': 'dug',
+                'spreading_water': 'dug',
+                'hole': 'dug',
+                'path_hole': 'dug',
+            };
+            bb.log?.debug({ pos: issue.pos.floored().toString(), block: block.name }, `Farm maintenance: ${issueNames[issue.type]}`);
+
+            // For non_farmable, convert to hole issue to fill with dirt
+            if (issue.type === 'non_farmable') {
+                issue.type = 'hole';
+                // Don't shift - we'll fill it next
+            } else {
+                this.issuesToFix.shift();
+            }
+            await sleep(100);
+        } catch (error) {
+            bb.log?.debug(
+                { pos: issue.pos.floored().toString(), error: error instanceof Error ? error.message : 'unknown' },
+                'Failed to dig farm issue'
+            );
+            this.issuesToFix.shift();
+        }
+
+        return 'running';
+    }
+
+    /**
+     * Handle issues that require filling with dirt.
+     */
+    private async fillIssue(bot: Bot, bb: LandscaperBlackboard, issue: FarmIssue): Promise<BehaviorStatus> {
+        const block = bot.blockAt(issue.pos);
+
+        // Check if already filled (not air/water)
+        if (block && block.name !== 'air' && block.name !== 'water' && block.name !== 'flowing_water') {
+            this.issuesToFix.shift();
+            return 'running';
+        }
 
         // Check if we have dirt to place
         const dirtItem = bot.inventory.items().find(i => i.name === 'dirt');
@@ -255,10 +294,14 @@ export class MaintainFarm implements BehaviorNode {
             await sleep(50);
             await bot.placeBlock(referenceBlock, faceVector!);
 
-            const issueNames = {
+            const issueNames: Record<FarmIssue['type'], string> = {
                 'stacked_water': 'sealed stacked water',
                 'spreading_water': 'sealed spreading water',
-                'hole': 'filled hole'
+                'hole': 'filled hole',
+                'path_hole': 'filled path hole',
+                'non_farmable': 'replaced with dirt',
+                'obstacle': 'filled',
+                'path_obstacle': 'filled',
             };
             bb.log?.debug({ pos: issue.pos.floored().toString() }, `Farm maintenance: ${issueNames[issue.type]}`);
 

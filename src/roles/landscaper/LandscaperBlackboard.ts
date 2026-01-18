@@ -25,6 +25,19 @@ export interface TerraformTask {
     progress: number;
 }
 
+// Farm issue types matching TerraformArea's comprehensive checks
+export interface FarmIssue {
+    type: 'stacked_water' | 'spreading_water' | 'hole' | 'non_farmable' | 'obstacle' | 'path_hole' | 'path_obstacle';
+    pos: Vec3;
+}
+
+// Cached farm scan result
+export interface FarmScanResult {
+    farmPos: Vec3;
+    issues: FarmIssue[];
+    scanTime: number;
+}
+
 export interface LandscaperBlackboard {
     // Perception data (refreshed each tick)
     nearbyDrops: any[];
@@ -81,6 +94,10 @@ export interface LandscaperBlackboard {
     lastFarmCheckTimes: Map<string, number>; // Farm pos key -> last check timestamp
     farmsNeedingCheck: Vec3[];               // Farms that should be checked for terraform needs
 
+    // Issue-based farm maintenance (replaces time-based)
+    farmIssuesCache: Map<string, FarmScanResult>; // Farm pos key -> scan result
+    farmsWithIssues: Vec3[];                      // Farms that currently have detected issues
+
     // ═══════════════════════════════════════════════════════════════
     // TRADE STATE
     // ═══════════════════════════════════════════════════════════════
@@ -135,6 +152,10 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
         knownFarms: [],
         lastFarmCheckTimes: new Map(),
         farmsNeedingCheck: [],
+
+        // Issue-based farm maintenance
+        farmIssuesCache: new Map(),
+        farmsWithIssues: [],
 
         // Trade state
         tradeableItems: [],
@@ -252,7 +273,7 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
     const FARM_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes between checks of same farm
     // (reuses 'now' from above)
 
-    // Determine which known farms need checking
+    // Determine which known farms need checking (time-based for terraform checks)
     bb.farmsNeedingCheck = bb.knownFarms.filter(farmPos => {
         const key = `${Math.floor(farmPos.x)},${Math.floor(farmPos.y)},${Math.floor(farmPos.z)}`;
         const lastCheck = bb.lastFarmCheckTimes.get(key) || 0;
@@ -272,6 +293,12 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
 
         return true;
     });
+
+    // ═══════════════════════════════════════════════
+    // ISSUE-BASED FARM MAINTENANCE
+    // Scan nearby farms for actual issues (not time-based)
+    // ═══════════════════════════════════════════════
+    updateFarmIssuesCache(bot, bb);
 
     // ═══════════════════════════════════════════════
     // COMPUTED DECISIONS
@@ -346,4 +373,233 @@ export function getExplorationScore(bb: LandscaperBlackboard, pos: Vec3): number
     }
 
     return score;
+}
+
+// ═══════════════════════════════════════════════
+// COMPREHENSIVE FARM ISSUE DETECTION
+// Based on TerraformArea's farm structure requirements:
+// - 9x9 dirt/farmland area with water in center
+// - No obstacles above the farm (2 block clearance)
+// - 1-block walkable path around the farm (at radius 5)
+// - Solid support below the farm surface
+// ═══════════════════════════════════════════════
+
+// Blocks that are good for farm surface
+const FARMABLE_BLOCKS = ['dirt', 'grass_block', 'farmland'];
+
+// Blocks that block walking/farming
+const OBSTACLE_BLOCKS = ['stone', 'cobblestone', 'andesite', 'diorite', 'granite', 'sandstone', 'gravel', 'sand'];
+
+/**
+ * Scan a farm for ALL issues - comprehensive check based on TerraformArea logic.
+ * Returns a list of issues that need to be fixed to restore the farm to perfect condition.
+ */
+export function scanFarmForAllIssues(bot: Bot, farmCenter: Vec3): FarmIssue[] {
+    const issues: FarmIssue[] = [];
+    const radius = 4; // 9x9 area
+    const pathRadius = 5; // Path around the farm
+    const centerX = Math.floor(farmCenter.x);
+    const targetY = Math.floor(farmCenter.y);
+    const centerZ = Math.floor(farmCenter.z);
+
+    // ═══════════════════════════════════════════════
+    // SCAN THE 9x9 FARM AREA
+    // ═══════════════════════════════════════════════
+    for (let dx = -radius; dx <= radius; dx++) {
+        for (let dz = -radius; dz <= radius; dz++) {
+            const x = centerX + dx;
+            const z = centerZ + dz;
+            const isCenter = dx === 0 && dz === 0;
+
+            const topPos = new Vec3(x, targetY, z);
+            const bottomPos = new Vec3(x, targetY - 1, z);
+            const topBlock = bot.blockAt(topPos);
+            const bottomBlock = bot.blockAt(bottomPos);
+
+            // === CENTER WATER BLOCK ===
+            if (isCenter) {
+                // Center should have water on top
+                if (topBlock && (topBlock.name === 'water' || topBlock.name === 'flowing_water')) {
+                    // But should NOT have water below (stacked water)
+                    if (bottomBlock && (bottomBlock.name === 'water' || bottomBlock.name === 'flowing_water')) {
+                        issues.push({ type: 'stacked_water', pos: bottomPos.clone() });
+                    }
+                }
+                continue; // Don't check center for other issues
+            }
+
+            // === SURFACE LAYER (targetY) ===
+            if (topBlock) {
+                // Water spreading into farm area
+                if (topBlock.name === 'water' || topBlock.name === 'flowing_water') {
+                    issues.push({ type: 'spreading_water', pos: topPos.clone() });
+                }
+                // Hole in farm surface
+                else if (topBlock.name === 'air') {
+                    issues.push({ type: 'hole', pos: topPos.clone() });
+                }
+                // Non-farmable block (stone, gravel, etc.) - needs replacement
+                else if (!FARMABLE_BLOCKS.includes(topBlock.name)) {
+                    issues.push({ type: 'non_farmable', pos: topPos.clone() });
+                }
+            } else {
+                // No block at all (unloaded chunk?)
+                issues.push({ type: 'hole', pos: topPos.clone() });
+            }
+
+            // === SUPPORT LAYER (targetY - 1) ===
+            if (bottomBlock) {
+                if (bottomBlock.name === 'water' || bottomBlock.name === 'flowing_water') {
+                    issues.push({ type: 'stacked_water', pos: bottomPos.clone() });
+                } else if (bottomBlock.name === 'air') {
+                    issues.push({ type: 'hole', pos: bottomPos.clone() });
+                }
+            }
+
+            // === CLEARANCE ABOVE (2 blocks for walking/farming) ===
+            for (let y = targetY + 1; y <= targetY + 2; y++) {
+                const abovePos = new Vec3(x, y, z);
+                const aboveBlock = bot.blockAt(abovePos);
+                if (!aboveBlock || aboveBlock.name === 'air') continue;
+
+                // Solid blocks that need removal
+                if (aboveBlock.boundingBox === 'block' ||
+                    aboveBlock.name.includes('_log') || aboveBlock.name.includes('leaves') ||
+                    OBSTACLE_BLOCKS.includes(aboveBlock.name)) {
+                    issues.push({ type: 'obstacle', pos: abovePos.clone() });
+                }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    // SCAN THE PATH RING (1-block walkable path at radius 5)
+    // ═══════════════════════════════════════════════
+    for (let dx = -pathRadius; dx <= pathRadius; dx++) {
+        for (let dz = -pathRadius; dz <= pathRadius; dz++) {
+            // Only include blocks on the outer ring
+            const isOnPathRing = Math.abs(dx) === pathRadius || Math.abs(dz) === pathRadius;
+            if (!isOnPathRing) continue;
+
+            const x = centerX + dx;
+            const z = centerZ + dz;
+            const pathPos = new Vec3(x, targetY, z);
+            const pathBlock = bot.blockAt(pathPos);
+            const belowPath = new Vec3(x, targetY - 1, z);
+            const belowBlock = bot.blockAt(belowPath);
+
+            // === PATH SURFACE ===
+            if (!pathBlock || pathBlock.name === 'air') {
+                issues.push({ type: 'path_hole', pos: pathPos.clone() });
+            } else if (pathBlock.name === 'water' || pathBlock.name === 'flowing_water') {
+                issues.push({ type: 'path_hole', pos: pathPos.clone() });
+            }
+
+            // === PATH SUPPORT ===
+            if (belowBlock && (belowBlock.name === 'air' || belowBlock.name === 'water' || belowBlock.name === 'flowing_water')) {
+                issues.push({ type: 'path_hole', pos: belowPath.clone() });
+            }
+
+            // === PATH CLEARANCE (2 blocks for walking) ===
+            for (let y = targetY + 1; y <= targetY + 2; y++) {
+                const abovePos = new Vec3(x, y, z);
+                const aboveBlock = bot.blockAt(abovePos);
+                if (!aboveBlock || aboveBlock.name === 'air') continue;
+
+                // Solid obstacles blocking the path
+                if (aboveBlock.boundingBox === 'block' ||
+                    aboveBlock.name.includes('_log') || aboveBlock.name.includes('leaves')) {
+                    issues.push({ type: 'path_obstacle', pos: abovePos.clone() });
+                }
+            }
+        }
+    }
+
+    // Sort: water issues first (critical), then obstacles (dig), then holes (fill)
+    // Also sort by Y (lower first for bottom-up filling, higher first for top-down digging)
+    issues.sort((a, b) => {
+        const typePriority: Record<FarmIssue['type'], number> = {
+            'stacked_water': 0,
+            'spreading_water': 1,
+            'obstacle': 2,
+            'path_obstacle': 3,
+            'non_farmable': 4,
+            'hole': 5,
+            'path_hole': 6,
+        };
+        const typeCompare = typePriority[a.type] - typePriority[b.type];
+        if (typeCompare !== 0) return typeCompare;
+
+        // For digging (obstacles), go top-down
+        if (a.type === 'obstacle' || a.type === 'path_obstacle' || a.type === 'non_farmable') {
+            return b.pos.y - a.pos.y;
+        }
+        // For filling (holes, water), go bottom-up
+        return a.pos.y - b.pos.y;
+    });
+
+    return issues;
+}
+
+/**
+ * Check if a farm needs maintenance by scanning for actual issues.
+ * Returns true if there are any issues detected.
+ */
+export function farmNeedsMaintenance(bot: Bot, farmPos: Vec3): boolean {
+    const issues = scanFarmForAllIssues(bot, farmPos);
+    return issues.length > 0;
+}
+
+/**
+ * Update farm issues cache for farms that are close enough to scan.
+ * Only scans farms within chunk loading distance.
+ */
+export function updateFarmIssuesCache(bot: Bot, bb: LandscaperBlackboard): void {
+    const pos = bot.entity.position;
+    const SCAN_DISTANCE = 48; // Only scan farms we can see
+    const CACHE_TTL = 30 * 1000; // Re-scan every 30 seconds
+    const now = Date.now();
+
+    bb.farmsWithIssues = [];
+
+    for (const farmPos of bb.knownFarms) {
+        const dist = pos.distanceTo(farmPos);
+        const farmKey = `${Math.floor(farmPos.x)},${Math.floor(farmPos.y)},${Math.floor(farmPos.z)}`;
+
+        // Only scan farms within range
+        if (dist > SCAN_DISTANCE) {
+            // Keep old cache entry if we have one
+            const cached = bb.farmIssuesCache.get(farmKey);
+            if (cached && cached.issues.length > 0) {
+                bb.farmsWithIssues.push(farmPos);
+            }
+            continue;
+        }
+
+        // Check if we need to re-scan
+        const cached = bb.farmIssuesCache.get(farmKey);
+        if (cached && (now - cached.scanTime) < CACHE_TTL) {
+            // Use cached result
+            if (cached.issues.length > 0) {
+                bb.farmsWithIssues.push(farmPos);
+            }
+            continue;
+        }
+
+        // Scan the farm
+        const issues = scanFarmForAllIssues(bot, farmPos);
+        bb.farmIssuesCache.set(farmKey, {
+            farmPos: farmPos.clone(),
+            issues,
+            scanTime: now,
+        });
+
+        if (issues.length > 0) {
+            bb.farmsWithIssues.push(farmPos);
+            bb.log?.debug(
+                { pos: farmPos.floored().toString(), issueCount: issues.length },
+                'Farm has issues'
+            );
+        }
+    }
 }
