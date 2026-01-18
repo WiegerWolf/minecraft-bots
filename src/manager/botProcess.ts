@@ -24,7 +24,7 @@ export function generateBotName(roleLabel: string): string {
 /**
  * Parse a JSON log line from a bot subprocess.
  */
-export function parseLogLine(line: string, botLabel: string, nextId: () => number): LogEntry | null {
+export function parseLogLine(line: string, fallbackBotName: string, nextId: () => number): LogEntry | null {
   if (!line.trim()) return null;
 
   try {
@@ -33,7 +33,7 @@ export function parseLogLine(line: string, botLabel: string, nextId: () => numbe
       return {
         id: nextId(),
         timestamp: new Date(),
-        botLabel,
+        botName: fallbackBotName,
         level: 30,
         message: line,
         extras: {},
@@ -49,14 +49,14 @@ export function parseLogLine(line: string, botLabel: string, nextId: () => numbe
       role: _role,
       pid: _pid,
       hostname: _hostname,
-      botName: _botName,
+      botName,
       ...extras
     } = log;
 
     return {
       id: nextId(),
       timestamp: new Date(time),
-      botLabel,
+      botName: botName || fallbackBotName,
       level,
       message: msg || '',
       component,
@@ -67,7 +67,7 @@ export function parseLogLine(line: string, botLabel: string, nextId: () => numbe
     return {
       id: nextId(),
       timestamp: new Date(),
-      botLabel,
+      botName: fallbackBotName,
       level: 30,
       message: line,
       extras: {},
@@ -127,7 +127,7 @@ export function spawnBot(options: SpawnBotOptions): Subprocess {
           onSpawnSuccess();
         }
 
-        const entry = parseLogLine(line, config.roleLabel, getNextLogId);
+        const entry = parseLogLine(line, botName, getNextLogId);
         if (entry) {
           onLog(entry);
         }
@@ -135,7 +135,7 @@ export function spawnBot(options: SpawnBotOptions): Subprocess {
     }
 
     if (buffer) {
-      const entry = parseLogLine(buffer, config.roleLabel, getNextLogId);
+      const entry = parseLogLine(buffer, botName, getNextLogId);
       if (entry) {
         onLog(entry);
       }

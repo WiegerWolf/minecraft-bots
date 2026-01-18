@@ -9,15 +9,17 @@ interface BotItemProps {
 }
 
 export function BotItem({ bot, selected }: BotItemProps) {
+  // Show name if running/has name, otherwise show role label
+  const displayName = bot.name || bot.config.roleLabel;
+
   return (
     <Box>
       <Text color={selected ? 'cyan' : undefined}>
         {selected ? '> ' : '  '}
       </Text>
       <Text bold={selected}>
-        {bot.config.roleLabel.padEnd(8)}
+        {displayName.slice(0, 14).padEnd(14)}
       </Text>
-      <Text> </Text>
       <StatusIndicator status={bot.status} />
     </Box>
   );

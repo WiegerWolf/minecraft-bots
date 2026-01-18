@@ -19,11 +19,16 @@ export function Header({ sessionId, hotReloadEnabled }: HeaderProps) {
     >
       <Box>
         <Text bold color="cyan">Minecraft Bot Manager</Text>
-        {hotReloadEnabled && (
-          <Text color="yellow"> [Hot-Reload]</Text>
-        )}
+        <Text dimColor> [{sessionId}]</Text>
       </Box>
-      <Text dimColor>[{sessionId}]</Text>
+      <Box>
+        <Text color="yellow">h</Text>
+        <Text dimColor>otReload:</Text>
+        <Text color={hotReloadEnabled ? 'green' : 'gray'}>{hotReloadEnabled ? 'ON' : 'off'}</Text>
+        <Text> </Text>
+        <Text color="yellow">q</Text>
+        <Text dimColor>uit</Text>
+      </Box>
     </Box>
   );
 }

@@ -19,18 +19,18 @@ const botColors = ['blue', 'magenta', 'cyan', 'green', 'yellow'] as const;
 const botColorMap = new Map<string, typeof botColors[number]>();
 let colorIndex = 0;
 
-function getBotColor(botLabel: string): typeof botColors[number] {
-  if (!botColorMap.has(botLabel)) {
-    botColorMap.set(botLabel, botColors[colorIndex % botColors.length]!);
+function getBotColor(botName: string): typeof botColors[number] {
+  if (!botColorMap.has(botName)) {
+    botColorMap.set(botName, botColors[colorIndex % botColors.length]!);
     colorIndex++;
   }
-  return botColorMap.get(botLabel)!;
+  return botColorMap.get(botName)!;
 }
 
 export function LogLine({ entry }: LogLineProps) {
   const time = entry.timestamp.toTimeString().slice(0, 8);
   const level = levelConfig[entry.level] || { icon: '???', color: 'white' };
-  const botColor = getBotColor(entry.botLabel);
+  const botColor = getBotColor(entry.botName);
 
   // Build the log line as a single string to avoid layout shifts
   const component = entry.component ? `[${entry.component}]` : '';
@@ -40,7 +40,7 @@ export function LogLine({ entry }: LogLineProps) {
     <Text wrap="truncate">
       <Text dimColor>{time} </Text>
       <Text color={level.color}>{level.icon} </Text>
-      <Text color={botColor} bold>[{entry.botLabel}]</Text>
+      <Text color={botColor} bold>[{entry.botName}]</Text>
       <Text dimColor>{component}</Text>
       <Text> {entry.message}</Text>
       <Text dimColor>{extras}</Text>

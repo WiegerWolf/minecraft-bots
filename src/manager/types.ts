@@ -20,13 +20,25 @@ export interface ManagedBot {
 export interface LogEntry {
   id: number;
   timestamp: Date;
-  botLabel: string;
+  botName: string;  // Full bot name like "Emma_Farmer"
   level: number;
   message: string;
   component?: string;
   extras: Record<string, unknown>;
   raw: string;
 }
+
+// Log levels for filtering
+export const LOG_LEVELS = {
+  TRACE: 10,
+  DEBUG: 20,
+  INFO: 30,
+  WARN: 40,
+  ERROR: 50,
+  FATAL: 60,
+} as const;
+
+export type LogLevelName = keyof typeof LOG_LEVELS;
 
 export const DEFAULT_BOT_CONFIGS: BotConfig[] = [
   { role: 'goap-farming', roleLabel: 'Farmer', aliases: ['farmer', 'farm'] },

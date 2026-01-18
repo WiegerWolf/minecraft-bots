@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { LogEntry } from '../types';
 
 const MAX_LOG_ENTRIES = 1000;
@@ -37,9 +37,4 @@ export function useLogBuffer(options: UseLogBufferOptions = {}): [LogEntry[], Lo
   }, []);
 
   return [logs, { addLog, clear, getNextId }];
-}
-
-export function filterLogs(logs: LogEntry[], botLabel: string | null): LogEntry[] {
-  if (!botLabel) return logs;
-  return logs.filter(log => log.botLabel === botLabel);
 }
