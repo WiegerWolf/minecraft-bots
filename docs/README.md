@@ -46,6 +46,13 @@ How the system handles failures at every level:
 - Pathfinding timeouts and blacklisting
 - Zombie detection and graceful shutdown
 
+### TUI Dashboard (below)
+Interactive terminal interface for bot management:
+- Keyboard-driven bot lifecycle control
+- Real-time log viewing with filtering
+- Bot grouping by role
+- Hot-reload support
+
 ## Logging System
 
 The project uses **Pino** for structured logging with dual output:
@@ -90,6 +97,61 @@ const plannerLog = createChildLogger(logger, 'Planner');
 LOG_LEVEL=debug bun run start farmer  # Set log level
 ```
 
+## TUI Dashboard
+
+The bot manager (`src/manager/`) provides an interactive terminal interface for managing multiple bots.
+
+### Layout
+```
++----------------------------------------------------------+
+|  Minecraft Bot Manager [session-id]     hotReload:off quit|
++------------------+---------------------------------------+
+|  BOTS            |  LOGS                    level:INFO   |
+|  ┌ Farmer (2)    |  10:22:15 INFO [Farmer] Goal selected |
+|  │ > Emma   [R]  |  10:22:16 DEBUG [Lmbr] Chopping tree  |
+|  │   Oscar  [S]  |  10:22:17 WARN [Land] No pickaxe...   |
+|  ┌ Lmbr (1)      |                                       |
+|  │   Carl   [R]  |                                       |
+|  ──────────────  |                                       |
+|  s x r a d R     |                        l f c          |
++------------------+---------------------------------------+
+```
+
+### Keyboard Shortcuts
+
+| Key | Action | Context |
+|-----|--------|---------|
+| `j`/`k` or arrows | Navigate bot list | Bot panel |
+| `s` | Start selected bot | Bot panel |
+| `x` | Stop selected bot | Bot panel |
+| `r` | Restart selected bot | Bot panel |
+| `R` | Restart all bots | Bot panel |
+| `a` | Add new bot (session-only) | Bot panel |
+| `d` | Delete selected bot | Bot panel |
+| `l` | Cycle log level (TRACE→DEBUG→INFO→WARN→ERROR) | Log panel |
+| `f` | Toggle log filter (all / selected bot) | Log panel |
+| `c` | Clear logs | Log panel |
+| `h` | Toggle hot-reload | Header |
+| `q` | Quit (stops all bots first) | Header |
+
+### Bot Status Indicators
+
+| Badge | Meaning |
+|-------|---------|
+| `[R]` | Running |
+| `[S]` | Stopped |
+| `[C]` | Crashed (will auto-restart with backoff) |
+| `[+]` | Starting |
+| `[~]` | Restarting |
+
+### Design Decisions
+
+- **Session-only bot changes**: Added/deleted bots are lost when you quit. Keeps config simple.
+- **Grouped by role**: Bots are grouped under their role (Farmer, Lmbr, etc.) with count displayed.
+- **Contextual shortcuts**: Shortcuts appear near their relevant UI sections.
+- **Auto-start on add**: New bots start immediately after being added.
+- **Log level filtering**: View-only filter, doesn't affect file logging.
+
 ## Quick Reference
 
 ### Key Numbers to Remember
@@ -127,7 +189,8 @@ LOG_LEVEL=debug bun run start farmer  # Set log level
 | VillageChat | `src/shared/VillageChat.ts` |
 | SignKnowledge | `src/shared/SignKnowledge.ts` |
 | Logger | `src/shared/logger.ts` |
-| Process Manager | `src/index.ts` |
+| TUI Manager | `src/manager/index.tsx` |
+| Old Process Manager | `src/index.ts` |
 
 ### Debug Commands
 

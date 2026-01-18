@@ -251,9 +251,47 @@ this.bot.chat(`[CHEST] shared ${x} ${y} ${z}`);
 
 256-character message limit requires careful encoding. Complex data structures can't be communicated (by design - keeps coordination simple).
 
+## Why Ink for the TUI Dashboard?
+
+The bot manager uses **Ink** (React for CLIs) to provide an interactive terminal interface.
+
+### Alternatives Considered
+
+1. **blessed/blessed-contrib**: Powerful but complex, imperative API
+2. **inquirer/prompts**: Great for Q&A flows, not for dashboards
+3. **Raw ANSI codes**: Maximum control but maintenance nightmare
+4. **ncurses bindings**: C-style API, poor TypeScript support
+
+### Why Ink?
+
+- **React mental model**: Components, hooks, state - familiar patterns
+- **Declarative UI**: Describe what you want, not how to render it
+- **Flexbox layout**: `<Box flexDirection="column">` just works
+- **Hooks for input**: `useInput()` handles keyboard elegantly
+- **Hot-reloadable**: Development feels like web React
+
+### Why React Hooks for State?
+
+The TUI uses standard React patterns:
+```typescript
+const [selectedIndex, setSelectedIndex] = useState(0);
+const [logLevelIndex, setLogLevelIndex] = useState(2); // INFO
+```
+
+This keeps state management simple and predictable. Complex state (like bot processes) lives in custom hooks (`useBotManager`) that encapsulate lifecycle logic.
+
+### Why Contextual Shortcuts?
+
+Keyboard shortcuts appear near their relevant UI sections:
+- Bot actions (`s`/`x`/`r`) in the bot panel footer
+- Log controls (`l`/`f`/`c`) in the log panel header
+- Global actions (`h`/`q`) in the main header
+
+This reduces cognitive load - users see what actions are available where they're looking.
+
 ## Why Exponential Backoff for Crashes?
 
-The process manager uses exponential backoff:
+The process manager (in `src/manager/hooks/useBotManager.ts`) uses exponential backoff:
 
 ```typescript
 const delay = Math.min(INITIAL_BACKOFF * Math.pow(2, attempts), MAX_BACKOFF);
