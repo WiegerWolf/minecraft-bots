@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Text } from 'ink';
 import type { LogEntry } from '../types';
 
 interface LogLineProps {
@@ -32,17 +32,19 @@ export function LogLine({ entry }: LogLineProps) {
   const level = levelConfig[entry.level] || { icon: '???', color: 'white' };
   const botColor = getBotColor(entry.botLabel);
 
+  // Build the log line as a single string to avoid layout shifts
+  const component = entry.component ? `[${entry.component}]` : '';
+  const extras = Object.keys(entry.extras).length > 0 ? ` ${formatExtras(entry.extras)}` : '';
+
   return (
-    <Box>
+    <Text wrap="truncate">
       <Text dimColor>{time} </Text>
       <Text color={level.color}>{level.icon} </Text>
       <Text color={botColor} bold>[{entry.botLabel}]</Text>
-      {entry.component && <Text dimColor>[{entry.component}]</Text>}
+      <Text dimColor>{component}</Text>
       <Text> {entry.message}</Text>
-      {Object.keys(entry.extras).length > 0 && (
-        <Text dimColor> {formatExtras(entry.extras)}</Text>
-      )}
-    </Box>
+      <Text dimColor>{extras}</Text>
+    </Text>
   );
 }
 

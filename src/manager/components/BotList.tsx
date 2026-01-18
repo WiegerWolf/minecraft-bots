@@ -13,6 +13,8 @@ export function BotList({ bots, selectedIndex }: BotListProps) {
     <Box
       flexDirection="column"
       width={20}
+      minWidth={20}
+      flexShrink={0}
       borderStyle="single"
       borderRight={true}
       borderTop={false}

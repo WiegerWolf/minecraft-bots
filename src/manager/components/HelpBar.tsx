@@ -1,11 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 
-interface HelpBarProps {
-  logFilterActive: boolean;
-}
-
-export function HelpBar({ logFilterActive }: HelpBarProps) {
+export function HelpBar() {
   return (
     <Box
       borderStyle="single"
@@ -14,28 +10,20 @@ export function HelpBar({ logFilterActive }: HelpBarProps) {
       borderLeft={false}
       borderRight={false}
       paddingX={1}
-      gap={1}
-      flexWrap="wrap"
+      height={2}
     >
-      <Shortcut key="s" keyChar="s" label="start" />
-      <Shortcut key="x" keyChar="x" label="stop" />
-      <Shortcut key="r" keyChar="r" label="restart" />
-      <Shortcut key="R" keyChar="R" label="restart all" />
-      <Shortcut key="a" keyChar="a" label="add" />
-      <Shortcut key="d" keyChar="d" label="delete" />
-      <Shortcut key="h" keyChar="h" label="hot-reload" />
-      <Shortcut key="c" keyChar="c" label="clear" />
-      <Shortcut key="f" keyChar="f" label={logFilterActive ? 'show all' : 'filter'} />
-      <Shortcut key="q" keyChar="q" label="quit" />
-    </Box>
-  );
-}
-
-function Shortcut({ keyChar, label }: { keyChar: string; label: string }) {
-  return (
-    <Box>
-      <Text color="yellow">[{keyChar}]</Text>
-      <Text dimColor>{label}</Text>
+      <Text>
+        <Text color="yellow">s</Text><Text dimColor>tart </Text>
+        <Text color="yellow">x</Text><Text dimColor>stop </Text>
+        <Text color="yellow">r</Text><Text dimColor>estart </Text>
+        <Text color="yellow">R</Text><Text dimColor>estartAll </Text>
+        <Text color="yellow">a</Text><Text dimColor>dd </Text>
+        <Text color="yellow">d</Text><Text dimColor>el </Text>
+        <Text color="yellow">h</Text><Text dimColor>otReload </Text>
+        <Text color="yellow">c</Text><Text dimColor>lear </Text>
+        <Text color="yellow">f</Text><Text dimColor>ilter </Text>
+        <Text color="yellow">q</Text><Text dimColor>uit</Text>
+      </Text>
     </Box>
   );
 }

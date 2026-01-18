@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Box, useInput, useApp, Text } from 'ink';
+import { Box, useInput, useApp, Text, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import { Header } from './components/Header';
 import { BotList } from './components/BotList';
@@ -21,6 +21,11 @@ type InputMode = 'normal' | 'add-bot';
 
 export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart = true }: AppProps) {
   const { exit } = useApp();
+  const { stdout } = useStdout();
+  const terminalHeight = stdout?.rows || 24;
+
+  // Calculate content height: total - header(2) - footer(2)
+  const contentHeight = Math.max(5, terminalHeight - 4);
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [filterBotLabel, setFilterBotLabel] = useState<string | null>(null);
@@ -174,12 +179,12 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
   };
 
   return (
-    <Box flexDirection="column" height="100%">
+    <Box flexDirection="column">
       <Header sessionId={sessionId} hotReloadEnabled={hotReloadEnabled} />
 
-      <Box flexGrow={1}>
+      <Box height={contentHeight}>
         <BotList bots={bots} selectedIndex={selectedIndex} />
-        <LogPanel logs={logs} filterBotLabel={filterBotLabel} />
+        <LogPanel logs={logs} filterBotLabel={filterBotLabel} height={contentHeight - 1} />
       </Box>
 
       {inputMode === 'add-bot' ? (
@@ -193,7 +198,7 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
           <Text dimColor> (Enter to confirm, Esc to cancel)</Text>
         </Box>
       ) : (
-        <HelpBar logFilterActive={filterBotLabel !== null} />
+        <HelpBar />
       )}
     </Box>
   );
