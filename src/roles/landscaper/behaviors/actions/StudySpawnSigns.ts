@@ -71,6 +71,8 @@ export class StudySpawnSigns implements BehaviorNode {
                 case 'VILLAGE':
                     if (!bb.villageCenter) {
                         bb.villageCenter = entry.pos.clone();
+                        // Also update VillageChat so it persists across blackboard updates
+                        bb.villageChat?.setVillageCenter?.(entry.pos.clone());
                         bb.log?.debug({ pos: entry.pos.floored().toString() }, 'Learned village center from sign');
                     }
                     break;
@@ -78,6 +80,8 @@ export class StudySpawnSigns implements BehaviorNode {
                 case 'CHEST':
                     if (!bb.sharedChest) {
                         bb.sharedChest = entry.pos.clone();
+                        // Also update VillageChat so it persists across blackboard updates
+                        bb.villageChat?.setSharedChest?.(entry.pos.clone());
                         bb.log?.debug({ pos: entry.pos.floored().toString() }, 'Learned chest location from sign');
                     }
                     break;
@@ -85,6 +89,8 @@ export class StudySpawnSigns implements BehaviorNode {
                 case 'CRAFT':
                     if (!bb.sharedCraftingTable) {
                         bb.sharedCraftingTable = entry.pos.clone();
+                        // Also update VillageChat so it persists across blackboard updates
+                        bb.villageChat?.setSharedCraftingTable?.(entry.pos.clone());
                         bb.log?.debug({ pos: entry.pos.floored().toString() }, 'Learned crafting table from sign');
                     }
                     break;
