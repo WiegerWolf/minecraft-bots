@@ -42,7 +42,7 @@ export function LogPanel({ logs, filterBotName, minLevel, levelName, height }: L
           <Text dimColor>lear</Text>
         </Box>
       </Box>
-      <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="column" marginTop={1} flexGrow={1}>
         {filteredLogs.length === 0 ? (
           <Text dimColor>No logs yet...</Text>
         ) : (

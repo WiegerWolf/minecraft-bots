@@ -39,6 +39,8 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
   const processesRef = useRef<Map<string, Subprocess>>(new Map());
   const nextBotIdRef = useRef(initialConfigs.length);
   const reconnectAttemptsRef = useRef<Map<string, number>>(new Map());
+  const botsRef = useRef<ManagedBot[]>(bots);
+  botsRef.current = bots; // Keep ref in sync with state
 
   // Update bot state helper
   const updateBot = useCallback((botId: string, updates: Partial<ManagedBot>) => {
@@ -54,7 +56,7 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
 
   // Start a specific bot
   const startBot = useCallback(async (botId: string) => {
-    const bot = bots.find(b => b.id === botId);
+    const bot = botsRef.current.find(b => b.id === botId);
     if (!bot || bot.status === 'running' || bot.status === 'starting') return;
 
     // Clear any pending retry
@@ -107,7 +109,7 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
 
     processesRef.current.set(botId, process);
     updateBot(botId, { process });
-  }, [bots, sessionId, onLog, getNextLogId, updateBot]);
+  }, [sessionId, onLog, getNextLogId, updateBot]);
 
   // Stop a specific bot
   const stopBot = useCallback(async (botId: string) => {
@@ -137,19 +139,20 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
 
   // Restart all bots
   const restartAll = useCallback(async () => {
+    const currentBots = botsRef.current;
     // Stop all bots first
-    for (const bot of bots) {
+    for (const bot of currentBots) {
       await stopBot(bot.id);
     }
 
     // Start all bots with delay between them
-    for (let i = 0; i < bots.length; i++) {
-      await startBot(bots[i]!.id);
-      if (i < bots.length - 1) {
+    for (let i = 0; i < currentBots.length; i++) {
+      await startBot(currentBots[i]!.id);
+      if (i < currentBots.length - 1) {
         await new Promise(resolve => setTimeout(resolve, BOT_SPAWN_DELAY));
       }
     }
-  }, [bots, stopBot, startBot]);
+  }, [stopBot, startBot]);
 
   // Add a new bot (session-only)
   const addBot = useCallback((config: BotConfig): string => {
@@ -173,10 +176,10 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
 
   // Stop all bots
   const stopAll = useCallback(async () => {
-    for (const bot of bots) {
+    for (const bot of botsRef.current) {
       await stopBot(bot.id);
     }
-  }, [bots, stopBot]);
+  }, [stopBot]);
 
   // Cleanup on unmount
   useEffect(() => {

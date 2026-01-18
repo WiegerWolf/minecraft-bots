@@ -49,3 +49,19 @@ export const DEFAULT_BOT_CONFIGS: BotConfig[] = [
 export const MAX_BACKOFF = 30000;
 export const INITIAL_BACKOFF = 1000;
 export const BOT_SPAWN_DELAY = 2000;
+
+// Bot name colors - shared between sidebar and logs
+export const BOT_COLORS = ['blue', 'magenta', 'cyan', 'green', 'yellow'] as const;
+export type BotColor = typeof BOT_COLORS[number];
+
+const botColorMap = new Map<string, BotColor>();
+let colorIndex = 0;
+
+export function getBotColor(botName: string): BotColor {
+  if (!botName) return BOT_COLORS[0]!;
+  if (!botColorMap.has(botName)) {
+    botColorMap.set(botName, BOT_COLORS[colorIndex % BOT_COLORS.length]!);
+    colorIndex++;
+  }
+  return botColorMap.get(botName)!;
+}

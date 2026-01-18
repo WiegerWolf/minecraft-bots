@@ -1,6 +1,7 @@
 import React from 'react';
 import { Text } from 'ink';
 import type { LogEntry } from '../types';
+import { getBotColor } from '../types';
 
 interface LogLineProps {
   entry: LogEntry;
@@ -14,18 +15,6 @@ const levelConfig: Record<number, { icon: string; color: string }> = {
   50: { icon: 'ERR', color: 'red' },
   60: { icon: 'FTL', color: 'redBright' },
 };
-
-const botColors = ['blue', 'magenta', 'cyan', 'green', 'yellow'] as const;
-const botColorMap = new Map<string, typeof botColors[number]>();
-let colorIndex = 0;
-
-function getBotColor(botName: string): typeof botColors[number] {
-  if (!botColorMap.has(botName)) {
-    botColorMap.set(botName, botColors[colorIndex % botColors.length]!);
-    colorIndex++;
-  }
-  return botColorMap.get(botName)!;
-}
 
 export function LogLine({ entry }: LogLineProps) {
   const time = entry.timestamp.toTimeString().slice(0, 8);
