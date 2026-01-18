@@ -354,6 +354,129 @@ export class WriteKnowledgeSignGoal extends BaseGoal {
  * to beat ObtainAxe (50) and break out of stuck states where trees are
  * reported but not actually reachable.
  */
+/**
+ * Goal: Complete an active trade exchange.
+ * HIGHEST PRIORITY when in active trade - must finish what we started.
+ */
+export class CompleteTradeGoal extends BaseGoal {
+  name = 'CompleteTrade';
+  description = 'Complete an active trade exchange';
+
+  conditions = [
+    {
+      key: 'trade.status',
+      check: (value: any) => value === 'done' || value === 'idle' || !value,
+      description: 'trade completed or idle',
+    },
+  ];
+
+  getUtility(ws: WorldState): number {
+    const tradeStatus = ws.getString('trade.status');
+    // Include 'offering' so we don't get preempted while collecting WANT responses
+    const activeStatuses = ['offering', 'wanting', 'accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+
+    if (!activeStatuses.includes(tradeStatus)) return 0;
+
+    // Very high priority - finish what we started
+    return 150;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const tradeStatus = ws.getString('trade.status');
+    const activeStatuses = ['offering', 'wanting', 'accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+    return activeStatuses.includes(tradeStatus);
+  }
+}
+
+/**
+ * Goal: Respond to trade offers for items we want.
+ * MEDIUM priority when there's an offer for something we need.
+ */
+export class RespondToTradeOfferGoal extends BaseGoal {
+  name = 'RespondToTradeOffer';
+  description = 'Respond to trade offers for items we want';
+
+  conditions = [
+    {
+      key: 'trade.status',
+      check: (value: any) => value === 'wanting' || value === 'accepted' || value === 'traveling',
+      description: 'responded to trade offer',
+    },
+  ];
+
+  getUtility(ws: WorldState): number {
+    const pendingOffers = ws.getNumber('trade.pendingOffers');
+    const isInTrade = ws.getBool('trade.inTrade');
+    const tradeStatus = ws.getString('trade.status');
+
+    // Don't pursue if already responded/in trade or no offers
+    if (pendingOffers === 0 || isInTrade) return 0;
+    if (['wanting', 'accepted', 'traveling'].includes(tradeStatus)) return 0;
+
+    // Medium-high priority - get items we want
+    return 70;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const pendingOffers = ws.getNumber('trade.pendingOffers');
+    const isInTrade = ws.getBool('trade.inTrade');
+    const tradeStatus = ws.getString('trade.status');
+    return pendingOffers > 0 && !isInTrade && !['wanting', 'accepted', 'traveling'].includes(tradeStatus);
+  }
+}
+
+/**
+ * Goal: Broadcast trade offer for unwanted items.
+ * LOW priority to start - only when idle with unwanted items.
+ * HIGH priority when already offering - must finish collecting WANT responses.
+ */
+export class BroadcastTradeOfferGoal extends BaseGoal {
+  name = 'BroadcastTradeOffer';
+  description = 'Offer unwanted items for trade';
+
+  // Goal is satisfied when offer process has completed (accepted/done)
+  // NOT when idle - idle means we haven't started yet
+  conditions = [
+    {
+      key: 'trade.status',
+      check: (value: any) => value === 'done' || value === 'accepted',
+      description: 'offer accepted or completed',
+    },
+  ];
+
+  getUtility(ws: WorldState): number {
+    const tradeableCount = ws.getNumber('trade.tradeableCount');
+    const isInTrade = ws.getBool('trade.inTrade');
+    const offerCooldown = ws.getBool('trade.onCooldown');
+    const tradeStatus = ws.getString('trade.status');
+
+    // HIGH priority if already offering - must finish collecting WANT responses
+    if (tradeStatus === 'offering') {
+      return 150;
+    }
+
+    // Don't pursue if in active trade or on cooldown
+    if (isInTrade || offerCooldown) return 0;
+
+    // Need 4+ tradeable items
+    if (tradeableCount < 4) return 0;
+
+    // Low priority - do when idle
+    return 30 + Math.min(tradeableCount / 4, 5) * 4;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const tradeableCount = ws.getNumber('trade.tradeableCount');
+    const isInTrade = ws.getBool('trade.inTrade');
+    const offerCooldown = ws.getBool('trade.onCooldown');
+    const tradeStatus = ws.getString('trade.status');
+
+    // Valid if offering (need to continue) OR if ready to start a new offer
+    if (tradeStatus === 'offering') return true;
+    return tradeableCount >= 4 && !isInTrade && !offerCooldown;
+  }
+}
+
 export class PatrolForestGoal extends BaseGoal {
   name = 'PatrolForest';
   description = 'Explore to find reachable trees';
@@ -504,9 +627,11 @@ export class ReadUnknownSignGoal extends BaseGoal {
  */
 export function createLumberjackGoals(): BaseGoal[] {
   return [
+    new CompleteTradeGoal(),      // Highest priority - finish active trades
     new StudySpawnSignsGoal(),    // Highest priority on spawn
     new WithdrawSuppliesGoal(),   // Very high priority when no tools
     new CollectDropsGoal(),
+    new RespondToTradeOfferGoal(),// Respond to trade offers
     new FulfillRequestsGoal(),
     new CompleteTreeHarvestGoal(),
     new ObtainAxeGoal(),
@@ -516,6 +641,7 @@ export function createLumberjackGoals(): BaseGoal[] {
     new WriteKnowledgeSignGoal(),
     new CraftInfrastructureGoal(),
     new ProcessWoodGoal(),
+    new BroadcastTradeOfferGoal(),// Offer unwanted items when idle
     new ReadUnknownSignGoal(),    // Curious bot - read unknown signs
     new PatrolForestGoal(), // Always last - lowest priority fallback
   ];
