@@ -21,16 +21,14 @@ export class Explore implements BehaviorNode {
     private lastExploreTime = 0;
 
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
-        // Don't explore too frequently
+        // Don't explore too frequently (5 second cooldown between explorations)
         if (Date.now() - this.lastExploreTime < 5000) {
             return 'failure';
         }
 
-        bb.consecutiveIdleTicks++;
-
-        if (bb.consecutiveIdleTicks < 3) {
-            return 'failure';
-        }
+        // Note: Removed the consecutiveIdleTicks guard - it conflicted with GOAPRole
+        // which resets idle ticks after every action execution (including failures).
+        // GOAP already controls exploration priority via ExploreGoal utility functions.
 
         bb.lastAction = 'explore';
         this.lastExploreTime = Date.now();
