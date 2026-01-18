@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Box, Text } from 'ink';
 import type { ManagedBot } from '../types';
 import { BotItem } from './BotItem';
@@ -8,7 +8,32 @@ interface BotListProps {
   selectedIndex: number;
 }
 
+interface RoleGroup {
+  role: string;
+  roleLabel: string;
+  bots: { bot: ManagedBot; originalIndex: number }[];
+}
+
 export function BotList({ bots, selectedIndex }: BotListProps) {
+  // Group bots by role while preserving original indices for selection
+  const groupedBots = useMemo(() => {
+    const groups = new Map<string, RoleGroup>();
+
+    bots.forEach((bot, index) => {
+      const role = bot.config.role;
+      if (!groups.has(role)) {
+        groups.set(role, {
+          role,
+          roleLabel: bot.config.roleLabel,
+          bots: [],
+        });
+      }
+      groups.get(role)!.bots.push({ bot, originalIndex: index });
+    });
+
+    return Array.from(groups.values());
+  }, [bots]);
+
   return (
     <Box
       flexDirection="column"
@@ -26,15 +51,21 @@ export function BotList({ bots, selectedIndex }: BotListProps) {
       <Box flexDirection="column">
         <Text bold underline>BOTS</Text>
         <Box flexDirection="column" marginTop={1}>
-          {bots.map((bot, index) => (
-            <BotItem
-              key={bot.id}
-              bot={bot}
-              selected={index === selectedIndex}
-            />
-          ))}
-          {bots.length === 0 && (
+          {groupedBots.length === 0 ? (
             <Text dimColor>No bots</Text>
+          ) : (
+            groupedBots.map((group) => (
+              <Box key={group.role} flexDirection="column">
+                <Text dimColor>┌ {group.roleLabel} ({group.bots.length})</Text>
+                {group.bots.map(({ bot, originalIndex }) => (
+                  <BotItem
+                    key={bot.id}
+                    bot={bot}
+                    selected={originalIndex === selectedIndex}
+                  />
+                ))}
+              </Box>
+            ))
           )}
         </Box>
       </Box>
