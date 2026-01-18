@@ -14,3 +14,5 @@ export { ClearFarmArea } from './ClearFarmArea';
 export { RequestMaterials } from './RequestMaterials';
 export { CheckSharedChest } from './CheckSharedChest';
 export { RequestTerraform } from './RequestTerraform';
+export { StudySpawnSigns } from './StudySpawnSigns';
+export { ReadUnknownSign } from './ReadUnknownSign';

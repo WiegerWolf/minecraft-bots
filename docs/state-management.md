@@ -323,9 +323,9 @@ Conditions change. After 30 seconds:
 - Bot might approach from different angle
 - Item might have moved to accessible location
 
-### Sign-Based Persistence (Lumberjack)
+### Sign-Based Persistence (Lumberjack & Farmer)
 
-Signs near spawn serve as persistent memory that survives bot restarts and deaths.
+Signs near spawn serve as persistent memory that survives bot restarts and deaths. Both lumberjack and farmer bots can read and learn from signs.
 
 ```typescript
 // Lumberjack-specific persistence fields
@@ -338,6 +338,20 @@ bb.hasCheckedStorage: boolean;           // Has bot checked chest for supplies?
 bb.knownChests: Vec3[];                  // All chest positions from signs
 bb.knownForests: Vec3[];                 // Forest/tree area positions
 bb.fullChests: Map<string, number>;      // pos -> expiry timestamp
+
+// Sign tracking
+bb.readSignPositions: Set<string>;       // "x,y,z" keys of read signs
+bb.unknownSigns: Vec3[];                 // Signs spotted but not yet read
+```
+
+```typescript
+// Farmer-specific persistence fields
+bb.spawnPosition: Vec3 | null;           // Where bot spawned
+bb.hasStudiedSigns: boolean;             // Has bot walked to and read signs?
+
+// Knowledge from signs
+bb.knownFarms: Vec3[];                   // Farm locations from signs
+bb.knownWaterSources: Vec3[];            // Water source locations from signs
 
 // Sign tracking
 bb.readSignPositions: Set<string>;       // "x,y,z" keys of read signs

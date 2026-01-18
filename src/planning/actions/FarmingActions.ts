@@ -13,6 +13,8 @@ import { Explore } from '../../roles/farming/behaviors/actions/Explore';
 import { FindFarmCenter } from '../../roles/farming/behaviors/actions/FindFarmCenter';
 import { CheckSharedChest } from '../../roles/farming/behaviors/actions/CheckSharedChest';
 import { RequestMaterials } from '../../roles/farming/behaviors/actions/RequestMaterials';
+import { StudySpawnSigns } from '../../roles/farming/behaviors/actions/StudySpawnSigns';
+import { ReadUnknownSign } from '../../roles/farming/behaviors/actions/ReadUnknownSign';
 
 /**
  * GOAP Action: Pick up dropped items
@@ -351,11 +353,66 @@ export class ExploreAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Study signs at spawn to learn infrastructure locations
+ * High priority on fresh spawn - bot walks to spawn and reads each sign.
+ */
+export class StudySpawnSignsAction extends BaseGOAPAction {
+  name = 'StudySpawnSigns';
+  private impl = new StudySpawnSigns();
+
+  preconditions = [
+    booleanPrecondition('has.studiedSigns', false, 'has not studied signs yet'),
+  ];
+
+  effects = [
+    setEffect('has.studiedSigns', true, 'studied spawn signs'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Low cost - important startup action
+    return 1.0;
+  }
+
+  override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
+ * GOAP Action: Read unknown signs spotted while exploring
+ * Curious bot behavior - investigate signs to potentially learn useful info.
+ */
+export class ReadUnknownSignAction extends BaseGOAPAction {
+  name = 'ReadUnknownSign';
+  private impl = new ReadUnknownSign();
+
+  preconditions = [
+    numericPrecondition('nearby.unknownSigns', v => v > 0, 'unknown signs nearby'),
+  ];
+
+  effects = [
+    incrementEffect('nearby.unknownSigns', -1, 'read one sign'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Medium cost - takes time to walk and read
+    return 3.0;
+  }
+
+  override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * Create all farming actions for the planner.
  * Note: Wood gathering is handled by the lumberjack bot - farmer requests logs via chat.
  */
 export function createFarmingActions(): BaseGOAPAction[] {
   return [
+    new StudySpawnSignsAction(),  // High priority on spawn
     new PickupItemsAction(),
     new HarvestCropsAction(),
     new PlantSeedsAction(),
@@ -366,6 +423,7 @@ export function createFarmingActions(): BaseGOAPAction[] {
     new RequestMaterialsAction(),
     new CraftHoeAction(),
     new FindFarmCenterAction(),
+    new ReadUnknownSignAction(),  // Curious bot - read unknown signs
     new ExploreAction(),
   ];
 }

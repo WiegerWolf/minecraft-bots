@@ -233,6 +233,65 @@ export class EstablishFarmGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Study signs at spawn to learn infrastructure locations.
+ * HIGHEST PRIORITY on fresh spawn - roleplay reading signs.
+ *
+ * This goal activates only once when the bot first spawns and hasn't
+ * studied signs yet. The bot will walk to spawn, look at each sign,
+ * and announce what it learned on village chat.
+ */
+export class StudySpawnSignsGoal extends BaseGoal {
+  name = 'StudySpawnSigns';
+  description = 'Walk to spawn and study knowledge signs';
+
+  conditions = [
+    booleanGoalCondition('has.studiedSigns', true, 'has studied spawn signs'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const hasStudied = ws.getBool('has.studiedSigns');
+    if (hasStudied) return 0;
+
+    // Very high priority on fresh spawn - do this first!
+    return 200;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    return !ws.getBool('has.studiedSigns');
+  }
+}
+
+/**
+ * Goal: Read unknown signs spotted while exploring.
+ * CURIOUS BOT behavior - when the bot sees a sign it hasn't read,
+ * it will go investigate and potentially learn something useful.
+ *
+ * Lower priority than core farming work, but higher than explore.
+ * The bot should finish important tasks before getting distracted by signs.
+ */
+export class ReadUnknownSignGoal extends BaseGoal {
+  name = 'ReadUnknownSign';
+  description = 'Investigate and read an unknown sign';
+
+  conditions = [
+    numericGoalCondition('nearby.unknownSigns', v => v === 0, 'no unknown signs'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const unknownCount = ws.getNumber('nearby.unknownSigns');
+    if (unknownCount === 0) return 0;
+
+    // Base utility of 45 - higher than explore (5-40) but lower than most farming work
+    // Increases slightly with more signs to encourage batch reading
+    return 45 + Math.min(unknownCount * 5, 15);
+  }
+
+  override isValid(ws: WorldState): boolean {
+    return ws.getNumber('nearby.unknownSigns') > 0;
+  }
+}
+
+/**
  * Goal: Explore the world to find resources.
  * LOWEST PRIORITY - fallback when nothing else to do.
  *
@@ -276,6 +335,7 @@ export class ExploreGoal extends BaseGoal {
  */
 export function createFarmingGoals(): BaseGoal[] {
   return [
+    new StudySpawnSignsGoal(),    // Highest priority on spawn
     new CollectDropsGoal(),
     new HarvestCropsGoal(),
     new DepositProduceGoal(),
@@ -284,6 +344,7 @@ export function createFarmingGoals(): BaseGoal[] {
     new ObtainToolsGoal(),
     new GatherSeedsGoal(),
     new EstablishFarmGoal(),
+    new ReadUnknownSignGoal(),    // Curious bot - read unknown signs
     new ExploreGoal(), // Always last - lowest priority fallback
   ];
 }

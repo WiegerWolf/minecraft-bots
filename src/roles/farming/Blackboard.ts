@@ -3,6 +3,7 @@ import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
 import type { VillageChat } from '../../shared/VillageChat';
 import type { Logger } from '../../shared/logger';
+import { SIGN_SEARCH_RADIUS } from '../../shared/SignKnowledge';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -71,6 +72,18 @@ export interface FarmingBlackboard {
     // Terraform state
     waitingForTerraform: boolean;
     terraformRequestedAt: Vec3 | null;
+
+    // Sign-based persistent knowledge system
+    spawnPosition: Vec3 | null;           // Where bot spawned (sign location)
+    hasStudiedSigns: boolean;             // Has bot walked to and read signs near spawn
+
+    // Curious bot - sign tracking
+    readSignPositions: Set<string>;       // Sign positions we've read (stringified: "x,y,z")
+    unknownSigns: Vec3[];                 // Signs spotted but not yet read
+
+    // Knowledge from signs
+    knownFarms: Vec3[];                   // Farm locations from signs
+    knownWaterSources: Vec3[];            // Water source locations from signs
 }
 
 export function createBlackboard(): FarmingBlackboard {
@@ -117,6 +130,18 @@ export function createBlackboard(): FarmingBlackboard {
 
         waitingForTerraform: false,
         terraformRequestedAt: null,
+
+        // Sign-based persistent knowledge
+        spawnPosition: null,
+        hasStudiedSigns: false,
+
+        // Curious bot - sign tracking
+        readSignPositions: new Set(),
+        unknownSigns: [],
+
+        // Knowledge from signs
+        knownFarms: [],
+        knownWaterSources: [],
     };
 }
 
@@ -329,6 +354,22 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
             return b.name === 'crafting_table';
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
+
+    // ═══════════════════════════════════════════════
+    // SIGN DETECTION (curious bot)
+    // ═══════════════════════════════════════════════
+    const nearbySigns = bot.findBlocks({
+        point: pos,
+        maxDistance: SIGN_SEARCH_RADIUS,
+        count: 20,
+        matching: b => b?.name?.includes('_sign') ?? false
+    });
+
+    // Find signs we haven't read yet
+    const posToKey = (p: Vec3) => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
+    bb.unknownSigns = nearbySigns
+        .filter(signPos => !bb.readSignPositions.has(posToKey(signPos)))
+        .map(p => new Vec3(p.x, p.y, p.z));
 
     // Get shared village state from chat
     if (bb.villageChat) {

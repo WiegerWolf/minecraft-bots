@@ -133,6 +133,12 @@ export class WorldStateBuilder {
     ws.set('derived.needsWood', bb.logCount === 0 && bb.plankCount < 4);
     ws.set('derived.hasFarmEstablished', bb.farmCenter !== null);
     ws.set('derived.hasStorageAccess', bb.sharedChest !== null || bb.nearbyChests.length > 0);
+
+    // Sign-based persistent knowledge
+    ws.set('has.studiedSigns', bb.hasStudiedSigns);
+    ws.set('nearby.unknownSigns', bb.unknownSigns.length);
+    ws.set('known.farms', bb.knownFarms.length);
+    ws.set('known.waterSources', bb.knownWaterSources.length);
   }
 
   /**

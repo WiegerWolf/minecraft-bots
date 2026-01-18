@@ -56,6 +56,13 @@ export class GOAPFarmingRole extends GOAPRole {
     if (this.blackboard) {
       const villageChat = new VillageChat(bot);
       this.blackboard.villageChat = villageChat;
+
+      // Store spawn position from options
+      // Note: Signs will be read by the StudySpawnSigns GOAP action (roleplay)
+      if (options?.spawnPosition) {
+        this.blackboard.spawnPosition = options.spawnPosition;
+        this.log?.info({ spawnPosition: options.spawnPosition.toString() }, 'Stored spawn position');
+      }
     }
   }
 
