@@ -80,7 +80,7 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
   }, [handleLog, logActions, botActions]);
 
   const [hotReloadEnabled, setHotReload] = useFileWatcher({
-    enabled: false,
+    enabled: true,
     onFileChange: handleFileChange,
   });
 
