@@ -162,6 +162,79 @@ export class DepositItemsGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Study spawn signs to learn about farm locations.
+ * HIGH priority on spawn - done once to discover existing farms.
+ *
+ * This allows landscapers to proactively check farms for terraform needs
+ * instead of only reacting to explicit requests.
+ */
+export class StudySpawnSignsGoal extends BaseGoal {
+  name = 'StudySpawnSigns';
+  description = 'Read knowledge signs near spawn';
+
+  conditions = [
+    booleanGoalCondition('has.studiedSigns', true, 'has studied signs'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const hasStudied = ws.getBool('has.studiedSigns');
+    if (hasStudied) return 0;
+
+    // Very high priority on spawn - do this first
+    return 150;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    return !ws.getBool('has.studiedSigns');
+  }
+}
+
+/**
+ * Goal: Check known farms for terraform needs.
+ * MODERATE priority when idle - proactive maintenance.
+ *
+ * After studying signs, the landscaper knows about farms. This goal
+ * drives the bot to visit those farms and check if they need terraforming.
+ */
+export class CheckKnownFarmsGoal extends BaseGoal {
+  name = 'CheckKnownFarms';
+  description = 'Check known farms for terraform needs';
+
+  conditions = [
+    numericGoalCondition('state.farmsNeedingCheck', v => v === 0, 'all farms checked'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const farmsNeedingCheck = ws.getNumber('state.farmsNeedingCheck');
+    if (farmsNeedingCheck === 0) return 0;
+
+    // Don't check farms if we have pending terraform work
+    const hasPendingRequest = ws.getBool('has.pendingTerraformRequest');
+    if (hasPendingRequest) return 0;
+
+    // Don't check farms if we're actively terraforming
+    const terraformActive = ws.getBool('terraform.active');
+    if (terraformActive) return 0;
+
+    // Has tools = higher priority (can actually do the work)
+    const hasAnyTool = ws.getBool('derived.hasAnyTool');
+    if (hasAnyTool) {
+      return 60 + Math.min(farmsNeedingCheck * 10, 30); // 60-90
+    }
+
+    // No tools but can still check and queue requests
+    return 40 + Math.min(farmsNeedingCheck * 5, 20); // 40-60
+  }
+
+  override isValid(ws: WorldState): boolean {
+    // Only valid if we've studied signs and have farms to check
+    const hasStudied = ws.getBool('has.studiedSigns');
+    const farmsNeedingCheck = ws.getNumber('state.farmsNeedingCheck');
+    return hasStudied && farmsNeedingCheck > 0;
+  }
+}
+
+/**
  * Goal: Wait at spawn for terraform requests.
  * The landscaper should idle until called by other bots or until
  * materials are available in the shared chest.
@@ -198,10 +271,12 @@ export class ExploreGoal extends BaseGoal {
  */
 export function createLandscaperGoals(): BaseGoal[] {
   return [
-    new CollectDropsGoal(),
+    new StudySpawnSignsGoal(),    // Highest priority on spawn
     new FulfillTerraformRequestGoal(),
+    new CheckKnownFarmsGoal(),    // Proactive farm checking
     new ObtainToolsGoal(),
     new DepositItemsGoal(),
-    new ExploreGoal(), // Always last - lowest priority fallback
+    new CollectDropsGoal(),
+    new ExploreGoal(),            // Always last - lowest priority fallback
   ];
 }

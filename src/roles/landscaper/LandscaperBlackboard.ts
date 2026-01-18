@@ -4,6 +4,7 @@ import { Vec3 } from 'vec3';
 import type { VillageChat, TerraformRequest } from '../../shared/VillageChat';
 import type { Logger } from '../../shared/logger';
 import { type StuckTracker, createStuckTracker } from '../../shared/PathfindingUtils';
+import { readAllSignsNear, SIGN_SEARCH_RADIUS } from '../../shared/SignKnowledge';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -68,6 +69,13 @@ export interface LandscaperBlackboard {
     // Action tracking
     lastAction: string;
     consecutiveIdleTicks: number;
+
+    // Sign-based farm knowledge (proactive terraforming)
+    spawnPosition: Vec3 | null;              // Where bot spawned (for sign reading)
+    hasStudiedSigns: boolean;                // Has bot read signs near spawn
+    knownFarms: Vec3[];                      // Farm locations from FARM signs
+    lastFarmCheckTimes: Map<string, number>; // Farm pos key -> last check timestamp
+    farmsNeedingCheck: Vec3[];               // Farms that should be checked for terraform needs
 }
 
 export function createLandscaperBlackboard(): LandscaperBlackboard {
@@ -106,6 +114,13 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
 
         lastAction: 'none',
         consecutiveIdleTicks: 0,
+
+        // Sign-based farm knowledge
+        spawnPosition: null,
+        hasStudiedSigns: false,
+        knownFarms: [],
+        lastFarmCheckTimes: new Map(),
+        farmsNeedingCheck: [],
     };
 }
 
@@ -200,6 +215,41 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
             return b.name === 'crafting_table';
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
+
+    // ═══════════════════════════════════════════════
+    // SPAWN POSITION (set once on first update)
+    // ═══════════════════════════════════════════════
+    if (!bb.spawnPosition) {
+        bb.spawnPosition = pos.clone();
+        bb.log?.debug({ pos: bb.spawnPosition.floored().toString() }, 'Set spawn position');
+    }
+
+    // ═══════════════════════════════════════════════
+    // FARM KNOWLEDGE (from signs - update farms needing check)
+    // ═══════════════════════════════════════════════
+    const FARM_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes between checks of same farm
+    // (reuses 'now' from above)
+
+    // Determine which known farms need checking
+    bb.farmsNeedingCheck = bb.knownFarms.filter(farmPos => {
+        const key = `${Math.floor(farmPos.x)},${Math.floor(farmPos.y)},${Math.floor(farmPos.z)}`;
+        const lastCheck = bb.lastFarmCheckTimes.get(key) || 0;
+
+        // Don't check if we checked recently
+        if (now - lastCheck < FARM_CHECK_INTERVAL) return false;
+
+        // Don't check if there's already a pending request for this farm
+        if (bb.villageChat) {
+            const allRequests = bb.villageChat.getAllTerraformRequests?.() || [];
+            const hasPendingRequest = allRequests.some(req =>
+                req.position.distanceTo(farmPos) < 5 &&
+                (req.status === 'pending' || req.status === 'claimed')
+            );
+            if (hasPendingRequest) return false;
+        }
+
+        return true;
+    });
 
     // ═══════════════════════════════════════════════
     // COMPUTED DECISIONS

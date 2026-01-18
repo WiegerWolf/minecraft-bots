@@ -11,6 +11,8 @@ import {
   Explore,
   CheckSharedChest,
   RequestMaterials,
+  StudySpawnSigns,
+  CheckFarmForTerraformNeeds,
 } from '../../roles/landscaper/behaviors/actions';
 
 /**
@@ -344,10 +346,66 @@ export class RequestMaterialsAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Study signs near spawn to learn about farms
+ */
+export class StudySpawnSignsAction extends BaseGOAPAction {
+  name = 'StudySpawnSigns';
+  private impl = new StudySpawnSigns();
+
+  preconditions = [
+    booleanPrecondition('has.studiedSigns', false, 'has not studied signs yet'),
+  ];
+
+  effects = [
+    setEffect('has.studiedSigns', true, 'studied spawn signs'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Low cost - quick to do and enables farm checking
+    return 1.0;
+  }
+
+  override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
+ * GOAP Action: Check a known farm for terraform needs
+ */
+export class CheckFarmForTerraformNeedsAction extends BaseGOAPAction {
+  name = 'CheckFarmForTerraformNeeds';
+  private impl = new CheckFarmForTerraformNeeds();
+
+  preconditions = [
+    booleanPrecondition('has.studiedSigns', true, 'has studied signs'),
+    numericPrecondition('state.farmsNeedingCheck', v => v > 0, 'has farms to check'),
+  ];
+
+  effects = [
+    // Each check removes one farm from the check list
+    incrementEffect('state.farmsNeedingCheck', -1, 'checked one farm'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Moderate cost - involves travel but enables proactive work
+    return 3.0;
+  }
+
+  override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * Create all landscaper actions for the planner.
  */
 export function createLandscaperActions(): BaseGOAPAction[] {
   return [
+    new StudySpawnSignsAction(),
+    new CheckFarmForTerraformNeedsAction(),
     new PickupItemsAction(),
     new TerraformAreaAction(),
     new CraftShovelAction(),

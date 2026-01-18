@@ -181,6 +181,11 @@ export class WorldStateBuilder {
     ws.set('derived.hasVillage', bb.villageCenter !== null);
     ws.set('derived.canCraftShovel', this.canCraftShovel(bb));
     ws.set('derived.canCraftPickaxe', this.canCraftPickaxe(bb));
+
+    // Sign-based farm knowledge (proactive terraforming)
+    ws.set('has.studiedSigns', bb.hasStudiedSigns);
+    ws.set('known.farms', bb.knownFarms.length);
+    ws.set('state.farmsNeedingCheck', bb.farmsNeedingCheck.length);
   }
 
   /**

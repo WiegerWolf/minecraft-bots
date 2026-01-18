@@ -6,3 +6,5 @@ export { DepositItems } from './DepositItems';
 export { Explore } from './Explore';
 export { CheckSharedChest } from './CheckSharedChest';
 export { RequestMaterials } from './RequestMaterials';
+export { StudySpawnSigns } from './StudySpawnSigns';
+export { CheckFarmForTerraformNeeds } from './CheckFarmForTerraformNeeds';
