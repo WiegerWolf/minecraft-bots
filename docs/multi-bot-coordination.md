@@ -79,15 +79,31 @@ We chose chat because it requires zero infrastructure and you can watch coordina
 
 ```typescript
 // Structured messages with prefixes
+
+// Infrastructure coordination
 [VILLAGE] center <x> <y> <z>      // Village center announcement
 [CHEST] shared <x> <y> <z>        // Shared chest location
 [CRAFTING] shared <x> <y> <z>     // Shared crafting table
+
+// Chest-based resource exchange
 [REQUEST] <item> <quantity>        // Resource request
 [FULFILL] <item> <qty> for <bot>   // Request fulfilled
 [DEPOSIT] <item> <quantity>        // Deposit notification
+
+// Terraform coordination
 [TERRAFORM] <x> <y> <z>            // Terraform request
 [TERRAFORM_CLAIM] <x> <y> <z>      // Claim terraform task
 [TERRAFORM_DONE] <x> <y> <z>       // Terraform complete
+
+// Direct hand-to-hand trading
+[OFFER] <item> <quantity>                       // Broadcast available items
+[WANT] <item> <qty> from <bot> (have <count>)   // Request items from offerer
+[TRADE_ACCEPT] <partner>                        // Accept trade with partner
+[TRADE_AT] <x> <y> <z>                          // Meeting point for trade
+[TRADE_READY]                                   // Arrived at meeting point
+[TRADE_DROPPED]                                 // Items dropped, stepped back
+[TRADE_DONE]                                    // Trade complete
+[TRADE_CANCEL]                                  // Trade cancelled
 ```
 
 ### Why Prefix Format?
@@ -258,6 +274,175 @@ Without expiration:
 4. Lumberjack keeps trying to fulfill abandoned request
 
 60 second timeout lets abandoned requests die.
+
+## Direct Trading (Hand-to-Hand)
+
+While the Request/Deposit pattern works well for dedicated exchanges, bots often accumulate items they don't need. Direct trading enables bots to hand off items without using shared storage.
+
+### Why Direct Trading?
+
+**The Problem with Chest-Only Exchange:**
+- Farmer picks up saplings while farming → useless to farmer
+- Lumberjack picks up seeds while chopping → useless to lumberjack
+- Items clutter inventory, reducing capacity for useful items
+- Depositing to chest, then withdrawing is inefficient for small quantities
+
+**Direct Trading Benefits:**
+- Immediate handoff without travel to chest
+- No chest space required
+- Natural cleanup of inventory clutter
+- Creates cooperative "helping" behavior
+
+### Trade Protocol Messages
+
+```typescript
+[OFFER] <item> <quantity>                    // "I have stuff I don't need"
+[WANT] <item> <qty> from <bot> (have <count>) // "I'll take that" + current count
+[TRADE_ACCEPT] <partner>                     // "You win, let's trade" (after 5s window)
+[TRADE_AT] <x> <y> <z>                       // "Meet me here"
+[TRADE_READY]                                // "I'm at the meeting point"
+[TRADE_DROPPED]                              // "Items dropped, I stepped back"
+[TRADE_DONE]                                 // "Trade complete"
+[TRADE_CANCEL]                               // "Trade cancelled"
+```
+
+### The Trade Flow
+
+```
+Farmer (Giver)                    Lumberjack (Receiver)
+    │                                   │
+    │ Has 8 oak_saplings (unwanted)     │
+    │                                   │
+    ├──[OFFER] oak_sapling 8───────────►│
+    │                                   │
+    │                             Wants saplings!
+    │                                   │
+    │◄──[WANT] oak_sapling 8 from       │
+    │     Farmer (have 2)───────────────┤
+    │                                   │
+    │ (5 second collection window)      │
+    │ (select neediest respondent)      │
+    │                                   │
+    ├──[TRADE_ACCEPT] Lumberjack───────►│
+    ├──[TRADE_AT] 100 64 200───────────►│
+    │                                   │
+    │                          Traveling...
+    │ Traveling...                      │
+    │                                   │
+    │◄─────────[TRADE_READY]────────────┤
+    ├──────────[TRADE_READY]───────────►│
+    │                                   │
+    │ (drops items, steps back)         │
+    │                                   │
+    ├──────────[TRADE_DROPPED]─────────►│
+    │                                   │
+    │                          (picks up items)
+    │                                   │
+    │◄─────────[TRADE_DONE]─────────────┤
+    ├──────────[TRADE_DONE]────────────►│
+    │                                   │
+    │ Resume normal work                │ Resume normal work
+```
+
+### Why 5-Second Collection Window?
+
+When an offer is broadcast, multiple bots might want the items:
+
+```
+[OFFER] oak_log 4                        // Farmer offers logs
+[WANT] oak_log 4 from Farmer (have 2)    // Lumberjack A responds
+[WANT] oak_log 4 from Farmer (have 8)    // Lumberjack B responds
+                                         // After 5 second window...
+[TRADE_ACCEPT] Lumberjack_A              // Farmer picks neediest (count=2)
+```
+
+**Why neediest wins?**
+- Prevents resource hoarding
+- Bot with count=2 needs logs more than bot with count=8
+- Creates fairer resource distribution
+
+### Item Categorization
+
+Each role defines what it wants vs. what it can trade:
+
+```typescript
+// What each role WANTS (keeps for itself)
+Farmer:     seeds, produce, hoe, logs, planks, sticks
+Lumberjack: logs, planks, sticks, saplings, axe
+Landscaper: dirt, cobblestone, stone, shovel, pickaxe, planks, slabs
+
+// What each role helps gather (for others)
+Farmer helps Landscaper:     dirt, cobblestone, gravel
+Lumberjack helps Farmer:     seeds, wheat, carrots, potatoes
+Landscaper helps Lumberjack: saplings, logs
+```
+
+**Why "helpful pickup"?**
+
+Bots naturally encounter items for other roles:
+- Farmer tills dirt → drops dirt items → picks up for landscaper
+- Lumberjack breaks leaves → drops saplings → keeps them
+- Landscaper digs → finds seeds in grass → picks up for farmer
+
+This creates emergent cooperation.
+
+### Trade Priority in Behavior Trees
+
+Trade behaviors are integrated at specific priorities:
+
+```
+Priority 1: Complete active trade (highest - finish what we started)
+Priority 4: Respond to trade offers (medium-high)
+Priority 13-14: Broadcast trade offers (low - when idle)
+```
+
+**Why high priority for completing trades?**
+
+Once a trade is accepted, both parties are committed:
+- Partner is traveling/waiting
+- Items are promised
+- Abandoning mid-trade wastes partner's time
+
+**Why low priority for broadcasting?**
+
+Offering items is opportunistic:
+- Only when not doing productive work
+- 4+ unwanted items threshold prevents spam
+- 30-second cooldown between offers
+
+### Meeting Point Selection
+
+```typescript
+function getTradeLocation(villageChat, spawnPos): Vec3 {
+    // Prefer village center if established
+    const center = villageChat.getVillageCenter();
+    if (center) return center;
+
+    // Otherwise, offset from spawn
+    return spawnPos.offset(3, 0, 3);
+}
+```
+
+**Why village center?**
+- Central location minimizes travel
+- Known to all bots
+- Clear area (usually)
+
+**Why offset from spawn if no village?**
+- Don't block spawn point
+- Consistent meeting location
+
+### Trade Cancellation
+
+Trades can fail for various reasons:
+- Partner disconnects
+- Partner doesn't arrive within 2 minutes
+- Partner stuck in pathfinding
+
+On cancellation:
+- Items stay with original owner
+- Both bots resume normal work
+- No penalty/cooldown (not bot's fault)
 
 ## Terraform Coordination
 

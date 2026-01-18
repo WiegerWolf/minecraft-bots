@@ -28,12 +28,14 @@ How the bot tracks and reasons about the world:
 - WorldStateBuilder: the translation layer
 - Farm center and strategic state
 - Memory systems (exploration, bad water, unreachable items)
+- Trade state (offers, active trades, item categorization)
 
 ### [Multi-Bot Coordination](./multi-bot-coordination.md)
 How multiple bots work together:
 - The village concept and role specialization
 - Chat-based communication protocol
-- Resource request/fulfill pattern
+- Resource request/fulfill pattern (chest-based)
+- Direct hand-to-hand trading (item exchange)
 - Terraform coordination
 - Process management and staggered startup
 
@@ -173,6 +175,13 @@ The bot manager (`src/manager/`) provides an interactive terminal interface for 
 | Sign crafting materials | 6 planks + 1 stick | ProcessWood can chain to satisfy this |
 | Lumberjack tree search | 50/32 blocks | With/without village center (must match blackboard) |
 | Full chest memory | 5 minutes | Time before retrying a full chest |
+| Trade offer threshold | 4+ items | Minimum unwanted items before offering trade |
+| Trade offer cooldown | 30 seconds | Time between trade broadcasts |
+| Trade response window | 5 seconds | Time to collect [WANT] responses |
+| Trade arrival timeout | 2 minutes | Max time to wait for partner arrival |
+| CompleteTrade utility | 150 | Very high - finish active trades first |
+| RespondToTrade utility | 70 | Medium-high when wanted offer exists |
+| BroadcastTrade utility | 30-50 | Low priority, when idle with clutter |
 
 ### File Locations
 
@@ -185,9 +194,12 @@ The bot manager (`src/manager/`) provides an interactive terminal interface for 
 | WorldStateBuilder | `src/planning/WorldStateBuilder.ts` |
 | Farming Blackboard | `src/roles/farming/Blackboard.ts` |
 | Lumberjack Blackboard | `src/roles/lumberjack/LumberjackBlackboard.ts` |
+| Landscaper Blackboard | `src/roles/landscaper/LandscaperBlackboard.ts` |
 | GOAPRole base | `src/roles/GOAPRole.ts` |
 | VillageChat | `src/shared/VillageChat.ts` |
 | SignKnowledge | `src/shared/SignKnowledge.ts` |
+| ItemCategories | `src/shared/ItemCategories.ts` |
+| Shared Trade Actions | `src/shared/actions/BaseTrade.ts` |
 | Logger | `src/shared/logger.ts` |
 | TUI Manager | `src/manager/index.tsx` |
 | Old Process Manager | `src/index.ts` |

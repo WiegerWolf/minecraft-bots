@@ -410,6 +410,77 @@ The queue pattern allows:
 - GOAP planner schedules sign writing separately
 - Multiple signs can queue up, written one at a time
 
+### Trade State (All Roles)
+
+All roles track direct trading state for hand-to-hand item exchange:
+
+```typescript
+// Trade state fields (shared across all blackboards)
+bb.tradeableItems: InventoryItem[];     // Items this role doesn't need
+bb.tradeableItemCount: number;          // Count of tradeable items
+bb.pendingTradeOffers: TradeOffer[];    // Active offers from other bots
+bb.activeTrade: ActiveTrade | null;     // Current trade in progress
+bb.lastOfferTime: number;               // Timestamp of last broadcast (cooldown)
+```
+
+**Why track `tradeableItems` in blackboard?**
+
+Computing "unwanted" items requires:
+- Checking item name against role's wanted list
+- Pattern matching (e.g., `*_seeds` matches `wheat_seeds`)
+- This is done once per tick, not repeatedly
+
+**Why `pendingTradeOffers` array?**
+
+Multiple bots might offer items simultaneously:
+```
+[OFFER] oak_sapling 4    // From lumberjack
+[OFFER] wheat_seeds 8    // From farmer
+```
+
+Bot evaluates which offer is most valuable and responds to one.
+
+**Why `activeTrade` state machine?**
+
+Trade involves multiple steps:
+```typescript
+interface ActiveTrade {
+    partner: string;           // Who we're trading with
+    item: string;              // What item
+    quantity: number;          // How many
+    meetingPoint: Vec3 | null; // Where to meet
+    role: 'giver' | 'receiver';// Our role in trade
+    status: TradeStatus;       // Current phase
+    partnerReady: boolean;     // Is partner at meeting point?
+    wantResponses: WantResponse[]; // Collected during 5s window (giver only)
+    offerTimestamp: number;    // When offer was made
+}
+
+type TradeStatus =
+    | 'offering'    // Giver: broadcast offer, collecting responses
+    | 'wanting'     // Receiver: sent [WANT], waiting for accept
+    | 'accepted'    // Trade accepted, traveling
+    | 'traveling'   // Pathfinding to meeting point
+    | 'ready'       // At meeting point, waiting for partner
+    | 'dropping'    // Giver: dropping items
+    | 'picking_up'  // Receiver: collecting dropped items
+    | 'done'        // Trade complete
+    | 'cancelled';  // Trade failed
+```
+
+**Why 30-second cooldown (`lastOfferTime`)?**
+
+Without cooldown:
+1. Bot offers items
+2. No one responds (all busy)
+3. Bot immediately offers again
+4. Chat spam, wasted processing
+
+30 seconds is long enough to:
+- Allow work between offers
+- Not flood chat
+- Still clear inventory reasonably fast
+
 ## Farm Center: Critical Strategic State
 
 ```typescript
