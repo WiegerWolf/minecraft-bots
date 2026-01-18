@@ -3,7 +3,7 @@ import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
-import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
+import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
 import {
     findSignsNear,
     readSignText,
@@ -41,7 +41,7 @@ export class StudySpawnSigns implements BehaviorNode {
         bb.lastAction = 'study_spawn_signs';
         bb.log?.info({ spawnPos: bb.spawnPosition.toString() }, 'Walking to spawn to study signs');
 
-        // Walk to spawn area first
+        // Walk to spawn area first (with knight's move recovery)
         try {
             const spawnGoal = new GoalNear(
                 bb.spawnPosition.x,
@@ -49,9 +49,9 @@ export class StudySpawnSigns implements BehaviorNode {
                 bb.spawnPosition.z,
                 5
             );
-            const reachedSpawn = await pathfinderGotoWithRetry(bot, spawnGoal, 2, 10000);
-            if (!reachedSpawn) {
-                bb.log?.warn('Could not reach spawn area to study signs');
+            const result = await smartPathfinderGoto(bot, spawnGoal, { timeoutMs: 15000 });
+            if (!result.success) {
+                bb.log?.warn({ reason: result.failureReason }, 'Could not reach spawn area to study signs');
                 // Mark as studied anyway to avoid infinite loops
                 bb.hasStudiedSigns = true;
                 return 'failure';
@@ -79,14 +79,14 @@ export class StudySpawnSigns implements BehaviorNode {
 
         for (const sign of signs) {
             try {
-                // Walk close to the sign
+                // Walk close to the sign (with knight's move recovery)
                 const signGoal = new GoalNear(
                     sign.position.x,
                     sign.position.y,
                     sign.position.z,
                     2
                 );
-                await pathfinderGotoWithRetry(bot, signGoal, 1, 5000);
+                await smartPathfinderGoto(bot, signGoal, { timeoutMs: 8000 });
 
                 // Look at the sign (face it)
                 await bot.lookAt(sign.position.offset(0.5, 0.5, 0.5));

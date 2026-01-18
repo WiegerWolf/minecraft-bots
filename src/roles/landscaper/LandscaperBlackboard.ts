@@ -3,6 +3,7 @@ import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
 import type { VillageChat, TerraformRequest } from '../../shared/VillageChat';
 import type { Logger } from '../../shared/logger';
+import { type StuckTracker, createStuckTracker } from '../../shared/PathfindingUtils';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -48,6 +49,9 @@ export interface LandscaperBlackboard {
     // Logger (set by role)
     log: Logger | null;
 
+    // Pathfinding stuck detection (for hole escape)
+    stuckTracker: StuckTracker;
+
     // Exploration memory
     exploredPositions: ExplorationMemory[];
 
@@ -88,6 +92,8 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
 
         villageChat: null,
         log: null,
+
+        stuckTracker: createStuckTracker(),
 
         exploredPositions: [],
         unreachableDrops: new Map(),

@@ -3,7 +3,7 @@ import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
-import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
+import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
 import {
     readSignText,
     parseSignText,
@@ -43,12 +43,12 @@ export class ReadUnknownSign implements BehaviorNode {
         bb.lastAction = 'read_unknown_sign';
         bb.log?.info({ signPos: targetPos.toString() }, 'Curious about nearby sign, going to read it');
 
-        // Walk to the sign
+        // Walk to the sign (with knight's move recovery)
         try {
             const signGoal = new GoalNear(targetPos.x, targetPos.y, targetPos.z, 2);
-            const reached = await pathfinderGotoWithRetry(bot, signGoal, 2, 8000);
-            if (!reached) {
-                bb.log?.debug({ signPos: targetPos.toString() }, 'Could not reach sign');
+            const result = await smartPathfinderGoto(bot, signGoal, { timeoutMs: 10000 });
+            if (!result.success) {
+                bb.log?.debug({ signPos: targetPos.toString(), reason: result.failureReason }, 'Could not reach sign');
                 // Mark as read anyway to avoid infinite retries
                 this.markSignRead(bb, targetPos);
                 return 'failure';

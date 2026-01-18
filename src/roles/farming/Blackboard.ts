@@ -4,6 +4,7 @@ import { Vec3 } from 'vec3';
 import type { VillageChat } from '../../shared/VillageChat';
 import type { Logger } from '../../shared/logger';
 import { SIGN_SEARCH_RADIUS } from '../../shared/SignKnowledge';
+import { type StuckTracker, createStuckTracker } from '../../shared/PathfindingUtils';
 
 export interface ExplorationMemory {
     position: Vec3;
@@ -69,6 +70,9 @@ export interface FarmingBlackboard {
     // Logging (set by role)
     log: Logger | null;
 
+    // Pathfinding stuck detection (for hole escape)
+    stuckTracker: StuckTracker;
+
     // Computed booleans for easy decision making
     canTill: boolean;
     canPlant: boolean;
@@ -133,6 +137,8 @@ export function createBlackboard(): FarmingBlackboard {
 
         villageChat: null,
         log: null,
+
+        stuckTracker: createStuckTracker(),
 
         canTill: false,
         canPlant: false,
