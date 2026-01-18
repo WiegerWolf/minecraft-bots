@@ -10,6 +10,7 @@ export { StudySpawnSigns } from './StudySpawnSigns';
 export { CheckFarmForTerraformNeeds } from './CheckFarmForTerraformNeeds';
 export { GatherDirt } from './GatherDirt';
 export { CraftSlabs } from './CraftSlabs';
+export { MaintainFarm } from './MaintainFarm';
 
 // Trade behaviors
 export { BroadcastOffer, RespondToOffer, CompleteTrade } from './TradeActions';

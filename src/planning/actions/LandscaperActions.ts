@@ -15,6 +15,7 @@ import {
   CheckFarmForTerraformNeeds,
   GatherDirt,
   CraftSlabs,
+  MaintainFarm,
   BroadcastOffer,
   RespondToOffer,
   CompleteTrade,
@@ -555,6 +556,39 @@ export class CompleteTradeAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Maintain and repair known farms
+ *
+ * Proactively visits known farms to fix:
+ * - Stacked water (water below central water source)
+ * - Spreading water
+ * - Holes in farm surface
+ */
+export class MaintainFarmsAction extends BaseGOAPAction {
+  name = 'MaintainFarms';
+  private impl = new MaintainFarm();
+
+  preconditions = [
+    booleanPrecondition('has.studiedSigns', true, 'has studied signs'),
+    numericPrecondition('state.knownFarmCount', v => v > 0, 'has known farms'),
+    numericPrecondition('inv.dirt', v => v >= 4, 'has dirt for repairs'),
+  ];
+
+  effects = [
+    setEffect('state.farmMaintenanceNeeded', false, 'farms maintained'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    return 2.0; // Moderate cost - maintenance is ongoing
+  }
+
+  override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    if (result === 'running') return ActionResult.RUNNING;
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * Create all landscaper actions for the planner.
  */
 export function createLandscaperActions(): BaseGOAPAction[] {
@@ -567,6 +601,7 @@ export function createLandscaperActions(): BaseGOAPAction[] {
     // Regular actions
     new StudySpawnSignsAction(),
     new CheckFarmForTerraformNeedsAction(),
+    new MaintainFarmsAction(),
     new PickupItemsAction(),
     new TerraformAreaAction(),
     new CraftShovelAction(),

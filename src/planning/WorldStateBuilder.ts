@@ -197,7 +197,19 @@ export class WorldStateBuilder {
     // Sign-based farm knowledge (proactive terraforming)
     ws.set('has.studiedSigns', bb.hasStudiedSigns);
     ws.set('known.farms', bb.knownFarms.length);
+    ws.set('state.knownFarmCount', bb.knownFarms.length);
     ws.set('state.farmsNeedingCheck', bb.farmsNeedingCheck.length);
+
+    // Farm maintenance state
+    // Maintenance is needed if any farm hasn't been checked in 5 minutes
+    const now = Date.now();
+    const maintenanceInterval = 5 * 60 * 1000; // 5 minutes
+    const farmMaintenanceNeeded = bb.knownFarms.some(farmPos => {
+      const key = `${Math.floor(farmPos.x)},${Math.floor(farmPos.y)},${Math.floor(farmPos.z)}`;
+      const lastCheck = bb.lastFarmCheckTimes.get(key) || 0;
+      return (now - lastCheck) > maintenanceInterval;
+    });
+    ws.set('state.farmMaintenanceNeeded', farmMaintenanceNeeded);
   }
 
   /**

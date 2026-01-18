@@ -235,6 +235,61 @@ export class CheckKnownFarmsGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Actively maintain known farms - fix holes, stacked water, etc.
+ * MEDIUM-HIGH priority - farms need regular upkeep.
+ *
+ * The landscaper periodically visits known farms to:
+ * 1. Fix stacked water (water below the central water source)
+ * 2. Seal spreading water
+ * 3. Fill holes in the farm surface
+ *
+ * Farm structure should be:
+ * - Top layer: 9x9 dirt with single water source in center
+ * - Bottom layer: solid blocks (NO water)
+ */
+export class MaintainFarmsGoal extends BaseGoal {
+  name = 'MaintainFarms';
+  description = 'Actively maintain and repair known farms';
+
+  // Goal is satisfied when we've done a maintenance pass
+  // (tracked via lastFarmCheckTimes, but we use a simple boolean effect)
+  conditions = [
+    booleanGoalCondition('state.farmMaintenanceNeeded', false, 'farms maintained'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const knownFarmCount = ws.getNumber('state.knownFarmCount');
+    const hasStudied = ws.getBool('has.studiedSigns');
+
+    // No farms to maintain
+    if (!hasStudied || knownFarmCount === 0) return 0;
+
+    // Don't maintain if we have pending terraform work (do that first)
+    const hasPendingRequest = ws.getBool('has.pendingTerraformRequest');
+    if (hasPendingRequest) return 0;
+
+    // Don't maintain if actively terraforming
+    const terraformActive = ws.getBool('terraform.active');
+    if (terraformActive) return 0;
+
+    // Need dirt to fix issues
+    const dirtCount = ws.getNumber('inv.dirt');
+    if (dirtCount < 4) return 0;
+
+    // Medium-high priority - farms need regular care
+    // Scale with number of farms (more farms = more important)
+    return 55 + Math.min(knownFarmCount * 5, 20); // 55-75
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const knownFarmCount = ws.getNumber('state.knownFarmCount');
+    const hasStudied = ws.getBool('has.studiedSigns');
+    const dirtCount = ws.getNumber('inv.dirt');
+    return hasStudied && knownFarmCount > 0 && dirtCount >= 4;
+  }
+}
+
+/**
  * Goal: Craft wooden slabs for pathfinding scaffolding.
  * LOW priority - slabs help navigation but aren't critical.
  *
@@ -368,13 +423,20 @@ export class ExploreGoal extends BaseGoal {
 /**
  * Goal: Complete an active trade.
  * HIGHEST priority when in a trade - finish what we started.
+ *
+ * The goal is satisfied when trade.status becomes 'done' or 'idle'.
  */
 export class CompleteTradeGoal extends BaseGoal {
   name = 'CompleteTrade';
   description = 'Complete an active trade exchange';
 
+  // Goal is satisfied when trade is done/idle
   conditions = [
-    booleanGoalCondition('trade.status', false, 'no active trade'),
+    {
+      key: 'trade.status',
+      check: (value: any) => value === 'done' || value === 'idle' || !value,
+      description: 'trade completed or idle',
+    },
   ];
 
   getUtility(ws: WorldState): number {
@@ -397,20 +459,31 @@ export class CompleteTradeGoal extends BaseGoal {
 /**
  * Goal: Respond to trade offers for items we want.
  * MEDIUM priority when there's an offer for something we need.
+ *
+ * The goal is satisfied when we've responded (trade.status == 'wanting')
+ * or entered an active trade.
  */
 export class RespondToTradeOfferGoal extends BaseGoal {
   name = 'RespondToTradeOffer';
   description = 'Respond to trade offers for items we want';
 
+  // Goal is satisfied when we've responded to an offer
   conditions = [
-    numericGoalCondition('trade.pendingOffers', v => v === 0, 'no pending offers'),
+    {
+      key: 'trade.status',
+      check: (value: any) => value === 'wanting' || value === 'accepted' || value === 'traveling',
+      description: 'responded to trade offer',
+    },
   ];
 
   getUtility(ws: WorldState): number {
     const pendingOffers = ws.getNumber('trade.pendingOffers');
     const isInTrade = ws.getBool('trade.inTrade');
+    const tradeStatus = ws.getString('trade.status');
 
+    // Don't pursue if already responded/in trade or no offers
     if (pendingOffers === 0 || isInTrade) return 0;
+    if (['wanting', 'accepted', 'traveling'].includes(tradeStatus)) return 0;
 
     // Medium-high priority - get items we want
     return 70;
@@ -419,28 +492,43 @@ export class RespondToTradeOfferGoal extends BaseGoal {
   override isValid(ws: WorldState): boolean {
     const pendingOffers = ws.getNumber('trade.pendingOffers');
     const isInTrade = ws.getBool('trade.inTrade');
-    return pendingOffers > 0 && !isInTrade;
+    const tradeStatus = ws.getString('trade.status');
+    return pendingOffers > 0 && !isInTrade && !['wanting', 'accepted', 'traveling'].includes(tradeStatus);
   }
 }
 
 /**
  * Goal: Broadcast trade offer for unwanted items.
  * LOW priority - only when idle with unwanted items.
+ *
+ * Note: The goal condition checks trade.status == 'offering' because that's
+ * what the BroadcastTradeOfferAction achieves. The utility/isValid checks
+ * ensure we only pursue this goal when we have items to trade.
  */
 export class BroadcastTradeOfferGoal extends BaseGoal {
   name = 'BroadcastTradeOffer';
   description = 'Offer unwanted items for trade';
 
+  // Goal is satisfied when we've started offering (action sets trade.status = 'offering')
   conditions = [
-    numericGoalCondition('trade.tradeableCount', v => v < 4, 'no excess items'),
+    {
+      key: 'trade.status',
+      check: (value: any) => value === 'offering',
+      description: 'offer has been broadcast',
+    },
   ];
 
   getUtility(ws: WorldState): number {
     const tradeableCount = ws.getNumber('trade.tradeableCount');
     const isInTrade = ws.getBool('trade.inTrade');
     const offerCooldown = ws.getBool('trade.onCooldown');
+    const tradeStatus = ws.getString('trade.status');
 
-    if (tradeableCount < 4 || isInTrade || offerCooldown) return 0;
+    // Don't pursue if already offering or in active trade
+    if (tradeStatus === 'offering' || isInTrade || offerCooldown) return 0;
+
+    // Need 4+ tradeable items
+    if (tradeableCount < 4) return 0;
 
     // Low priority - do when idle
     // Scale slightly with tradeable items (30-50)
@@ -451,7 +539,8 @@ export class BroadcastTradeOfferGoal extends BaseGoal {
     const tradeableCount = ws.getNumber('trade.tradeableCount');
     const isInTrade = ws.getBool('trade.inTrade');
     const offerCooldown = ws.getBool('trade.onCooldown');
-    return tradeableCount >= 4 && !isInTrade && !offerCooldown;
+    const tradeStatus = ws.getString('trade.status');
+    return tradeableCount >= 4 && !isInTrade && !offerCooldown && tradeStatus !== 'offering';
   }
 }
 
@@ -465,6 +554,7 @@ export function createLandscaperGoals(): BaseGoal[] {
     new FulfillTerraformRequestGoal(),
     new RespondToTradeOfferGoal(),// Respond to trade offers
     new CheckKnownFarmsGoal(),    // Proactive farm checking
+    new MaintainFarmsGoal(),      // Actively maintain known farms
     new ObtainToolsGoal(),
     new DepositItemsGoal(),
     new CollectDropsGoal(),

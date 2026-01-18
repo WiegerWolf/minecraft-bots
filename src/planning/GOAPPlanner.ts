@@ -336,6 +336,7 @@ export class GOAPPlanner {
       'derived.hasAnyTool', 'derived.hasStorageAccess', // Derived states
       'state.consecutiveIdleTicks',
       'pending.signWrites', // Sign knowledge persistence
+      'trade.status', 'trade.inTrade', // Trade state (different statuses need different plans)
     ];
 
     const keyParts: string[] = [];
