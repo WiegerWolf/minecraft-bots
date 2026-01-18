@@ -338,9 +338,62 @@ export class TerraformArea implements BehaviorNode {
         return 'running';
     }
 
+    /**
+     * Check for water that has flowed into the work area during digging.
+     * Returns positions of any new water blocks that need to be sealed.
+     */
+    private detectFlowingWater(bot: Bot, task: TerraformTask): Vec3[] {
+        const waterCenter = task.waterCenter;
+        const targetY = task.targetY;
+        const radius = 4;
+        const centerX = Math.floor(waterCenter.x);
+        const centerZ = Math.floor(waterCenter.z);
+        const newWater: Vec3[] = [];
+
+        // Scan the 9x9 area for any water blocks (except center)
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dz = -radius; dz <= radius; dz++) {
+                // Skip the center water block
+                if (dx === 0 && dz === 0) continue;
+
+                const x = centerX + dx;
+                const z = centerZ + dz;
+
+                // Check at target Y and one below (where water might flow)
+                for (let dy = 0; dy >= -1; dy--) {
+                    const pos = new Vec3(x, targetY + dy, z);
+                    const block = bot.blockAt(pos);
+
+                    if (block && (block.name === 'water' || block.name === 'flowing_water')) {
+                        // Check if we already know about this water
+                        const posKey = `${pos.x},${pos.y},${pos.z}`;
+                        const alreadyTracked = task.waterBlocksToFill.some(
+                            p => `${p.x},${p.y},${p.z}` === posKey
+                        );
+                        if (!alreadyTracked) {
+                            newWater.push(pos.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        return newWater;
+    }
+
     private async digBlocks(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
         const task = bb.currentTerraformTask!;
         bb.lastAction = 'terraform_digging';
+
+        // PRIORITY CHECK: Detect any water that has flowed in and seal it immediately
+        const flowingWater = this.detectFlowingWater(bot, task);
+        if (flowingWater.length > 0) {
+            bb.log?.warn(`[Landscaper] Water detected during digging! ${flowingWater.length} blocks to seal`);
+            // Add new water blocks to the front of the seal list (high priority)
+            task.waterBlocksToFill = [...flowingWater, ...task.waterBlocksToFill];
+            task.phase = 'sealing_water';
+            return 'running';
+        }
 
         if (task.blocksToRemove.length === 0) {
             task.phase = task.blocksToFill.length > 0 ? 'filling' : 'finishing';
@@ -416,6 +469,15 @@ export class TerraformArea implements BehaviorNode {
     private async fillBlocks(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
         const task = bb.currentTerraformTask!;
         bb.lastAction = 'terraform_filling';
+
+        // PRIORITY CHECK: Detect any water that has flowed in and seal it immediately
+        const flowingWater = this.detectFlowingWater(bot, task);
+        if (flowingWater.length > 0) {
+            bb.log?.warn(`[Landscaper] Water detected during filling! ${flowingWater.length} blocks to seal`);
+            task.waterBlocksToFill = [...flowingWater, ...task.waterBlocksToFill];
+            task.phase = 'sealing_water';
+            return 'running';
+        }
 
         if (task.blocksToFill.length === 0) {
             task.phase = 'finishing';

@@ -75,6 +75,10 @@ export abstract class GOAPRole implements Role {
   // Failed goal cooldowns: goal name -> timestamp when cooldown expires
   private failedGoalCooldowns: Map<string, number> = new Map();
 
+  // Track consecutive planning failures for hole escape detection
+  private consecutivePlanningFailures: number = 0;
+  private lastPlanningFailureTime: number = 0;
+
   // Actions and goals to use (set by subclass)
   protected abstract getActions(): GOAPAction[];
   protected abstract getGoals(): Goal[];
@@ -302,11 +306,19 @@ export abstract class GOAPRole implements Role {
       this.failedGoalCooldowns.set(goal.name, now + 5000);
       // Clear current goal so we can try another
       this.arbiter.clearCurrentGoal();
+
+      // Track planning failures for hole escape detection
+      // If planning keeps failing and we're in a hole, we need to escape
+      await this.checkHoleEscapeOnPlanningFailure();
+
       return;
     }
 
     // Planning succeeded, clear any cooldown for this goal
     this.failedGoalCooldowns.delete(goal.name);
+
+    // Reset planning failure counter on success
+    this.consecutivePlanningFailures = 0;
 
     // Load plan into executor
     if (this.config.debug) {
@@ -317,6 +329,49 @@ export abstract class GOAPRole implements Role {
     }
 
     this.executor.loadPlan(planResult.plan, this.currentWorldState);
+  }
+
+  /**
+   * Check if we should attempt hole escape after repeated planning failures.
+   * Called when planning fails - if we're stuck in a hole, planning will keep
+   * failing because we can't path to resources.
+   */
+  private async checkHoleEscapeOnPlanningFailure(): Promise<void> {
+    if (!this.bot) return;
+
+    const now = Date.now();
+
+    // Reset counter if too much time passed (bot was doing other things)
+    if (now - this.lastPlanningFailureTime > 30000) {
+      this.consecutivePlanningFailures = 0;
+    }
+
+    this.consecutivePlanningFailures++;
+    this.lastPlanningFailureTime = now;
+
+    // After 3 consecutive planning failures, check if we're in a hole
+    if (this.consecutivePlanningFailures >= 3) {
+      if (isInHole(this.bot)) {
+        this.log?.warn(
+          { failures: this.consecutivePlanningFailures },
+          'Bot stuck in hole (planning failures), attempting escape'
+        );
+
+        try {
+          const escaped = await escapeFromHole(this.bot, this.log);
+          if (escaped) {
+            this.log?.info('Successfully escaped from hole');
+            this.consecutivePlanningFailures = 0;
+            // Also reset the blackboard stuck tracker if present
+            if (this.blackboard?.stuckTracker) {
+              resetStuckTracker(this.blackboard.stuckTracker);
+            }
+          }
+        } catch (err) {
+          this.log?.warn({ err }, 'Hole escape attempt failed');
+        }
+      }
+    }
   }
 
   /**
