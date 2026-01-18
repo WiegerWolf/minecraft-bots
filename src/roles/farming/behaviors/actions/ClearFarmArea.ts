@@ -4,8 +4,7 @@ import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
-import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
-import { sleep } from './utils';
+import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
 
 const { GoalNear, GoalLookAtBlock } = goals;
 

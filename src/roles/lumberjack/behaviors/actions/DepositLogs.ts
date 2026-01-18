@@ -3,13 +3,9 @@ import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { LOG_NAMES } from '../../../shared/TreeHarvest';
-import { pathfinderGotoWithRetry } from './utils';
+import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
 
 const { GoalLookAtBlock } = goals;
-
-function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 // How long to remember a chest is full (5 minutes)
 const FULL_CHEST_MEMORY_MS = 5 * 60 * 1000;

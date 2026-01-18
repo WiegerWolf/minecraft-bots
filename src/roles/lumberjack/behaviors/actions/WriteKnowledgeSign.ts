@@ -3,7 +3,7 @@ import type { LumberjackBlackboard, PendingSignWrite } from '../../LumberjackBla
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
-import { pathfinderGotoWithRetry, sleep } from './utils';
+import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
 import {
     formatSignText,
     getSignPositionForType,

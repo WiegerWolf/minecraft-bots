@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
-import { pathfinderGotoWithRetry } from '../farming/behaviors/actions/utils';
+import { pathfinderGotoWithRetry } from '../../shared/PathfindingUtils';
 import type { Logger } from '../../shared/logger';
 
 const { GoalNear, GoalLookAtBlock } = goals;

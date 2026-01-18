@@ -4,13 +4,9 @@ import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
 import { SAPLING_NAMES, CLEARABLE_VEGETATION } from '../../../shared/TreeHarvest';
-import { pathfinderGotoWithRetry } from './utils';
+import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
 
 const { GoalNear } = goals;
-
-function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 // Minimum spacing between saplings to allow trees to grow
 const SAPLING_SPACING = 5;
