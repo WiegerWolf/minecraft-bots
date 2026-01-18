@@ -384,6 +384,7 @@ export class ExploreGoal extends BaseGoal {
 /**
  * Goal: Complete an active trade.
  * HIGHEST priority when in a trade - finish what we started.
+ * This includes the 'offering' state where we're collecting WANT responses.
  */
 export class CompleteTradeGoal extends BaseGoal {
   name = 'CompleteTrade';
@@ -399,7 +400,8 @@ export class CompleteTradeGoal extends BaseGoal {
 
   getUtility(ws: WorldState): number {
     const tradeStatus = ws.getString('trade.status');
-    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+    // Include 'offering' so we don't get preempted while collecting WANT responses
+    const activeStatuses = ['offering', 'wanting', 'accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
 
     if (!activeStatuses.includes(tradeStatus)) return 0;
 
@@ -409,7 +411,7 @@ export class CompleteTradeGoal extends BaseGoal {
 
   override isValid(ws: WorldState): boolean {
     const tradeStatus = ws.getString('trade.status');
-    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+    const activeStatuses = ['offering', 'wanting', 'accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
     return activeStatuses.includes(tradeStatus);
   }
 }
@@ -453,7 +455,8 @@ export class RespondToTradeOfferGoal extends BaseGoal {
 
 /**
  * Goal: Broadcast trade offer for unwanted items.
- * LOW priority - only when idle with unwanted items.
+ * LOW priority to start - only when idle with unwanted items.
+ * HIGH priority when already offering - must finish collecting WANT responses.
  */
 export class BroadcastTradeOfferGoal extends BaseGoal {
   name = 'BroadcastTradeOffer';
@@ -462,8 +465,8 @@ export class BroadcastTradeOfferGoal extends BaseGoal {
   conditions = [
     {
       key: 'trade.status',
-      check: (value: any) => value === 'offering',
-      description: 'offer has been broadcast',
+      check: (value: any) => value === 'done' || value === 'idle' || !value,
+      description: 'offer completed or idle',
     },
   ];
 
@@ -473,8 +476,13 @@ export class BroadcastTradeOfferGoal extends BaseGoal {
     const offerCooldown = ws.getBool('trade.onCooldown');
     const tradeStatus = ws.getString('trade.status');
 
-    // Don't pursue if already offering or in active trade
-    if (tradeStatus === 'offering' || isInTrade || offerCooldown) return 0;
+    // HIGH priority if already offering - must finish collecting WANT responses
+    if (tradeStatus === 'offering') {
+      return 150;
+    }
+
+    // Don't pursue if in active trade or on cooldown
+    if (isInTrade || offerCooldown) return 0;
 
     // Need 4+ tradeable items
     if (tradeableCount < 4) return 0;
@@ -488,7 +496,10 @@ export class BroadcastTradeOfferGoal extends BaseGoal {
     const isInTrade = ws.getBool('trade.inTrade');
     const offerCooldown = ws.getBool('trade.onCooldown');
     const tradeStatus = ws.getString('trade.status');
-    return tradeableCount >= 4 && !isInTrade && !offerCooldown && tradeStatus !== 'offering';
+
+    // Valid if offering (need to continue) OR if ready to start a new offer
+    if (tradeStatus === 'offering') return true;
+    return tradeableCount >= 4 && !isInTrade && !offerCooldown;
   }
 }
 

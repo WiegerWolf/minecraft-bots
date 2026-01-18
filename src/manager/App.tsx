@@ -101,6 +101,28 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
 
   useRestartTrigger({ onTrigger: handleRestartTrigger });
 
+  // Signal handling for restart (SIGUSR1)
+  useEffect(() => {
+    const handleSignal = () => {
+      handleLog({
+        id: logActions.getNextId(),
+        timestamp: new Date(),
+        botName: 'Manager',
+        level: 30,
+        message: 'Received SIGUSR1, restarting all bots...',
+        extras: {},
+        raw: '',
+      });
+      botActions.restartAll();
+    };
+
+    process.on('SIGUSR1', handleSignal);
+
+    return () => {
+      process.off('SIGUSR1', handleSignal);
+    };
+  }, [handleLog, logActions, botActions]);
+
   // Auto-start bots on mount
   useEffect(() => {
     if (autoStart) {

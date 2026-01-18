@@ -532,12 +532,12 @@ export class BroadcastTradeOfferGoal extends BaseGoal {
   name = 'BroadcastTradeOffer';
   description = 'Offer unwanted items for trade';
 
-  // Goal is satisfied when we've started offering (action sets trade.status = 'offering')
+  // Goal is satisfied when offer process completes (done/idle)
   conditions = [
     {
       key: 'trade.status',
-      check: (value: any) => value === 'offering',
-      description: 'offer has been broadcast',
+      check: (value: any) => value === 'done' || value === 'idle' || !value,
+      description: 'offer completed or idle',
     },
   ];
 
@@ -547,8 +547,13 @@ export class BroadcastTradeOfferGoal extends BaseGoal {
     const offerCooldown = ws.getBool('trade.onCooldown');
     const tradeStatus = ws.getString('trade.status');
 
-    // Don't pursue if already offering or in active trade
-    if (tradeStatus === 'offering' || isInTrade || offerCooldown) return 0;
+    // HIGH priority if already offering - must finish collecting WANT responses
+    if (tradeStatus === 'offering') {
+      return 150;
+    }
+
+    // Don't pursue if in active trade or on cooldown
+    if (isInTrade || offerCooldown) return 0;
 
     // Need 4+ tradeable items
     if (tradeableCount < 4) return 0;
@@ -563,7 +568,10 @@ export class BroadcastTradeOfferGoal extends BaseGoal {
     const isInTrade = ws.getBool('trade.inTrade');
     const offerCooldown = ws.getBool('trade.onCooldown');
     const tradeStatus = ws.getString('trade.status');
-    return tradeableCount >= 4 && !isInTrade && !offerCooldown && tradeStatus !== 'offering';
+
+    // Valid if offering (need to continue) OR if ready to start a new offer
+    if (tradeStatus === 'offering') return true;
+    return tradeableCount >= 4 && !isInTrade && !offerCooldown;
   }
 }
 
