@@ -512,8 +512,8 @@ export class RespondToTradeOfferGoal extends BaseGoal {
     if (pendingOffers === 0 || isInTrade) return 0;
     if (['wanting', 'accepted', 'traveling'].includes(tradeStatus)) return 0;
 
-    // Medium-high priority - get items we want
-    return 70;
+    // High priority - trading saves time vs gathering
+    return 120;
   }
 
   override isValid(ws: WorldState): boolean {

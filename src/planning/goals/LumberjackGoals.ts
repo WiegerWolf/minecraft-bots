@@ -372,8 +372,10 @@ export class CompleteTradeGoal extends BaseGoal {
 
   getUtility(ws: WorldState): number {
     const tradeStatus = ws.getString('trade.status');
-    // Include 'offering' so we don't get preempted while collecting WANT responses
-    const activeStatuses = ['offering', 'wanting', 'accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+    // Only statuses that CompleteTradeAction can handle
+    // 'offering' is handled by BroadcastTradeOfferGoal
+    // 'wanting' is a waiting state - bot can't act, needs to wait for offerer to ACCEPT
+    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
 
     if (!activeStatuses.includes(tradeStatus)) return 0;
 
@@ -383,7 +385,7 @@ export class CompleteTradeGoal extends BaseGoal {
 
   override isValid(ws: WorldState): boolean {
     const tradeStatus = ws.getString('trade.status');
-    const activeStatuses = ['offering', 'wanting', 'accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
     return activeStatuses.includes(tradeStatus);
   }
 }
@@ -413,8 +415,8 @@ export class RespondToTradeOfferGoal extends BaseGoal {
     if (pendingOffers === 0 || isInTrade) return 0;
     if (['wanting', 'accepted', 'traveling'].includes(tradeStatus)) return 0;
 
-    // Medium-high priority - get items we want
-    return 70;
+    // High priority - trading saves time vs gathering
+    return 120;
   }
 
   override isValid(ws: WorldState): boolean {
