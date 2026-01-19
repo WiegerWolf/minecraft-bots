@@ -15,7 +15,31 @@ export interface MockBlock {
   stateId?: number;
   hardness?: number;
   boundingBox?: string;
+  transparent?: boolean;
 }
+
+/**
+ * Blocks that are transparent (light passes through).
+ * Note: This does NOT mean walkable - leaves and glass are transparent but block movement.
+ */
+const TRANSPARENT_BLOCKS = new Set([
+  'air', 'water', 'flowing_water', 'lava', 'flowing_lava',
+  // Vegetation (passable)
+  'short_grass', 'grass', 'tall_grass', 'fern', 'large_fern',
+  'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet',
+  'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip',
+  'oxeye_daisy', 'cornflower', 'lily_of_the_valley', 'wither_rose',
+  'dead_bush', 'sweet_berry_bush', 'seagrass', 'tall_seagrass',
+  'leaf_litter',
+  // Leaves (transparent but NOT passable - blocks movement)
+  'oak_leaves', 'birch_leaves', 'spruce_leaves', 'jungle_leaves',
+  'acacia_leaves', 'dark_oak_leaves', 'mangrove_leaves', 'cherry_leaves',
+  'azalea_leaves', 'flowering_azalea_leaves',
+  // Glass (transparent but NOT passable)
+  'glass', 'glass_pane', 'white_stained_glass', 'orange_stained_glass',
+  // Misc transparent
+  'torch', 'wall_torch', 'lantern', 'redstone_torch',
+]);
 
 /**
  * Create a mock block with Vec3 position (matches prismarine-block interface).
@@ -27,6 +51,7 @@ function createMockBlock(name: string, x: number, y: number, z: number, signText
     type: 0,
     metadata: 0,
     signText,
+    transparent: TRANSPARENT_BLOCKS.has(name),
   };
 }
 

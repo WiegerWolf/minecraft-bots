@@ -403,7 +403,7 @@ export class CompleteTradeGoal extends BaseGoal {
     // Only statuses that CompleteTradeAction can handle
     // 'offering' is handled by BroadcastTradeOfferGoal
     // 'wanting' is a waiting state - bot can't act, needs to wait for offerer to ACCEPT
-    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'awaiting_pickup', 'picking_up'];
 
     if (!activeStatuses.includes(tradeStatus)) return 0;
 
@@ -413,7 +413,7 @@ export class CompleteTradeGoal extends BaseGoal {
 
   override isValid(ws: WorldState): boolean {
     const tradeStatus = ws.getString('trade.status');
-    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'awaiting_pickup', 'picking_up'];
     return activeStatuses.includes(tradeStatus);
   }
 }

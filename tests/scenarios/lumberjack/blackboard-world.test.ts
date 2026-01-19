@@ -291,5 +291,50 @@ describe('Blackboard Integration with MockWorld', () => {
       expect(bb.forestTrees.length).toBeGreaterThanOrEqual(3);
       expect(bb.hasKnownForest).toBe(true);
     });
+
+    test('SPEC: forest with dense vegetation still detected (grass, ferns around trees)', async () => {
+      // This test verifies the fix for the bug where forests with vegetation
+      // at feet-level were not detected because the walkable access check
+      // was too strict (required 'air' or 'water' only)
+      const world = new MockWorld();
+      world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+
+      // Create 3 trees with vegetation around them (like a real forest)
+      const treePositions = [
+        new Vec3(0, 64, 0),
+        new Vec3(6, 64, 0),
+        new Vec3(3, 64, 6),
+      ];
+
+      for (const treePos of treePositions) {
+        createOakTree(world, treePos, 5);
+
+        // Fill the area around each tree with vegetation (no air at feet level!)
+        for (let dx = -2; dx <= 2; dx++) {
+          for (let dz = -2; dz <= 2; dz++) {
+            if (dx === 0 && dz === 0) continue; // Skip the tree trunk position
+            const pos = treePos.offset(dx, 0, dz);
+            // Randomly place grass/ferns/flowers (all transparent/passable)
+            const vegetation = ['short_grass', 'fern', 'dandelion', 'poppy'][(dx + dz + 10) % 4];
+            world.setBlock(pos, vegetation!);
+          }
+        }
+      }
+
+      const bot = createBotMock({
+        world,
+        position: new Vec3(10, 64, 0), // Start away from trees
+      });
+      const bb = createLumberjackBlackboard();
+      bb.hasStudiedSigns = true;
+
+      await updateLumberjackBlackboard(bot, bb);
+
+      // Even with vegetation everywhere, trees should be detected as reachable
+      // because short_grass, ferns, flowers are transparent/passable
+      expect(bb.nearbyTrees.length).toBeGreaterThan(0);
+      expect(bb.forestTrees.length).toBeGreaterThanOrEqual(3);
+      expect(bb.hasKnownForest).toBe(true);
+    });
   });
 });

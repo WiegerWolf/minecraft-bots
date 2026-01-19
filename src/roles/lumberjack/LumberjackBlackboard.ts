@@ -290,10 +290,16 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
             const feetBlock = bot.blockAt(adjacentPos);
             const headBlock = bot.blockAt(adjacentPos.offset(0, 1, 0));
 
-            // Need: solid ground below, air at feet and head level
-            if (groundBlock && isWalkableGround(groundBlock.name) &&
-                feetBlock && (feetBlock.name === 'air' || feetBlock.name === 'water') &&
-                headBlock && (headBlock.name === 'air' || headBlock.name === 'water' || headBlock.name.includes('leaves'))) {
+            // Need: solid ground below, passable at feet and head level
+            // Note: transparent includes leaves and glass which block movement, so we exclude them
+            const isPassable = (block: any) => {
+                if (!block) return false;
+                if (block.name === 'air' || block.name === 'water') return true;
+                // Transparent blocks that aren't leaves or glass are passable (vegetation)
+                if (block.transparent && !block.name.includes('leaves') && !block.name.includes('glass')) return true;
+                return false;
+            };
+            if (groundBlock && isWalkableGround(groundBlock.name) && isPassable(feetBlock) && isPassable(headBlock)) {
                 hasWalkableAccess = true;
                 break;
             }

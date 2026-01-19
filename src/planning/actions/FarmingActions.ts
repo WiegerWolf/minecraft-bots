@@ -486,7 +486,8 @@ export class GetSignMaterialsAction extends BaseGOAPAction {
   }
 
   override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
-    // Broadcast need for sign materials if needed
+    // Broadcast intent-based need for sign if we don't have materials
+    // Lumberjack can respond with a sign, planks+sticks, or logs
     if (bb.villageChat) {
       const plankCount = bot.inventory.items()
         .filter(i => i.name.endsWith('_planks'))
@@ -495,13 +496,10 @@ export class GetSignMaterialsAction extends BaseGOAPAction {
         .filter(i => i.name === 'stick')
         .reduce((sum, i) => sum + i.count, 0);
 
-      if (plankCount < 6 && !bb.villageChat.hasPendingNeedFor('planks')) {
-        bb.log?.info('Broadcasting need for planks for sign');
-        bb.villageChat.broadcastNeed('planks');
-      }
-      if (stickCount < 1 && !bb.villageChat.hasPendingNeedFor('stick')) {
-        bb.log?.info('Broadcasting need for sticks for sign');
-        bb.villageChat.broadcastNeed('stick');
+      // Broadcast single 'sign' need instead of separate material needs
+      if ((plankCount < 6 || stickCount < 1) && !bb.villageChat.hasPendingNeedFor('sign')) {
+        bb.log?.info('Broadcasting need for sign');
+        bb.villageChat.broadcastNeed('sign');
       }
     }
 
@@ -663,7 +661,7 @@ export class CompleteTradeAction extends BaseGOAPAction {
     {
       key: 'trade.status',
       check: (value: any) => {
-        const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+        const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'awaiting_pickup', 'picking_up'];
         return activeStatuses.includes(value);
       },
       description: 'has active trade',

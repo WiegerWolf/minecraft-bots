@@ -77,6 +77,7 @@ export function createBotMock(config: BotMockConfig = {}): Bot {
         type: block.type ?? 0,
         metadata: block.metadata ?? 0,
         signText: block.signText,
+        transparent: block.transparent ?? false,
       };
     },
     findBlocks: (options: {

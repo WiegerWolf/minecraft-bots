@@ -84,6 +84,7 @@ export type TradeStatus =
     | 'traveling'      // Moving to meeting point
     | 'ready'          // At meeting point, waiting for partner
     | 'dropping'       // Giver: dropping items
+    | 'awaiting_pickup' // Giver: items dropped, waiting for receiver to pick up and confirm
     | 'picking_up'     // Receiver: picking up items
     | 'done'           // Trade complete
     | 'cancelled';     // Trade was cancelled
@@ -1043,11 +1044,13 @@ export class VillageChat {
 
     /**
      * Signal that items have been dropped (called by giver).
+     * Giver status changes to 'awaiting_pickup' - they wait for receiver's TRADE_DONE.
      */
     sendTradeDropped(): void {
         if (!this.state.activeTrade) return;
 
-        this.state.activeTrade.status = 'done';
+        // Giver now waits for receiver to pick up and send TRADE_DONE
+        this.state.activeTrade.status = 'awaiting_pickup';
 
         const msg = '[TRADE_DROPPED]';
         this.bot.chat(msg);

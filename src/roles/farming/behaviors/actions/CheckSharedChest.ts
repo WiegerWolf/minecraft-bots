@@ -60,7 +60,8 @@ export class CheckSharedChest {
     }
 
     /**
-     * Request materials via need broadcast if not already requested recently.
+     * Request help via intent-based need broadcast if not already requested recently.
+     * Broadcasts 'hoe' so lumberjack can respond with a hoe, planks+sticks, or logs.
      * Returns true if a new request was made or one is pending.
      */
     private requestMaterialsIfNeeded(bb: FarmingBlackboard): boolean {
@@ -69,9 +70,9 @@ export class CheckSharedChest {
         const now = Date.now();
 
         // Check if we already have a pending need
-        if (bb.villageChat.hasPendingNeedFor('log')) {
+        if (bb.villageChat.hasPendingNeedFor('hoe')) {
             bb.lastAction = 'waiting_for_materials';
-            bb.log?.debug('[Farmer] Already have pending log need');
+            bb.log?.debug('[Farmer] Already have pending hoe need');
             return true;
         }
 
@@ -81,11 +82,11 @@ export class CheckSharedChest {
             return true;
         }
 
-        // Broadcast new need
+        // Broadcast intent-based need (hoe, not raw materials)
         this.lastRequestTime = now;
         bb.lastAction = 'broadcast_need';
-        bb.log?.info('[Farmer] Chest empty, broadcasting need for logs');
-        bb.villageChat.broadcastNeed('log');
+        bb.log?.info('[Farmer] Chest empty, broadcasting need for hoe');
+        bb.villageChat.broadcastNeed('hoe');
         return true;
     }
 

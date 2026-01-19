@@ -405,13 +405,18 @@ export abstract class BaseExecuteTrade<TBlackboard extends TradeBlackboard> {
                 bot.setControlState('back', false);
             }
 
-            // Signal items dropped
+            // Signal items dropped - status changes to 'awaiting_pickup'
             bb.villageChat.sendTradeDropped();
 
-            // Wait a bit for receiver to pick up - giver should NOT send TRADE_DONE immediately
-            // The receiver will send TRADE_DONE when they've picked up the items
-            // We just wait here - trade will complete when we receive receiver's TRADE_DONE
-            await sleep(GIVER_WAIT_AFTER_DROP);
+            // Don't complete yet - return running to let tick be called again
+            // Trade will complete when receiver sends TRADE_DONE (which clears our trade state)
+            bb.lastAction = 'trade_awaiting_pickup';
+            return 'running';
+        }
+
+        // Giver is waiting for receiver to pick up and confirm
+        if (trade.status === 'awaiting_pickup') {
+            bb.lastAction = 'trade_awaiting_pickup';
 
             // Check if receiver already completed (they send TRADE_DONE which clears our trade state)
             if (!bb.villageChat.isInTrade()) {
@@ -420,13 +425,17 @@ export abstract class BaseExecuteTrade<TBlackboard extends TradeBlackboard> {
                 return 'success';
             }
 
-            // If receiver hasn't confirmed yet, send our done signal
-            // This handles the case where receiver already picked up and we missed their signal
-            bb.villageChat.sendTradeDone();
-            bb.lastAction = 'trade_done';
-            bb.log?.info(`[${this.config.roleLabel}] Trade complete (giver)`);
+            // Check for timeout - receiver should pick up within reasonable time
+            const elapsed = Date.now() - trade.offerTimestamp;
+            if (elapsed > TRADE_TIMEOUT) {
+                bb.log?.warn(`[${this.config.roleLabel}] Trade timeout waiting for receiver to pick up`);
+                bb.villageChat.cancelTrade();
+                return 'failure';
+            }
 
-            return 'success';
+            // Keep waiting
+            await sleep(1000);
+            return 'running';
         }
 
         return 'running';
@@ -726,24 +735,36 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                     bot.setControlState('back', false);
                 }
 
-                // Signal items dropped
+                // Signal items dropped - status changes to 'awaiting_pickup'
                 bb.villageChat.sendTradeDropped();
 
-                // Wait for receiver to pick up before completing
-                await sleep(GIVER_WAIT_AFTER_DROP);
+                // Don't complete yet - return running to let tick be called again
+                bb.lastAction = 'trade_awaiting_pickup';
+                return 'running';
+            }
 
-                // Check if receiver already completed
+            case 'awaiting_pickup': {
+                // Giver: waiting for receiver to pick up and send TRADE_DONE
+                bb.lastAction = 'trade_awaiting_pickup';
+
+                // Check if receiver already completed (they send TRADE_DONE which clears our trade state)
                 if (!bb.villageChat.isInTrade()) {
                     bb.lastAction = 'trade_done';
                     bb.log?.info(`[${this.config.roleLabel}] Trade complete (giver) - receiver confirmed`);
                     return 'success';
                 }
 
-                // Send our done signal
-                bb.villageChat.sendTradeDone();
-                bb.lastAction = 'trade_done';
-                bb.log?.info(`[${this.config.roleLabel}] Trade complete (giver)`);
-                return 'success';
+                // Check for timeout
+                const elapsed = Date.now() - trade.offerTimestamp;
+                if (elapsed > TRADE_TIMEOUT) {
+                    bb.log?.warn(`[${this.config.roleLabel}] Trade timeout waiting for receiver to pick up`);
+                    bb.villageChat.cancelTrade();
+                    return 'failure';
+                }
+
+                // Keep waiting
+                await sleep(1000);
+                return 'running';
             }
 
             case 'picking_up': {

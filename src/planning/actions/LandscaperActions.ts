@@ -551,7 +551,7 @@ export class CompleteTradeAction extends BaseGOAPAction {
     {
       key: 'trade.status',
       check: (value: any) => {
-        const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'picking_up'];
+        const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'awaiting_pickup', 'picking_up'];
         return activeStatuses.includes(value);
       },
       description: 'has active trade',

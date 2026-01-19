@@ -66,10 +66,11 @@ export class CheckSharedChest extends BaseCheckChest<LandscaperBlackboard> {
     protected override onChestEmpty(bot: Bot, bb: LandscaperBlackboard): void {
         bb.log?.debug(`[Landscaper] Chest had no logs or planks available`);
 
-        // Broadcast need for logs if not already pending
-        if (bb.villageChat && !bb.villageChat.hasPendingNeedFor('log')) {
-            bb.log?.debug('[Landscaper] Broadcasting need for logs');
-            bb.villageChat.broadcastNeed('log');
+        // Broadcast intent-based need for shovel (primary terraforming tool)
+        // Lumberjack can respond with a shovel, planks+sticks, or logs
+        if (bb.villageChat && !bb.villageChat.hasPendingNeedFor('shovel')) {
+            bb.log?.debug('[Landscaper] Broadcasting need for shovel');
+            bb.villageChat.broadcastNeed('shovel');
         }
     }
 }
