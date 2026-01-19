@@ -53,15 +53,15 @@ export class DepositLogs implements BehaviorNode {
         // Clean up expired full chest entries
         this.cleanupFullChests(bb);
 
-        // Check if there are pending requests for wood-related items
-        const hasPendingRequests = bb.villageChat?.hasPendingRequestsToFulfill(['log', 'plank', 'stick']) ?? false;
+        // Check if there are incoming needs we could help with
+        const hasIncomingNeeds = bb.hasIncomingNeeds;
 
-        // Deposit threshold: 8+ logs normally, or any logs if there's a pending request
+        // Deposit threshold: 8+ logs normally, or any logs if there's an incoming need
         const totalWoodItems = bb.logCount + bb.plankCount + bb.stickCount;
         const shouldDeposit = (
             bb.inventoryFull ||
             totalWoodItems >= 8 ||
-            (hasPendingRequests && bb.logCount > 0)
+            (hasIncomingNeeds && bb.logCount > 0)
         );
 
         if (!shouldDeposit) {

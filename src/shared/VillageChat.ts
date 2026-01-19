@@ -1,6 +1,8 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import type { Logger } from './logger';
+import type { Need, NeedOffer, NeedStatus, DeliveryMethod, ItemStack } from './needs/types.js';
+import { generateNeedId, rankOffers } from './needs/types.js';
 
 /**
  * Chat-based village communication system.
@@ -112,6 +114,10 @@ export interface VillageChatState {
     // Trade state
     activeOffers: TradeOffer[];       // Offers from other bots
     activeTrade: ActiveTrade | null;  // Current trade (if any)
+
+    // Need state (intent-based fulfillment)
+    activeNeeds: Need[];              // Needs we've broadcast
+    incomingNeeds: Need[];            // Needs from other bots
 }
 
 export class VillageChat {
@@ -124,6 +130,8 @@ export class VillageChat {
         pendingTerraformRequests: [],
         activeOffers: [],
         activeTrade: null,
+        activeNeeds: [],
+        incomingNeeds: [],
     };
 
     private bot: Bot;
@@ -140,6 +148,14 @@ export class VillageChat {
     private onTradeDroppedCallback: (() => void) | null = null;
     private onTradeDoneCallback: (() => void) | null = null;
     private onTradeCancelCallback: (() => void) | null = null;
+
+    // Need callbacks
+    private onNeedCallback: ((need: Need) => void) | null = null;
+    private onNeedOfferCallback: ((needId: string, offer: NeedOffer) => void) | null = null;
+    private onNeedAcceptedCallback: ((needId: string, provider: string) => void) | null = null;
+    private onProvideAtCallback: ((needId: string, method: DeliveryMethod, pos: Vec3) => void) | null = null;
+    private onNeedFulfilledCallback: ((needId: string) => void) | null = null;
+    private onNeedExpiredCallback: ((needId: string) => void) | null = null;
 
     constructor(bot: Bot, logger?: Logger) {
         this.bot = bot;
@@ -441,6 +457,158 @@ export class VillageChat {
                     }
                 }
             }
+
+            // ═══════════════════════════════════════════════════════════════
+            // NEED PROTOCOL PARSING
+            // ═══════════════════════════════════════════════════════════════
+
+            // Parse need: [NEED] farmer-hoe-1705612345 hoe
+            if (message.startsWith('[NEED] ')) {
+                const match = message.match(/\[NEED\] (\S+) (\S+)/);
+                if (match) {
+                    const needId = match[1]!;
+                    const category = match[2]!;
+
+                    // Create need object
+                    const need: Need = {
+                        id: needId,
+                        from: username,
+                        category,
+                        timestamp: Date.now(),
+                        status: 'broadcasting',
+                        offers: [],
+                        acceptedProvider: null,
+                    };
+
+                    // Check for duplicates
+                    const isDupe = this.state.incomingNeeds.some(n =>
+                        n.id === needId || (n.from === username && n.category === category && Date.now() - n.timestamp < 30000)
+                    );
+
+                    if (!isDupe) {
+                        this.state.incomingNeeds.push(need);
+                        this.log?.info({ from: username, needId, category }, 'Need received');
+                        this.onNeedCallback?.(need);
+                    }
+                }
+            }
+
+            // Parse can_provide: [CAN_PROVIDE] farmer-hoe-1705612345 item:stone_hoe
+            // Or: [CAN_PROVIDE] farmer-hoe-1705612345 mats:oak_planks:4,stick:2
+            if (message.startsWith('[CAN_PROVIDE] ')) {
+                const match = message.match(/\[CAN_PROVIDE\] (\S+) (full|partial) (item|mats):(.+)/);
+                if (match) {
+                    const needId = match[1]!;
+                    const completeness = match[2] as 'full' | 'partial';
+                    const type = match[3] as 'item' | 'materials';
+                    const itemsStr = match[4]!;
+
+                    // Parse items: "stone_hoe" or "oak_planks:4,stick:2"
+                    const items: ItemStack[] = itemsStr.split(',').map(part => {
+                        const [name, countStr] = part.split(':');
+                        return { name: name!, count: countStr ? parseInt(countStr) : 1 };
+                    });
+
+                    // Find our active need
+                    const need = this.state.activeNeeds.find(n => n.id === needId);
+                    if (need && need.status === 'broadcasting') {
+                        const offer: NeedOffer = {
+                            from: username,
+                            type,
+                            completeness,
+                            items,
+                            craftingSteps: type === 'item' ? 0 : 1, // Default, can be refined
+                            timestamp: Date.now(),
+                        };
+                        need.offers.push(offer);
+                        this.log?.info({ from: username, needId, type, items }, 'Offer received for need');
+                        this.onNeedOfferCallback?.(needId, offer);
+                    }
+                }
+            }
+
+            // Parse accept_provider: [ACCEPT_PROVIDER] farmer-hoe-1705612345 Landscaper
+            if (message.startsWith('[ACCEPT_PROVIDER] ')) {
+                const match = message.match(/\[ACCEPT_PROVIDER\] (\S+) (\S+)/);
+                if (match) {
+                    const needId = match[1]!;
+                    const provider = match[2]!;
+
+                    // Check if we're the accepted provider
+                    if (provider === this.bot.username) {
+                        const need = this.state.incomingNeeds.find(n => n.id === needId);
+                        if (need) {
+                            need.status = 'accepted';
+                            need.acceptedProvider = this.bot.username;
+                            this.log?.info({ needId, from: username }, 'We were accepted as provider');
+                            this.onNeedAcceptedCallback?.(needId, provider);
+                        }
+                    }
+
+                    // Update incoming need status regardless
+                    const incomingNeed = this.state.incomingNeeds.find(n => n.id === needId);
+                    if (incomingNeed) {
+                        incomingNeed.status = 'accepted';
+                        incomingNeed.acceptedProvider = provider;
+                    }
+                }
+            }
+
+            // Parse provide_at: [PROVIDE_AT] farmer-hoe-1705612345 chest 100 64 200
+            if (message.startsWith('[PROVIDE_AT] ')) {
+                const match = message.match(/\[PROVIDE_AT\] (\S+) (chest|trade) (-?\d+) (-?\d+) (-?\d+)/);
+                if (match) {
+                    const needId = match[1]!;
+                    const method = match[2] as DeliveryMethod;
+                    const pos = new Vec3(parseInt(match[3]!), parseInt(match[4]!), parseInt(match[5]!));
+
+                    // Update our active need
+                    const need = this.state.activeNeeds.find(n => n.id === needId);
+                    if (need) {
+                        need.deliveryMethod = method;
+                        need.deliveryLocation = pos;
+                        this.log?.info({ needId, method, pos: pos.toString() }, 'Provider delivery location received');
+                        this.onProvideAtCallback?.(needId, method, pos);
+                    }
+                }
+            }
+
+            // Parse need_fulfilled: [NEED_FULFILLED] farmer-hoe-1705612345
+            if (message.startsWith('[NEED_FULFILLED] ')) {
+                const match = message.match(/\[NEED_FULFILLED\] (\S+)/);
+                if (match) {
+                    const needId = match[1]!;
+
+                    // Update incoming need status
+                    const need = this.state.incomingNeeds.find(n => n.id === needId);
+                    if (need) {
+                        need.status = 'fulfilled';
+                        this.log?.info({ needId, from: username }, 'Need fulfilled');
+                        this.onNeedFulfilledCallback?.(needId);
+                    }
+
+                    // Clean up
+                    this.state.incomingNeeds = this.state.incomingNeeds.filter(n => n.id !== needId);
+                }
+            }
+
+            // Parse need_expired: [NEED_EXPIRED] farmer-hoe-1705612345
+            if (message.startsWith('[NEED_EXPIRED] ')) {
+                const match = message.match(/\[NEED_EXPIRED\] (\S+)/);
+                if (match) {
+                    const needId = match[1]!;
+
+                    // Update and clean up incoming need
+                    const need = this.state.incomingNeeds.find(n => n.id === needId);
+                    if (need) {
+                        need.status = 'expired';
+                        this.log?.info({ needId, from: username }, 'Need expired');
+                        this.onNeedExpiredCallback?.(needId);
+                    }
+
+                    this.state.incomingNeeds = this.state.incomingNeeds.filter(n => n.id !== needId);
+                }
+            }
         });
     }
 
@@ -496,6 +664,52 @@ export class VillageChat {
     // Called when trade is cancelled
     onTradeCancel(callback: () => void) {
         this.onTradeCancelCallback = callback;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // NEED CALLBACKS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Called when another bot broadcasts a need.
+     */
+    onNeed(callback: (need: Need) => void) {
+        this.onNeedCallback = callback;
+    }
+
+    /**
+     * Called when we receive an offer for a need we broadcast.
+     */
+    onNeedOffer(callback: (needId: string, offer: NeedOffer) => void) {
+        this.onNeedOfferCallback = callback;
+    }
+
+    /**
+     * Called when we are accepted as provider for a need.
+     */
+    onNeedAccepted(callback: (needId: string, provider: string) => void) {
+        this.onNeedAcceptedCallback = callback;
+    }
+
+    /**
+     * Called when provider announces delivery location.
+     */
+    onProvideAt(callback: (needId: string, method: DeliveryMethod, pos: Vec3) => void) {
+        this.onProvideAtCallback = callback;
+    }
+
+    /**
+     * Called when a need is fulfilled.
+     */
+    onNeedFulfilled(callback: (needId: string) => void) {
+        this.onNeedFulfilledCallback = callback;
+    }
+
+    /**
+     * Called when a need expires.
+     */
+    onNeedExpired(callback: (needId: string) => void) {
+        this.onNeedExpiredCallback = callback;
     }
 
     // Announce village center
@@ -963,5 +1177,218 @@ export class VillageChat {
      */
     clearActiveTrade(): void {
         this.state.activeTrade = null;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // NEED MESSAGE SENDING
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Broadcast a need for an item category.
+     * Returns the generated need ID.
+     */
+    broadcastNeed(category: string): string {
+        const needId = generateNeedId(this.bot.username, category);
+
+        const need: Need = {
+            id: needId,
+            from: this.bot.username,
+            category,
+            timestamp: Date.now(),
+            status: 'broadcasting',
+            offers: [],
+            acceptedProvider: null,
+        };
+
+        this.state.activeNeeds.push(need);
+
+        const msg = `[NEED] ${needId} ${category}`;
+        this.bot.chat(msg);
+        this.log?.info({ needId, category }, 'Broadcast need');
+
+        return needId;
+    }
+
+    /**
+     * Offer to help fulfill a need.
+     */
+    offerForNeed(needId: string, offer: NeedOffer): void {
+        // Format items for message
+        const itemsStr = offer.items.map(i =>
+            offer.type === 'item' ? i.name : `${i.name}:${i.count}`
+        ).join(',');
+
+        const typePrefix = offer.type === 'item' ? 'item' : 'mats';
+        const msg = `[CAN_PROVIDE] ${needId} ${offer.completeness} ${typePrefix}:${itemsStr}`;
+        this.bot.chat(msg);
+        this.log?.info({ needId, type: offer.type, items: offer.items }, 'Sent offer for need');
+    }
+
+    /**
+     * Accept a provider for our need.
+     */
+    acceptProvider(needId: string, provider: string): void {
+        const need = this.state.activeNeeds.find(n => n.id === needId);
+        if (!need) {
+            this.log?.warn({ needId }, 'Cannot accept provider: need not found');
+            return;
+        }
+
+        need.status = 'accepted';
+        need.acceptedProvider = provider;
+
+        const msg = `[ACCEPT_PROVIDER] ${needId} ${provider}`;
+        this.bot.chat(msg);
+        this.log?.info({ needId, provider }, 'Accepted provider');
+    }
+
+    /**
+     * Announce delivery location for a need we're fulfilling.
+     */
+    announceProvideAt(needId: string, method: DeliveryMethod, pos: Vec3): void {
+        const msg = `[PROVIDE_AT] ${needId} ${method} ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}`;
+        this.bot.chat(msg);
+        this.log?.info({ needId, method, pos: pos.toString() }, 'Announced provide location');
+    }
+
+    /**
+     * Mark a need as fulfilled.
+     */
+    markNeedFulfilled(needId: string): void {
+        const need = this.state.activeNeeds.find(n => n.id === needId);
+        if (need) {
+            need.status = 'fulfilled';
+        }
+
+        const msg = `[NEED_FULFILLED] ${needId}`;
+        this.bot.chat(msg);
+        this.log?.info({ needId }, 'Marked need fulfilled');
+
+        // Clean up
+        this.state.activeNeeds = this.state.activeNeeds.filter(n => n.id !== needId);
+    }
+
+    /**
+     * Mark a need as expired.
+     */
+    markNeedExpired(needId: string): void {
+        const need = this.state.activeNeeds.find(n => n.id === needId);
+        if (need) {
+            need.status = 'expired';
+        }
+
+        const msg = `[NEED_EXPIRED] ${needId}`;
+        this.bot.chat(msg);
+        this.log?.info({ needId }, 'Marked need expired');
+
+        // Clean up
+        this.state.activeNeeds = this.state.activeNeeds.filter(n => n.id !== needId);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // NEED GETTERS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Get all active needs we've broadcast.
+     */
+    getActiveNeeds(): Need[] {
+        return this.state.activeNeeds;
+    }
+
+    /**
+     * Get all incoming needs from other bots.
+     */
+    getIncomingNeeds(): Need[] {
+        return this.state.incomingNeeds;
+    }
+
+    /**
+     * Get a specific need by ID (from either active or incoming).
+     */
+    getNeedById(id: string): Need | null {
+        return this.state.activeNeeds.find(n => n.id === id)
+            ?? this.state.incomingNeeds.find(n => n.id === id)
+            ?? null;
+    }
+
+    /**
+     * Get offers for a specific need.
+     */
+    getOffersForNeed(needId: string): NeedOffer[] {
+        const need = this.state.activeNeeds.find(n => n.id === needId);
+        return need?.offers ?? [];
+    }
+
+    /**
+     * Get ranked offers for a need (best first).
+     */
+    getRankedOffersForNeed(needId: string): NeedOffer[] {
+        const offers = this.getOffersForNeed(needId);
+        return rankOffers(offers);
+    }
+
+    /**
+     * Check if we have a pending need for a category.
+     */
+    hasPendingNeedFor(category: string): boolean {
+        return this.state.activeNeeds.some(n =>
+            n.category === category &&
+            (n.status === 'broadcasting' || n.status === 'accepted')
+        );
+    }
+
+    /**
+     * Get pending needs from other bots that we might be able to fulfill.
+     */
+    getIncomingBroadcastingNeeds(): Need[] {
+        return this.state.incomingNeeds.filter(n =>
+            n.status === 'broadcasting' && n.from !== this.bot.username
+        );
+    }
+
+    /**
+     * Check if we've been accepted as provider for a need.
+     */
+    isAcceptedProviderFor(needId: string): boolean {
+        const need = this.state.incomingNeeds.find(n => n.id === needId);
+        return need?.acceptedProvider === this.bot.username;
+    }
+
+    /**
+     * Get needs where we've been accepted as provider.
+     */
+    getNeedsWeAreProvidingFor(): Need[] {
+        return this.state.incomingNeeds.filter(n =>
+            n.acceptedProvider === this.bot.username && n.status === 'accepted'
+        );
+    }
+
+    /**
+     * Clean up old needs (older than maxAge).
+     */
+    cleanupOldNeeds(maxAge: number = 300000): void {
+        const now = Date.now();
+        this.state.activeNeeds = this.state.activeNeeds.filter(n =>
+            now - n.timestamp < maxAge
+        );
+        this.state.incomingNeeds = this.state.incomingNeeds.filter(n =>
+            now - n.timestamp < maxAge
+        );
+    }
+
+    /**
+     * Choose delivery method based on proximity to shared chest.
+     */
+    chooseDeliveryMethod(requesterPos: Vec3): DeliveryMethod {
+        const sharedChest = this.state.sharedChest;
+        if (sharedChest) {
+            const myDist = this.bot.entity.position.distanceTo(sharedChest);
+            const theirDist = requesterPos.distanceTo(sharedChest);
+            if (myDist < 32 && theirDist < 32) {
+                return 'chest';
+            }
+        }
+        return 'trade';
     }
 }

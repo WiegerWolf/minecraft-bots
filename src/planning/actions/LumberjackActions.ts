@@ -8,7 +8,7 @@ import {
   FinishTreeHarvest,
   DepositLogs,
   CraftAxe,
-  FulfillRequests,
+  RespondToNeed,
   ProcessWood,
   CraftChest,
   CraftAndPlaceCraftingTable,
@@ -200,21 +200,20 @@ export class CraftAxeFromPlanksAction extends BaseGOAPAction {
 }
 
 /**
- * GOAP Action: Fulfill village requests for wood products
+ * GOAP Action: Respond to incoming needs from other bots
  */
-export class FulfillRequestsAction extends BaseGOAPAction {
-  name = 'FulfillRequests';
-  private impl = new FulfillRequests();
+export class RespondToNeedAction extends BaseGOAPAction {
+  name = 'RespondToNeed';
+  private impl = new RespondToNeed();
 
   preconditions = [
-    booleanPrecondition('has.pendingRequests', true, 'pending requests exist'),
-    booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
-    // Need logs to fulfill any wood product request (logs, planks, or sticks)
+    booleanPrecondition('has.incomingNeeds', true, 'incoming needs exist'),
+    // Need logs to provide wood products
     numericPrecondition('inv.logs', v => v >= 2, 'has logs to provide'),
   ];
 
   effects = [
-    setEffect('has.pendingRequests', false, 'requests fulfilled'),
+    setEffect('has.incomingNeeds', false, 'needs fulfilled'),
   ];
 
   override getCost(ws: WorldState): number {
@@ -223,6 +222,7 @@ export class FulfillRequestsAction extends BaseGOAPAction {
 
   override async execute(bot: Bot, bb: LumberjackBlackboard, ws: WorldState): Promise<ActionResult> {
     const result = await this.impl.tick(bot, bb);
+    if (result === 'running') return ActionResult.RUNNING;
     return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
   }
 }
@@ -699,7 +699,7 @@ export function createLumberjackActions(): BaseGOAPAction[] {
     new DepositLogsAction(),
     new CraftAxeAction(),
     new CraftAxeFromPlanksAction(), // Variant when we have planks ready
-    new FulfillRequestsAction(),
+    new RespondToNeedAction(),
     new ProcessWoodAction(),
     new PlaceStorageChestAction(),  // Place our own chest (preferred)
     new CraftChestAction(),          // Legacy chest crafting

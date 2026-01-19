@@ -249,7 +249,7 @@ export class WorldStateBuilder {
     // Computed decisions
     ws.set('can.chop', bb.canChop);
     ws.set('needs.toDeposit', bb.needsToDeposit);
-    ws.set('has.pendingRequests', bb.hasPendingRequests);
+    ws.set('has.incomingNeeds', bb.hasIncomingNeeds);
 
     // Derived facts
     ws.set('derived.canCraftAxe', this.canCraftAxe(bb));

@@ -10,7 +10,7 @@ import {
   DepositItems,
   Explore,
   CheckSharedChest,
-  RequestMaterials,
+  BroadcastNeed,
   StudySpawnSigns,
   CheckFarmForTerraformNeeds,
   GatherDirt,
@@ -317,32 +317,31 @@ export class CheckSharedChestAction extends BaseGOAPAction {
 }
 
 /**
- * GOAP Action: Request materials from lumberjack
+ * GOAP Action: Broadcast need for tools via the intent-based need system
  *
- * This action just makes the request - it doesn't give logs directly.
- * After requesting, CheckSharedChest should be used to retrieve the logs
- * once the lumberjack deposits them.
+ * This action broadcasts a need for shovel/pickaxe. Other bots can offer
+ * to provide the item directly, crafting materials, or raw materials.
+ * Returns SUCCESS when need is broadcast (action runs asynchronously).
  */
-export class RequestMaterialsAction extends BaseGOAPAction {
-  name = 'RequestMaterials';
-  private impl = new RequestMaterials();
+export class BroadcastNeedAction extends BaseGOAPAction {
+  name = 'BroadcastNeed';
+  private impl = new BroadcastNeed();
 
   preconditions = [
     // Need tools but don't have materials
     booleanPrecondition('needs.tools', true, 'needs tools'),
     numericPrecondition('inv.logs', v => v < 2, 'needs logs'),
-    // Only request if we have chest access (where logs will be deposited)
+    // Only broadcast if we have chest access (where delivery may happen)
     booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
   ];
 
   effects = [
-    // Request was made - logs will arrive in chest (not inventory)
-    // The actual logs come from CheckSharedChest action
-    // This action's main purpose is to trigger the lumberjack to deposit logs
+    // Broadcasting a need starts the process of getting tools
+    setEffect('state.needBroadcast', true, 'need broadcast'),
   ];
 
   override getCost(ws: WorldState): number {
-    // Higher cost since this requires waiting for lumberjack
+    // Higher cost since this requires waiting for provider
     return 3.0;
   }
 

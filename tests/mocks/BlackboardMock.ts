@@ -194,7 +194,7 @@ export interface LumberjackBlackboardMock {
 
   needsToDeposit: boolean;
   canChop: boolean;
-  hasPendingRequests: boolean;
+  hasIncomingNeeds: boolean;
   inventoryFull: boolean;
 
   currentTreeHarvest: {
@@ -234,7 +234,7 @@ export function createLumberjackBlackboardMock(
 
     needsToDeposit: false,
     canChop: false,
-    hasPendingRequests: false,
+    hasIncomingNeeds: false,
     inventoryFull: false,
 
     currentTreeHarvest: null,

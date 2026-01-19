@@ -32,7 +32,7 @@ export function freshSpawnLumberjackState(): WorldState {
     'derived.needsCraftingTable': true,   // Fresh spawn needs village center
     'derived.needsChest': true,            // Fresh spawn needs storage
 
-    'has.pendingRequests': false,
+    'has.incomingNeeds': false,
     'has.studiedSigns': false,
     'has.checkedStorage': false,
     'has.knownForest': false,         // Knows about a forest location
@@ -154,7 +154,7 @@ export function lumberjackWithSaplingsState(): WorldState {
  */
 export function lumberjackWithFarmerRequestState(): WorldState {
   const ws = lumberjackReadyToChopState();
-  ws.set('has.pendingRequests', true);
+  ws.set('has.incomingNeeds', true);
   ws.set('inv.logs', 8);
   ws.set('derived.hasStorageAccess', true);
   return ws;

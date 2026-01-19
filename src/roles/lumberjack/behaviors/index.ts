@@ -9,7 +9,7 @@ export {
     PickupItems,
     ChopTree,
     FinishTreeHarvest,
-    FulfillRequests,
+    RespondToNeed,
     DepositLogs,
     CraftAxe,
     ProcessWood,
@@ -26,7 +26,7 @@ import {
     PickupItems,
     ChopTree,
     FinishTreeHarvest,
-    FulfillRequests,
+    RespondToNeed,
     DepositLogs,
     CraftAxe,
     CraftChest,
@@ -43,7 +43,7 @@ import {
  * Creates the lumberjack behavior tree with the following priority order:
  * 1. Complete active trade (highest priority - finish what we started)
  * 2. Pick up nearby items (logs, saplings)
- * 3. Fulfill requests from other bots (only if we have materials and shared chest)
+ * 3. Respond to needs from other bots (intent-based fulfillment)
  * 4. Respond to trade offers for items we want
  * 5. Finish harvesting a tree if we started one (clear leaves, replant)
  * 6. Plant saplings if we have them and no active tree harvest
@@ -70,12 +70,11 @@ export function createLumberjackBehaviorTree(): BehaviorNode {
         // Priority 2: Pick up nearby items (always do this first)
         new PickupItems(),
 
-        // Priority 3: Fulfill requests from other bots (only if we have shared chest and materials)
-        new Sequence('FulfillPendingRequests', [
-            new Condition('HasPendingRequests', bb => bb.hasPendingRequests),
-            new Condition('HasChestAccess', bb => bb.sharedChest !== null || bb.nearbyChests.length > 0),
+        // Priority 3: Respond to needs from other bots (only if we have materials to help)
+        new Sequence('RespondToNeeds', [
+            new Condition('HasIncomingNeeds', bb => bb.hasIncomingNeeds),
             new Condition('HasSomeMaterials', bb => bb.logCount > 0 || bb.plankCount > 0 || bb.stickCount > 0),
-            new FulfillRequests(),
+            new RespondToNeed(),
         ]),
 
         // Priority 4: Respond to trade offers for items we want (medium priority)

@@ -33,6 +33,7 @@
     "@types/react": "^19.2.8",
     "ink": "^6.6.0",
     "ink-text-input": "^6.0.0",
+    "minecraft-data": "^3.102.3",
     "mineflayer": "^4.33.0",
     "mineflayer-pathfinder": "^2.4.5",
     "pino": "^10.2.0",

@@ -30,25 +30,25 @@ export class CollectDropsGoal extends BaseGoal {
 }
 
 /**
- * Goal: Fulfill pending village requests for wood products.
- * VERY HIGH priority - farmer is waiting for materials!
+ * Goal: Fulfill incoming needs from other bots.
+ * VERY HIGH priority - other bots are waiting for materials!
  */
-export class FulfillRequestsGoal extends BaseGoal {
-  name = 'FulfillRequests';
-  description = 'Fulfill pending village requests for wood';
+export class FulfillNeedsGoal extends BaseGoal {
+  name = 'FulfillNeeds';
+  description = 'Respond to incoming needs from other bots';
 
   conditions = [
-    booleanGoalCondition('has.pendingRequests', false, 'no pending requests'),
+    booleanGoalCondition('has.incomingNeeds', false, 'no incoming needs'),
   ];
 
   getUtility(ws: WorldState): number {
-    const hasPending = ws.getBool('has.pendingRequests');
+    const hasNeeds = ws.getBool('has.incomingNeeds');
     const logCount = ws.getNumber('inv.logs');
     const plankCount = ws.getNumber('inv.planks');
 
-    if (!hasPending) return 0;
+    if (!hasNeeds) return 0;
 
-    // VERY high utility if we have materials - farmer is waiting!
+    // VERY high utility if we have materials - other bots are waiting!
     const hasMaterials = logCount > 0 || plankCount > 0;
     return hasMaterials ? 120 : 85;  // Boosted: 110->120, 80->85
   }
@@ -152,20 +152,20 @@ export class DepositLogsGoal extends BaseGoal {
     const inventoryFull = ws.getBool('state.inventoryFull');
     const hasStorage = ws.getBool('derived.hasStorageAccess');
     const needsToDeposit = ws.getBool('needs.toDeposit');
-    const hasPendingRequests = ws.getBool('has.pendingRequests');
+    const hasIncomingNeeds = ws.getBool('has.incomingNeeds');
 
     if (logCount === 0 || !hasStorage) return 0;
 
     // Goal condition is "logs < 5" - if satisfied, utility must be 0
     // to avoid empty plans being created repeatedly
-    if (logCount < 5 && !inventoryFull && !hasPendingRequests) return 0;
+    if (logCount < 5 && !inventoryFull && !hasIncomingNeeds) return 0;
 
     // Very high priority when inventory full
     if (inventoryFull) return 90;
 
-    // High priority when there are pending requests - farmer is waiting!
-    // Deposit any logs we have so farmer can pick them up
-    if (hasPendingRequests && logCount >= 5) return 85;
+    // High priority when there are incoming needs - other bots are waiting!
+    // Deposit any logs we have so they can pick them up
+    if (hasIncomingNeeds && logCount >= 5) return 85;
 
     // High priority when we have many logs (lowered threshold: 16->8)
     if (needsToDeposit || logCount >= 32) return 80;
@@ -724,7 +724,7 @@ export function createLumberjackGoals(): BaseGoal[] {
     new WithdrawSuppliesGoal(),   // Very high priority when no tools
     new CollectDropsGoal(),
     new RespondToTradeOfferGoal(),// Respond to trade offers
-    new FulfillRequestsGoal(),
+    new FulfillNeedsGoal(),
     new FindForestGoal(),         // High priority when no known forest
     new CompleteTreeHarvestGoal(),
     new ObtainAxeGoal(),

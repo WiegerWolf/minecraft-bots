@@ -318,8 +318,8 @@ describe('Lumberjack Infrastructure', () => {
       expect(true).toBe(true); // Documentation test
     });
 
-    test('SPEC: Lumberjack FulfillRequests requires sharedChest (no adoption)', () => {
-      // FulfillRequests:
+    test('SPEC: Lumberjack RespondToNeed requires sharedChest (no adoption)', () => {
+      // RespondToNeed:
       // - Requires bb.sharedChest to exist
       // - Returns 'failure' if no shared chest - lumberjack must place one first
       // - Does NOT adopt nearbyChests[0] as shared chest

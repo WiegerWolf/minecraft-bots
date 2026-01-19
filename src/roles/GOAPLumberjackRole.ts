@@ -107,7 +107,7 @@ export class GOAPLumberjackRole extends GOAPRole {
       flags: [
         { label: 'canChop', value: bb.canChop, color: bb.canChop ? 'green' : 'gray' },
         { label: 'needsDeposit', value: bb.needsToDeposit, color: bb.needsToDeposit ? 'yellow' : 'gray' },
-        { label: 'hasRequests', value: bb.hasPendingRequests, color: bb.hasPendingRequests ? 'cyan' : 'gray' },
+        { label: 'hasNeeds', value: bb.hasIncomingNeeds, color: bb.hasIncomingNeeds ? 'cyan' : 'gray' },
         { label: 'invFull', value: bb.inventoryFull, color: bb.inventoryFull ? 'red' : 'gray' },
         { label: 'waterAhead', value: bb.maxWaterAhead, color: bb.maxWaterAhead >= 20 ? (bb.hasBoat ? 'cyan' : 'red') : 'gray' },
       ],

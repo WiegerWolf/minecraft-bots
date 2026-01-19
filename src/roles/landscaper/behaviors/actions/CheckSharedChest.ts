@@ -66,10 +66,10 @@ export class CheckSharedChest extends BaseCheckChest<LandscaperBlackboard> {
     protected override onChestEmpty(bot: Bot, bb: LandscaperBlackboard): void {
         bb.log?.debug(`[Landscaper] Chest had no logs or planks available`);
 
-        // Request logs from lumberjack if not already requested
-        if (bb.villageChat && !bb.villageChat.hasPendingRequestFor('log')) {
-            bb.log?.debug('[Landscaper] Requesting 2 logs from lumberjack');
-            bb.villageChat.requestResource('log', 2);
+        // Broadcast need for logs if not already pending
+        if (bb.villageChat && !bb.villageChat.hasPendingNeedFor('log')) {
+            bb.log?.debug('[Landscaper] Broadcasting need for logs');
+            bb.villageChat.broadcastNeed('log');
         }
     }
 }

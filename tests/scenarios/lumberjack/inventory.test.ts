@@ -120,10 +120,10 @@ describe('Lumberjack Inventory', () => {
       expect(depositGoal.getUtility(ws)).toBe(0);
     });
 
-    test('SPEC: Farmer request increases urgency (85)', () => {
+    test('SPEC: Incoming need increases urgency (85)', () => {
       const ws = lumberjackNeedsToDepositState();
       ws.set('inv.logs', 8);
-      ws.set('has.pendingRequests', true);
+      ws.set('has.incomingNeeds', true);
       ws.set('state.inventoryFull', false);
 
       const depositGoal = goals.find((g) => g.name === 'DepositLogs')!;

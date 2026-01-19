@@ -356,17 +356,16 @@ export function mockWithdrawSuppliesAction(result = ActionResult.SUCCESS): GOAPA
 }
 
 /**
- * Mock FulfillRequests action.
+ * Mock RespondToNeed action.
  */
-export function mockFulfillRequestsAction(result = ActionResult.SUCCESS): GOAPAction {
+export function mockRespondToNeedAction(result = ActionResult.SUCCESS): GOAPAction {
   return createMockAction({
-    name: 'FulfillRequests',
+    name: 'RespondToNeed',
     preconditions: [
-      booleanPrecondition('has.pendingRequests', true, 'pending requests exist'),
-      booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
+      booleanPrecondition('has.incomingNeeds', true, 'incoming needs exist'),
       numericPrecondition('inv.logs', (v) => v >= 2, 'has logs to provide'),
     ],
-    effects: [setEffect('has.pendingRequests', false, 'requests fulfilled')],
+    effects: [setEffect('has.incomingNeeds', false, 'needs fulfilled')],
     cost: 2.0,
     executeResult: result,
   });
@@ -611,7 +610,7 @@ export function createLumberjackActionSet(): GOAPAction[] {
     mockPlantSaplingsAction(),
     mockDepositLogsAction(),
     mockCraftAxeAction(),
-    mockFulfillRequestsAction(),
+    mockRespondToNeedAction(),
     mockProcessWoodAction(),
 
     // Infrastructure actions

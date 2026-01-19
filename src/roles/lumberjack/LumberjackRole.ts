@@ -175,7 +175,7 @@ export class LumberjackRole implements Role {
             sticks: bb.stickCount,
             trees: bb.nearbyTrees.length,
             village: bb.villageCenter?.toString() || 'none',
-            requests: bb.hasPendingRequests,
+            needs: bb.hasIncomingNeeds,
         }, 'Status');
     }
 }

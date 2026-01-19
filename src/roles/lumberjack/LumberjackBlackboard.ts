@@ -67,7 +67,7 @@ export interface LumberjackBlackboard {
     inventoryFull: boolean;
     canChop: boolean;
     needsToDeposit: boolean;
-    hasPendingRequests: boolean;
+    hasIncomingNeeds: boolean;  // Other bots need materials we can provide
 
     // Action tracking
     lastAction: string;
@@ -144,7 +144,7 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         inventoryFull: false,
         canChop: true,
         needsToDeposit: false,
-        hasPendingRequests: false,
+        hasIncomingNeeds: false,
 
         lastAction: 'none',
         consecutiveIdleTicks: 0,
@@ -206,10 +206,9 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
         bb.sharedChest = bb.villageChat.getSharedChest();
         bb.sharedCraftingTable = bb.villageChat.getSharedCraftingTable();
 
-        // Check for pending requests this bot can fulfill
-        const canProvide = ['log', 'planks', 'stick'];
-        const requests = bb.villageChat.getRequestsToFulfill(canProvide);
-        bb.hasPendingRequests = requests.length > 0;
+        // Check for incoming needs from other bots that we can fulfill
+        const incomingNeeds = bb.villageChat.getIncomingBroadcastingNeeds();
+        bb.hasIncomingNeeds = incomingNeeds.length > 0;
     }
 
     // ═══════════════════════════════════════════════

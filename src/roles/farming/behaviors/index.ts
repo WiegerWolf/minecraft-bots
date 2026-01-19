@@ -19,7 +19,7 @@ export {
     RepairField,
     SetupFarmChest,
     ClearFarmArea,
-    RequestMaterials,
+    BroadcastNeed,
     CheckSharedChest,
     BroadcastOffer,
     RespondToOffer,
@@ -43,7 +43,7 @@ import {
     RepairField,
     SetupFarmChest,
     ClearFarmArea,
-    RequestMaterials,
+    BroadcastNeed,
     CheckSharedChest,
     BroadcastOffer,
     RespondToOffer,
@@ -58,7 +58,7 @@ import {
  * 4. Respond to trade offers for items we want
  * 5. Find farm center if we don't have one (BEFORE tools - need to explore first!)
  * 6. Get tools if needed (only after we have a farm center or can craft locally)
- *    - Farmer requests logs from lumberjack via chat, does NOT chop trees itself
+ *    - Farmer broadcasts need for hoe, other bots offer to help
  * 7. Clear farm area (remove trees, level terrain)
  * 8. Setup farm chest if we have resources and no chest yet
  * 9. Repair holes in the farm field
@@ -103,7 +103,7 @@ export function createFarmingBehaviorTree(): BehaviorNode {
         ]),
 
         // Priority 6: Get tools if needed - only after we have a farm center
-        // Farmer requests logs from lumberjack via chat, does NOT chop trees itself
+        // Farmer broadcasts need for hoe, other bots offer to help
         new Sequence('GetTools', [
             new Condition('NeedsHoe', bb => !bb.hasHoe),
             new Condition('HasFarmCenter', bb => bb.farmCenter !== null),
@@ -118,8 +118,8 @@ export function createFarmingBehaviorTree(): BehaviorNode {
                 ]),
                 // Otherwise, check shared chest for materials (logs, planks, sticks)
                 new CheckSharedChest(),
-                // If still no materials, request logs from lumberjack
-                new RequestMaterials(),
+                // If still no materials, broadcast need for hoe
+                new BroadcastNeed(),
             ])
         ]),
 

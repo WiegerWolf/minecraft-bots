@@ -11,7 +11,7 @@ export { WaitAtFarm } from './WaitAtFarm';
 export { RepairField } from './RepairField';
 export { SetupFarmChest } from './SetupFarmChest';
 export { ClearFarmArea } from './ClearFarmArea';
-export { RequestMaterials } from './RequestMaterials';
+export { BroadcastNeed } from './BroadcastNeed';
 export { CheckSharedChest } from './CheckSharedChest';
 export { RequestTerraform } from './RequestTerraform';
 export { StudySpawnSigns } from './StudySpawnSigns';

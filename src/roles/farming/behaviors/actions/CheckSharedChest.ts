@@ -60,7 +60,7 @@ export class CheckSharedChest {
     }
 
     /**
-     * Request materials from lumberjack if not already requested recently.
+     * Request materials via need broadcast if not already requested recently.
      * Returns true if a new request was made or one is pending.
      */
     private requestMaterialsIfNeeded(bb: FarmingBlackboard): boolean {
@@ -68,10 +68,10 @@ export class CheckSharedChest {
 
         const now = Date.now();
 
-        // Check if we already have a pending request
-        if (bb.villageChat.hasPendingRequestFor('log')) {
+        // Check if we already have a pending need
+        if (bb.villageChat.hasPendingNeedFor('log')) {
             bb.lastAction = 'waiting_for_materials';
-            bb.log?.debug('[Farmer] Already have pending log request');
+            bb.log?.debug('[Farmer] Already have pending log need');
             return true;
         }
 
@@ -81,11 +81,11 @@ export class CheckSharedChest {
             return true;
         }
 
-        // Send new request
+        // Broadcast new need
         this.lastRequestTime = now;
-        bb.lastAction = 'request_materials';
-        bb.log?.info('[Farmer] Chest empty, requesting 2 logs from lumberjack');
-        bb.villageChat.requestResource('log', 2);
+        bb.lastAction = 'broadcast_need';
+        bb.log?.info('[Farmer] Chest empty, broadcasting need for logs');
+        bb.villageChat.broadcastNeed('log');
         return true;
     }
 

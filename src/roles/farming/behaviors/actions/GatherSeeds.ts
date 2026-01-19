@@ -14,7 +14,7 @@ export class GatherSeeds implements BehaviorNode {
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
         if (!bb.needsSeeds) return 'failure';
 
-        // While gathering seeds, also request logs if we need a hoe
+        // While gathering seeds, also broadcast need for logs if we need a hoe
         if (bb.needsTools && bb.villageChat) {
             const hasEnoughForHoe = (
                 (bb.stickCount >= 2 && bb.plankCount >= 2) ||
@@ -23,9 +23,9 @@ export class GatherSeeds implements BehaviorNode {
             if (!hasEnoughForHoe) {
                 const now = Date.now();
                 if (now - this.lastMaterialRequestTime > this.MATERIAL_REQUEST_COOLDOWN) {
-                    if (!bb.villageChat.hasPendingRequestFor('log')) {
-                        bb.log?.debug('[Farmer] Requesting 2 logs from lumberjack');
-                        bb.villageChat.requestResource('log', 2);
+                    if (!bb.villageChat.hasPendingNeedFor('log')) {
+                        bb.log?.debug('[Farmer] Broadcasting need for logs');
+                        bb.villageChat.broadcastNeed('log');
                         this.lastMaterialRequestTime = now;
                     }
                 }

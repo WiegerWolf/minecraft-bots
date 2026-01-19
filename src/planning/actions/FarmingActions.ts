@@ -12,7 +12,7 @@ import { CraftHoe } from '../../roles/farming/behaviors/actions/CraftHoe';
 import { Explore } from '../../roles/farming/behaviors/actions/Explore';
 import { FindFarmCenter } from '../../roles/farming/behaviors/actions/FindFarmCenter';
 import { CheckSharedChest } from '../../roles/farming/behaviors/actions/CheckSharedChest';
-import { RequestMaterials } from '../../roles/farming/behaviors/actions/RequestMaterials';
+import { BroadcastNeed } from '../../roles/farming/behaviors/actions/BroadcastNeed';
 import { StudySpawnSigns } from '../../roles/farming/behaviors/actions/StudySpawnSigns';
 import { ReadUnknownSign } from '../../roles/farming/behaviors/actions/ReadUnknownSign';
 import { WriteKnowledgeSign } from '../../roles/farming/behaviors/actions/WriteKnowledgeSign';
@@ -273,31 +273,32 @@ export class CheckSharedChestAction extends BaseGOAPAction {
 }
 
 /**
- * GOAP Action: Request materials from lumberjack via village chat
+ * GOAP Action: Broadcast need for tools via the intent-based need system
  *
- * This action requests logs from the lumberjack. It returns RUNNING to indicate
- * that we're waiting for materials to be deposited.
+ * This action broadcasts a need for a hoe. Other bots can offer to provide
+ * the item directly, crafting materials, or raw materials. Returns RUNNING
+ * while waiting for offers and delivery.
  */
-export class RequestMaterialsAction extends BaseGOAPAction {
-  name = 'RequestMaterials';
-  private impl = new RequestMaterials();
+export class BroadcastNeedAction extends BaseGOAPAction {
+  name = 'BroadcastNeed';
+  private impl = new BroadcastNeed();
 
   preconditions = [
     booleanPrecondition('needs.tools', true, 'needs tools'),
   ];
 
   effects = [
-    // Requesting doesn't directly give us materials, but triggers lumberjack to deposit
-    setEffect('state.materialsRequested', true, 'materials requested'),
+    // Broadcasting a need starts the process of getting tools
+    setEffect('state.needBroadcast', true, 'need broadcast'),
   ];
 
   override getCost(ws: WorldState): number {
-    return 5.0; // Medium cost - need to wait for lumberjack
+    return 5.0; // Medium cost - need to wait for provider
   }
 
   override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
     const result = await this.impl.tick(bot, bb);
-    // Running means we're waiting for materials
+    // Running means we're waiting for offers/delivery
     if (result === 'running') return ActionResult.RUNNING;
     return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
   }
@@ -485,7 +486,7 @@ export class GetSignMaterialsAction extends BaseGOAPAction {
   }
 
   override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
-    // Request sign materials from lumberjack if needed
+    // Broadcast need for sign materials if needed
     if (bb.villageChat) {
       const plankCount = bot.inventory.items()
         .filter(i => i.name.endsWith('_planks'))
@@ -494,13 +495,13 @@ export class GetSignMaterialsAction extends BaseGOAPAction {
         .filter(i => i.name === 'stick')
         .reduce((sum, i) => sum + i.count, 0);
 
-      if (plankCount < 6) {
-        bb.log?.info('Requesting planks for sign from lumberjack');
-        bb.villageChat.requestResource('oak_planks', 6);
+      if (plankCount < 6 && !bb.villageChat.hasPendingNeedFor('planks')) {
+        bb.log?.info('Broadcasting need for planks for sign');
+        bb.villageChat.broadcastNeed('planks');
       }
-      if (stickCount < 1) {
-        bb.log?.info('Requesting sticks for sign from lumberjack');
-        bb.villageChat.requestResource('stick', 2);
+      if (stickCount < 1 && !bb.villageChat.hasPendingNeedFor('stick')) {
+        bb.log?.info('Broadcasting need for sticks for sign');
+        bb.villageChat.broadcastNeed('stick');
       }
     }
 
@@ -688,7 +689,7 @@ export function createFarmingActions(): BaseGOAPAction[] {
     new DepositItemsAction(),
     new GatherSeedsAction(),
     new CheckSharedChestAction(),
-    new RequestMaterialsAction(),
+    new BroadcastNeedAction(),
     new CraftHoeAction(),
     new FindFarmCenterAction(),
     new GetSignMaterialsAction(),    // Get materials for sign crafting

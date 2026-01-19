@@ -5,7 +5,7 @@ export { PickupItems } from './PickupItems';
 export { DepositItems } from './DepositItems';
 export { Explore } from './Explore';
 export { CheckSharedChest } from './CheckSharedChest';
-export { RequestMaterials } from './RequestMaterials';
+export { BroadcastNeed } from './BroadcastNeed';
 export { StudySpawnSigns } from './StudySpawnSigns';
 export { CheckFarmForTerraformNeeds } from './CheckFarmForTerraformNeeds';
 export { GatherDirt } from './GatherDirt';

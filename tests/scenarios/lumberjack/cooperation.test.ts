@@ -26,7 +26,7 @@ describe('Lumberjack Cooperation', () => {
       arbiter.clearCurrentGoal();
       const result = arbiter.selectGoal(ws);
 
-      expect(result?.goal.name).toBe('FulfillRequests');
+      expect(result?.goal.name).toBe('FulfillNeeds');
       expect(result?.utility).toBeGreaterThanOrEqual(85);
     });
 
@@ -35,7 +35,7 @@ describe('Lumberjack Cooperation', () => {
       ws.set('inv.logs', 8);
       ws.set('inv.planks', 4);
 
-      const fulfillGoal = goals.find((g) => g.name === 'FulfillRequests')!;
+      const fulfillGoal = goals.find((g) => g.name === 'FulfillNeeds')!;
       expect(fulfillGoal.getUtility(ws)).toBe(120);
     });
 
@@ -48,7 +48,7 @@ describe('Lumberjack Cooperation', () => {
       wsWithoutMaterials.set('inv.logs', 0);
       wsWithoutMaterials.set('inv.planks', 0);
 
-      const fulfillGoal = goals.find((g) => g.name === 'FulfillRequests')!;
+      const fulfillGoal = goals.find((g) => g.name === 'FulfillNeeds')!;
       const utilityWith = fulfillGoal.getUtility(wsWithMaterials);
       const utilityWithout = fulfillGoal.getUtility(wsWithoutMaterials);
 
@@ -57,15 +57,15 @@ describe('Lumberjack Cooperation', () => {
 
     test('SPEC: No pending request = zero utility', () => {
       const ws = lumberjackReadyToChopState();
-      ws.set('has.pendingRequests', false);
+      ws.set('has.incomingNeeds', false);
 
-      const fulfillGoal = goals.find((g) => g.name === 'FulfillRequests')!;
+      const fulfillGoal = goals.find((g) => g.name === 'FulfillNeeds')!;
       expect(fulfillGoal.getUtility(ws)).toBe(0);
     });
 
     test('SPEC: Request preempts normal chopping', () => {
       const ws = lumberjackReadyToChopState();
-      ws.set('has.pendingRequests', true);
+      ws.set('has.incomingNeeds', true);
       ws.set('inv.logs', 8);
       ws.set('derived.hasStorageAccess', true);
       ws.set('nearby.reachableTrees', 10);
@@ -73,7 +73,7 @@ describe('Lumberjack Cooperation', () => {
       arbiter.clearCurrentGoal();
       const result = arbiter.selectGoal(ws);
 
-      expect(result?.goal.name).toBe('FulfillRequests');
+      expect(result?.goal.name).toBe('FulfillNeeds');
     });
   });
 
