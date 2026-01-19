@@ -17,7 +17,7 @@ export interface BotManagerActions {
   restartBot: (botId: string) => Promise<void>;
   restartAll: () => Promise<void>;
   addBot: (config: BotConfig) => string;
-  deleteBot: (botId: string) => void;
+  deleteBot: (botId: string) => Promise<void>;
   stopAll: () => Promise<void>;
 }
 
@@ -185,8 +185,10 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
   }, []);
 
   // Delete a bot
-  const deleteBot = useCallback((botId: string) => {
-    stopBot(botId);
+  const deleteBot = useCallback(async (botId: string) => {
+    await stopBot(botId);
+    // Clean up refs that stopBot doesn't clear for deleted bots
+    reconnectAttemptsRef.current.delete(botId);
     setBots(prev => prev.filter(b => b.id !== botId));
   }, [stopBot]);
 

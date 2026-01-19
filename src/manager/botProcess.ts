@@ -163,10 +163,15 @@ export function spawnBot(options: SpawnBotOptions): SpawnedBot {
 
   botProcess.exited.then(onExit);
 
-  // Cleanup function to release readers
-  // Note: Don't call cancel() - it throws if reader already released.
-  // The streams close automatically when the process exits.
+  // Cleanup function to cancel and release readers
   const cleanup = () => {
+    for (const reader of readers) {
+      try {
+        reader.cancel();
+      } catch {
+        // Reader may already be released - this is expected
+      }
+    }
     readers.length = 0;
   };
 
