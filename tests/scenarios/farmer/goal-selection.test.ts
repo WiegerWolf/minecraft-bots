@@ -64,6 +64,7 @@ describe('Farmer Goal Selection', () => {
     const result = arbiter.selectGoal(ws);
 
     // Either CompleteTrade or CollectDrops (both 150)
-    expect(['CompleteTrade', 'CollectDrops']).toContain(result?.goal.name);
+    expect(result).not.toBeNull();
+    expect(['CompleteTrade', 'CollectDrops']).toContain(result!.goal.name);
   });
 });

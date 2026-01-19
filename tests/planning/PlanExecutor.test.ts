@@ -5,7 +5,7 @@ import { WorldState } from '../../src/planning/WorldState';
 import { createBotMock, createFarmingBlackboardMock, createMockAction } from '../mocks';
 
 describe('PlanExecutor', () => {
-  const createExecutor = (onReplan = () => {}) => {
+  const createExecutor = (onReplan: (reason: ReplanReason) => void = () => {}) => {
     const bot = createBotMock();
     const bb = createFarmingBlackboardMock();
     return new PlanExecutor(bot as any, bb as any, onReplan);
@@ -148,7 +148,7 @@ describe('PlanExecutor', () => {
       expect(replanReason).toBeNull();
 
       await executor.tick(ws); // Fail 3 - should trigger replan
-      expect(replanReason).toBe(ReplanReason.ACTION_FAILED);
+      expect(replanReason).toBe(ReplanReason.ACTION_FAILED as any);
     });
 
     test('resets failure count on success', async () => {
@@ -232,7 +232,7 @@ describe('PlanExecutor', () => {
       changedWs.set('nearby.water', 0); // Changed
 
       executor.checkWorldStateChange(changedWs);
-      expect(replanReason).toBe(ReplanReason.WORLD_CHANGED);
+      expect(replanReason).toBe(ReplanReason.WORLD_CHANGED as any);
     });
 
     test('does not replan for minor changes', async () => {
@@ -281,7 +281,7 @@ describe('PlanExecutor', () => {
       await executor.tick(ws); // Complete action
       await executor.tick(ws); // Plan exhausted
 
-      expect(replanReason).toBe(ReplanReason.PLAN_EXHAUSTED);
+      expect(replanReason).toBe(ReplanReason.PLAN_EXHAUSTED as any);
     });
   });
 
@@ -298,7 +298,7 @@ describe('PlanExecutor', () => {
 
       executor.cancel(ReplanReason.WORLD_CHANGED);
 
-      expect(replanReason).toBe(ReplanReason.WORLD_CHANGED);
+      expect(replanReason).toBe(ReplanReason.WORLD_CHANGED as any);
       expect(executor.isExecuting()).toBe(false);
     });
 

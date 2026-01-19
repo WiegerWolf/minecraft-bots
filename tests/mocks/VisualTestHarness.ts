@@ -28,7 +28,7 @@ import mcData from 'minecraft-data';
 import { MockWorld } from './MockWorld';
 import * as readline from 'readline';
 
-const VERSION = '1.20.1';
+const VERSION = '1.21.4' as const;
 let nextPort = 3007; // Auto-increment to avoid conflicts
 
 const data = mcData(VERSION);
@@ -114,7 +114,7 @@ export class VisualTestHarness {
     const port = nextPort++;
     const center = options?.center ?? new Vec3(0, 70, 0);
     this.viewer = standaloneViewer({
-      version: VERSION,
+      version: VERSION as any,
       world: this.prismarineWorld,
       center,
       port,
@@ -358,7 +358,7 @@ export class VisualTestHarness {
     // Update all blocks in the prismarine world
     // This works for already-loaded chunks
     for (const [key, blockName] of this.liveBlockMap) {
-      const [x, y, z] = key.split(',').map(Number);
+      const [x, y, z] = key.split(',').map(Number) as [number, number, number];
       const pos = new Vec3(x, y, z);
       const stateId = getBlockStateId(blockName);
       try {

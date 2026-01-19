@@ -16,7 +16,7 @@ import mcData from 'minecraft-data';
 import { MockWorld } from './MockWorld';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VERSION = '1.20.1';
+const VERSION = '1.21.4' as const;
 
 const data = mcData(VERSION);
 // @ts-ignore
@@ -97,7 +97,7 @@ export class VisualTestServer {
     // Start viewer on its port
     const center = options?.center ?? new Vec3(0, 70, 0);
     this.viewer = standaloneViewer({
-      version: VERSION,
+      version: VERSION as any,
       world: this.prismarineWorld,
       center,
       port: this.viewerPort,
@@ -418,7 +418,7 @@ export class VisualTestServer {
     this.syncBlockMap();
 
     for (const [key, blockName] of this.liveBlockMap) {
-      const [x, y, z] = key.split(',').map(Number);
+      const [x, y, z] = key.split(',').map(Number) as [number, number, number];
       const pos = new Vec3(x, y, z);
       const stateId = getBlockStateId(blockName);
       try {

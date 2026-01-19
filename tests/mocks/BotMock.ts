@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
+import type { Vec3 } from 'vec3';
 import { Vec3Mock, vec3 } from './Vec3Mock';
-import { MockWorld, MockBlock } from './MockWorld';
+import { MockWorld, type MockBlock } from './MockWorld';
 
 /**
  * Minimal Bot mock for testing GOAP planning.
@@ -68,7 +69,7 @@ export function createBotMock(config: BotMockConfig = {}): Bot {
     // World access - uses MockWorld if provided
     blockAt: (pos: Vec3Mock) => {
       if (!world) return null;
-      const block = world.blockAt(pos);
+      const block = world.blockAt(pos as unknown as Vec3);
       if (!block) return null;
       // Return a mock Block object matching mineflayer's interface
       return {
@@ -89,7 +90,7 @@ export function createBotMock(config: BotMockConfig = {}): Bot {
       if (!world) return [];
       const point = options.point ?? position;
       return world.findBlocks({
-        point,
+        point: point as unknown as Vec3,
         maxDistance: options.maxDistance,
         count: options.count,
         matching: options.matching,

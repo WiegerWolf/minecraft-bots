@@ -214,7 +214,7 @@ describe('BaseGOAPAction', () => {
 
     test('can be overridden', () => {
       class ExpensiveAction extends TestAction {
-        override getCost(): number {
+        override getCost(_ws: WorldState): number {
           return 5.0;
         }
       }

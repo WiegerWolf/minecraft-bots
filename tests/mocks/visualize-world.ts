@@ -29,7 +29,7 @@ import {
   createStump,
 } from './MockWorld';
 
-const VERSION = '1.20.1';
+const VERSION = '1.21.4' as const;
 const PORT = 3000;
 
 // Get minecraft data for block state lookups
@@ -184,7 +184,7 @@ console.log(`Starting viewer on http://localhost:${PORT}`);
 console.log('Controls: WASD to move, mouse to look, space/shift for up/down');
 
 standaloneViewer({
-  version: VERSION,
+  version: VERSION as any,
   world: prismarineWorld,
   center: new Vec3(0, 70, 0), // Start above ground level
   port: PORT,
