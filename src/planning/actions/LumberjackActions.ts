@@ -16,7 +16,6 @@ import {
   PatrolForest,
   PlantSaplings,
   WriteKnowledgeSign,
-  WriteForestSign,
   FindForest,
   StudySpawnSigns,
   WithdrawSupplies,
@@ -680,54 +679,6 @@ export class FindForestAction extends BaseGOAPAction {
 }
 
 /**
- * GOAP Action: Write a FOREST sign near spawn
- * Records the discovered forest location so future lumberjacks can find it.
- */
-export class WriteForestSignAction extends BaseGOAPAction {
-  name = 'WriteForestSign';
-  private impl = new WriteForestSign();
-
-  preconditions = [
-    booleanPrecondition('pending.forestSignWrite', true, 'has pending forest sign'),
-  ];
-
-  effects = [
-    setEffect('pending.forestSignWrite', false, 'wrote forest sign'),
-  ];
-
-  // Custom precondition check - need either a sign or materials to craft one
-  override checkPreconditions(ws: WorldState): boolean {
-    const pending = ws.getBool('pending.forestSignWrite');
-    if (!pending) return false;
-
-    // Already have a sign
-    const hasSign = ws.getBool('has.sign');
-    if (hasSign) return true;
-
-    // Can craft a sign
-    const canCraft = ws.getBool('derived.canCraftSign');
-    if (canCraft) return true;
-
-    // Check raw materials
-    const planks = ws.getNumber('inv.planks');
-    const sticks = ws.getNumber('inv.sticks');
-    if (planks >= 6 && sticks >= 1) return true;
-
-    return false;
-  }
-
-  override getCost(ws: WorldState): number {
-    const hasSign = ws.getBool('has.sign');
-    return hasSign ? 2.0 : 4.0;
-  }
-
-  override async execute(bot: Bot, bb: LumberjackBlackboard, ws: WorldState): Promise<ActionResult> {
-    const result = await this.impl.tick(bot, bb);
-    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
-  }
-}
-
-/**
  * Create all lumberjack actions for the planner.
  */
 export function createLumberjackActions(): BaseGOAPAction[] {
@@ -741,7 +692,6 @@ export function createLumberjackActions(): BaseGOAPAction[] {
     new StudySpawnSignsAction(),   // Startup: study signs first
     new WithdrawSuppliesAction(),  // Startup: check chest for supplies
     new FindForestAction(),        // Find a forest before chopping
-    new WriteForestSignAction(),   // Write FOREST sign for future bots
     new PickupItemsAction(),
     new ChopTreeAction(),          // Only chops trees in forests!
     new FinishTreeHarvestAction(),
@@ -754,7 +704,7 @@ export function createLumberjackActions(): BaseGOAPAction[] {
     new PlaceStorageChestAction(),  // Place our own chest (preferred)
     new CraftChestAction(),          // Legacy chest crafting
     new CraftAndPlaceCraftingTableAction(),
-    new WriteKnowledgeSignAction(),
+    new WriteKnowledgeSignAction(), // Handles FOREST and infrastructure signs
     new ReadUnknownSignAction(),   // Curious bot - read unknown signs
     new PatrolForestAction(),
   ];

@@ -58,7 +58,7 @@ export class FindForest implements BehaviorNode {
             if (center) {
                 bb.knownForests.push(center);
                 bb.hasKnownForest = true;
-                bb.pendingForestSignWrite = true;
+                bb.pendingSignWrites.push({ type: 'FOREST', pos: center.clone() });
                 bot.chat('Found a good forest area!');
                 bb.log?.info({ pos: center.floored().toString(), treeCount: bb.forestTrees.length }, 'Discovered forest!');
                 return 'success';
@@ -130,7 +130,7 @@ export class FindForest implements BehaviorNode {
                 if (center) {
                     bb.knownForests.push(center);
                     bb.hasKnownForest = true;
-                    bb.pendingForestSignWrite = true;
+                    bb.pendingSignWrites.push({ type: 'FOREST', pos: center.clone() });
                     bot.chat('Found a forest!');
                     bb.log?.info({ pos: center.floored().toString(), treeCount: bb.forestTrees.length }, 'Discovered forest during exploration!');
                     return 'success';

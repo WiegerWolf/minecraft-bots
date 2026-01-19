@@ -83,6 +83,11 @@ export class WriteKnowledgeSign implements BehaviorNode {
             await bot.updateSign(signBlock, frontText);
             bb.signPositions.set(pending.type, signBlock.position);
 
+            // Announce FOREST signs to help other bots and players
+            if (pending.type === 'FOREST') {
+                bot.chat(`Marked forest at ${Math.floor(pending.pos.x)}, ${Math.floor(pending.pos.z)}`);
+            }
+
             bb.log?.info(
                 { type: pending.type, pos: pending.pos.toString(), signPos: signBlock.position.toString() },
                 'Updated existing knowledge sign'
@@ -244,6 +249,11 @@ export class WriteKnowledgeSign implements BehaviorNode {
 
             await bot.updateSign(placedBlock, frontText);
             bb.signPositions.set(pending.type, targetPos);
+
+            // Announce FOREST signs to help other bots and players
+            if (pending.type === 'FOREST') {
+                bot.chat(`Placed FOREST sign at ${Math.floor(pending.pos.x)}, ${Math.floor(pending.pos.z)}`);
+            }
 
             bb.log?.info(
                 { type: pending.type, pos: pending.pos.toString(), signPos: targetPos.toString() },

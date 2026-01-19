@@ -130,41 +130,45 @@ describe('Lumberjack Forest Safety', () => {
   });
 
   describe('FOREST Sign Writing', () => {
-    test('SPEC: WriteForestSign goal exists', () => {
-      const writeForestGoal = goals.find((g) => g.name === 'WriteForestSign');
-      expect(writeForestGoal).toBeDefined();
+    test('SPEC: WriteKnowledgeSign handles FOREST signs', () => {
+      const writeSignGoal = goals.find((g) => g.name === 'WriteKnowledgeSign');
+      expect(writeSignGoal).toBeDefined();
     });
 
-    test('SPEC: Pending forest sign write triggers goal', () => {
-      const writeForestGoal = goals.find((g) => g.name === 'WriteForestSign')!;
+    test('SPEC: Pending FOREST sign write triggers high priority', () => {
+      const writeSignGoal = goals.find((g) => g.name === 'WriteKnowledgeSign')!;
 
       const ws = lumberjackReadyToChopState();
-      ws.set('pending.forestSignWrite', true);
+      ws.set('pending.signWrites', 1);
+      ws.set('pending.hasForestSign', true);
 
-      expect(writeForestGoal.getUtility(ws)).toBeGreaterThan(0);
+      // FOREST signs get priority 80
+      expect(writeSignGoal.getUtility(ws)).toBe(80);
     });
 
     test('SPEC: No pending write = zero utility', () => {
-      const writeForestGoal = goals.find((g) => g.name === 'WriteForestSign')!;
+      const writeSignGoal = goals.find((g) => g.name === 'WriteKnowledgeSign')!;
 
       const ws = lumberjackReadyToChopState();
-      ws.set('pending.forestSignWrite', false);
+      ws.set('pending.signWrites', 0);
+      ws.set('pending.hasForestSign', false);
 
-      expect(writeForestGoal.getUtility(ws)).toBe(0);
+      expect(writeSignGoal.getUtility(ws)).toBe(0);
     });
 
-    test('SPEC: WriteForestSign high priority (helps future lumberjacks)', () => {
-      const writeForestGoal = goals.find((g) => g.name === 'WriteForestSign')!;
+    test('SPEC: FOREST sign has high priority (helps future lumberjacks)', () => {
+      const writeSignGoal = goals.find((g) => g.name === 'WriteKnowledgeSign')!;
       const chopGoal = goals.find((g) => g.name === 'ChopTree')!;
 
       const ws = lumberjackReadyToChopState();
-      ws.set('pending.forestSignWrite', true);
+      ws.set('pending.signWrites', 1);
+      ws.set('pending.hasForestSign', true);
       ws.set('nearby.forestTrees', 5);
       ws.set('inv.logs', 0);
 
       // Writing the sign should be higher priority than chopping
       // So future lumberjacks can find the forest immediately
-      expect(writeForestGoal.getUtility(ws)).toBeGreaterThan(chopGoal.getUtility(ws));
+      expect(writeSignGoal.getUtility(ws)).toBeGreaterThan(chopGoal.getUtility(ws));
     });
   });
 

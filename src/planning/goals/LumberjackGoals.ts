@@ -315,15 +315,17 @@ export class PlantSaplingsGoal extends BaseGoal {
 
 /**
  * Goal: Write pending knowledge to signs at spawn.
- * Medium priority - important for persistence but not urgent.
+ * Priority varies by sign type:
+ * - FOREST: High priority (80) - helps future lumberjacks find forests immediately
+ * - VILLAGE/CRAFT/CHEST: Medium priority (55-65) - infrastructure persistence
  *
  * This goal activates when there are pending sign writes in the queue
- * (after placing crafting tables, chests, or establishing village center).
+ * (after placing crafting tables, chests, establishing village center, or discovering forests).
  * Writing signs ensures the bot can recover this knowledge after restarts.
  */
 export class WriteKnowledgeSignGoal extends BaseGoal {
   name = 'WriteKnowledgeSign';
-  description = 'Write infrastructure locations to signs at spawn';
+  description = 'Write knowledge locations to signs at spawn';
 
   conditions = [
     numericGoalCondition('pending.signWrites', v => v === 0, 'no pending sign writes', {
@@ -335,10 +337,17 @@ export class WriteKnowledgeSignGoal extends BaseGoal {
 
   getUtility(ws: WorldState): number {
     const pendingCount = ws.getNumber('pending.signWrites');
-
     if (pendingCount === 0) return 0;
 
-    // Medium-high priority when there are signs to write
+    // Check if FOREST sign is pending (highest priority sign type)
+    const hasForestSign = ws.getBool('pending.hasForestSign');
+    if (hasForestSign) {
+      // High priority - helps future lumberjacks skip exploration
+      // Should be higher than ChopTree (50-70) to write sign before harvesting
+      return 80;
+    }
+
+    // Medium-high priority for infrastructure signs (VILLAGE, CRAFT, CHEST)
     // Utility scales with pending count to handle multiple writes
     // Range: 55-65 to be above PlantSaplings (55-75) but below critical goals
     return Math.min(65, 55 + pendingCount * 5);
@@ -641,35 +650,6 @@ export class FindForestGoal extends BaseGoal {
 }
 
 /**
- * Goal: Write a FOREST sign near spawn after discovering a forest.
- * HIGH PRIORITY - helps future lumberjacks find the forest immediately.
- *
- * This ensures knowledge persists across bot respawns and helps new
- * lumberjacks skip the forest-finding phase entirely.
- */
-export class WriteForestSignGoal extends BaseGoal {
-  name = 'WriteForestSign';
-  description = 'Write a FOREST sign near spawn';
-
-  conditions = [
-    booleanGoalCondition('pending.forestSignWrite', false, 'no pending forest sign'),
-  ];
-
-  getUtility(ws: WorldState): number {
-    const pendingWrite = ws.getBool('pending.forestSignWrite');
-    if (!pendingWrite) return 0;
-
-    // High priority - this helps future lumberjacks
-    // Should be higher than ChopTree (50-70) to prioritize knowledge sharing
-    return 80;
-  }
-
-  override isValid(ws: WorldState): boolean {
-    return ws.getBool('pending.forestSignWrite');
-  }
-}
-
-/**
  * Goal: Read unknown signs spotted while exploring.
  * CURIOUS BOT behavior - when the bot sees a sign it hasn't read,
  * it will go investigate and potentially learn something useful.
@@ -709,7 +689,6 @@ export function createLumberjackGoals(): BaseGoal[] {
     new WithdrawSuppliesGoal(),   // Very high priority when no tools
     new CollectDropsGoal(),
     new RespondToTradeOfferGoal(),// Respond to trade offers
-    new WriteForestSignGoal(),    // High priority - helps future lumberjacks
     new FulfillRequestsGoal(),
     new FindForestGoal(),         // High priority when no known forest
     new CompleteTreeHarvestGoal(),
@@ -717,7 +696,7 @@ export function createLumberjackGoals(): BaseGoal[] {
     new DepositLogsGoal(),
     new ChopTreeGoal(),           // Only chops trees in forests (not houses!)
     new PlantSaplingsGoal(),
-    new WriteKnowledgeSignGoal(),
+    new WriteKnowledgeSignGoal(), // Handles FOREST (priority 80) and infrastructure signs (55-65)
     new CraftInfrastructureGoal(),
     new ProcessWoodGoal(),
     new BroadcastTradeOfferGoal(),// Offer unwanted items when idle

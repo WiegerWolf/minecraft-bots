@@ -261,6 +261,7 @@ export class WorldStateBuilder {
 
     // Sign-based persistent knowledge
     ws.set('pending.signWrites', bb.pendingSignWrites.length);
+    ws.set('pending.hasForestSign', bb.pendingSignWrites.some(p => p.type === 'FOREST'));
 
     // Startup behaviors (one-time on spawn)
     ws.set('has.studiedSigns', bb.hasStudiedSigns);
@@ -273,7 +274,6 @@ export class WorldStateBuilder {
 
     // Forest safety - only chop in known forests
     ws.set('has.knownForest', bb.hasKnownForest);
-    ws.set('pending.forestSignWrite', bb.pendingForestSignWrite);
   }
 
   /**

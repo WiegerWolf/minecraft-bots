@@ -15,10 +15,10 @@ export interface ExplorationMemory {
 }
 
 /**
- * Pending sign write entry - queued when infrastructure is placed
+ * Pending sign write entry - queued when infrastructure is placed or forest discovered
  */
 export interface PendingSignWrite {
-    type: 'VILLAGE' | 'CRAFT' | 'CHEST';
+    type: 'VILLAGE' | 'CRAFT' | 'CHEST' | 'FOREST';
     pos: Vec3;
 }
 
@@ -50,7 +50,6 @@ export interface LumberjackBlackboard {
     knownChests: Vec3[];                   // All known chest positions (from signs, chat, discovery)
     knownForests: Vec3[];                  // Known good forest/tree areas (from signs)
     hasKnownForest: boolean;               // Whether bot knows about a valid forest
-    pendingForestSignWrite: boolean;       // Whether bot needs to write FOREST sign
 
     // Village communication (set by role)
     villageChat: VillageChat | null;
@@ -129,7 +128,6 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         knownChests: [],
         knownForests: [],
         hasKnownForest: false,
-        pendingForestSignWrite: false,
 
         villageChat: null,
         log: null,
@@ -294,13 +292,14 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     // Update hasKnownForest based on whether we have knownForests or detected a forest cluster
     bb.hasKnownForest = bb.knownForests.length > 0 || bb.forestTrees.length >= 3;
 
-    // If we discovered a new forest cluster and don't have a pending sign write, queue one
-    if (bb.forestTrees.length >= 5 && bb.knownForests.length === 0 && !bb.pendingForestSignWrite && bb.hasStudiedSigns) {
-        bb.pendingForestSignWrite = true;
+    // If we discovered a new forest cluster and don't have a pending FOREST sign write, queue one
+    const hasPendingForestSign = bb.pendingSignWrites.some(p => p.type === 'FOREST');
+    if (bb.forestTrees.length >= 5 && bb.knownForests.length === 0 && !hasPendingForestSign && bb.hasStudiedSigns) {
         // Store the forest center for sign writing
         const forestCenter = getClusterCenter(bb.forestTrees.map(t => t.position));
         if (forestCenter && !bb.knownForests.some(f => f.distanceTo(forestCenter) < 30)) {
             bb.knownForests.push(forestCenter);
+            bb.pendingSignWrites.push({ type: 'FOREST', pos: forestCenter.clone() });
             bb.log?.info({ pos: forestCenter.floored().toString(), treeCount: bb.forestTrees.length }, 'Discovered forest area!');
         }
     }

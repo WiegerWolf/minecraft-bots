@@ -37,7 +37,7 @@ export function freshSpawnLumberjackState(): WorldState {
     'has.checkedStorage': false,
     'has.knownForest': false,         // Knows about a forest location
 
-    'pending.forestSignWrite': false, // Needs to write FOREST sign
+    'pending.hasForestSign': false,   // Has FOREST sign pending in queue
 
     'tree.active': false,
     'tree.phase': '',
