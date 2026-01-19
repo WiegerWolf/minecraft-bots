@@ -42,26 +42,20 @@ export class CheckSharedChest {
     }
 
     private findChest(bot: Bot, bb: FarmingBlackboard): Vec3 | null {
-        // Try village chat shared chest first
+        // ONLY use shared chest announced by lumberjack (who placed it)
+        // Never adopt random nearby chests - they could be pregenerated
+        // dungeon/mineshaft chests that are unreachable or underground
         const sharedChest = bb.villageChat?.getSharedChest();
-        if (sharedChest) return sharedChest;
-
-        // Look for a chest near farm center
-        if (bb.nearbyChests.length > 0 && bb.farmCenter) {
-            const sortedChests = [...bb.nearbyChests].sort((a, b) =>
-                a.position.distanceTo(bb.farmCenter!) - b.position.distanceTo(bb.farmCenter!)
-            );
-            const chest = sortedChests[0];
-            if (chest) {
-                // Register as shared chest
-                if (bb.villageChat) {
-                    bb.villageChat.setSharedChest(chest.position);
-                    bb.villageChat.announceSharedChest(chest.position);
-                }
-                return chest.position;
+        if (sharedChest) {
+            // Verify the chest still exists
+            const block = bot.blockAt(sharedChest);
+            if (block && ['chest', 'barrel'].includes(block.name)) {
+                return sharedChest;
             }
+            bb.log?.debug(`[Farmer] Shared chest at ${sharedChest} no longer exists`);
         }
 
+        // No shared chest available - must wait for lumberjack to place one
         return null;
     }
 

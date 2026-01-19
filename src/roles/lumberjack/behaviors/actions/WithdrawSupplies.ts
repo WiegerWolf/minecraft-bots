@@ -26,10 +26,13 @@ export class WithdrawSupplies implements BehaviorNode {
             return 'success';
         }
 
-        // Find chest position
-        const chestPos = bb.sharedChest || bb.nearbyChests[0]?.position;
+        // Find chest position - ONLY use known chests
+        // Use shared chest OR chests from sign knowledge (knownChests)
+        // Never adopt random nearby chests - they could be pregenerated
+        // dungeon/mineshaft chests that are unreachable or underground
+        const chestPos = bb.sharedChest || bb.knownChests[0];
         if (!chestPos) {
-            bb.log?.debug('No chest available to check for supplies');
+            bb.log?.debug('No known chest available to check for supplies');
             bb.hasCheckedStorage = true;
             return 'success';
         }

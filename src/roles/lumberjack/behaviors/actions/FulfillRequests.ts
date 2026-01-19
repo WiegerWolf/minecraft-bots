@@ -42,16 +42,20 @@ export class FulfillRequests implements BehaviorNode {
         }
 
         // Find shared chest to deposit
+        // ONLY use chest that was placed by lumberjack (via PlaceStorageChest)
+        // Never adopt random nearby chests - they could be pregenerated
+        // dungeon/mineshaft chests that are unreachable or underground
         if (!bb.sharedChest) {
-            // Try to find any nearby chest
-            if (bb.nearbyChests.length > 0) {
-                bb.sharedChest = bb.nearbyChests[0]!.position;
-                bb.villageChat.setSharedChest(bb.sharedChest);
-                bb.villageChat.announceSharedChest(bb.sharedChest);
-            } else {
-                bb.log?.debug(`[Lumberjack] No chest available for deposit`);
-                return 'failure';
-            }
+            bb.log?.debug(`[Lumberjack] No shared chest available - need to place one first`);
+            return 'failure';
+        }
+
+        // Verify the chest still exists
+        const sharedChestBlock = bot.blockAt(bb.sharedChest);
+        if (!sharedChestBlock || !['chest', 'barrel'].includes(sharedChestBlock.name)) {
+            bb.log?.debug(`[Lumberjack] Shared chest at ${bb.sharedChest} no longer exists`);
+            bb.sharedChest = null;
+            return 'failure';
         }
 
         // Go to shared chest and deposit

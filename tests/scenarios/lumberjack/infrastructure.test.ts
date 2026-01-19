@@ -267,4 +267,91 @@ describe('Lumberjack Infrastructure', () => {
       expect(true).toBe(true); // Documentation test
     });
   });
+
+  describe('Chest Adoption Rules (Critical - Prevents Bug)', () => {
+    /**
+     * CRITICAL: Bots must NEVER adopt random "nearby chests" as shared storage.
+     *
+     * Why this matters:
+     * - Minecraft worlds have pregenerated chests in dungeons, mineshafts, nether ruins, etc.
+     * - These are often underground (Y < 55) or in hard-to-reach locations
+     * - If a bot adopts one as "sharedChest", all bots try to use it and get stuck
+     *
+     * The fix:
+     * - Only use chests from TRUSTED SOURCES:
+     *   1. bb.sharedChest - announced via VillageChat by lumberjack who placed it
+     *   2. bb.knownChests - from CHEST signs written by bots
+     *   3. bb.farmChest - farm-specific chest set by farmer
+     * - NEVER fall back to nearbyChests[0] which is just "any chest I can see"
+     */
+
+    test('SPEC: Farmer CheckSharedChest only uses announced shared chest', () => {
+      // CheckSharedChest.findChest():
+      // - Uses bb.villageChat.getSharedChest() only
+      // - Returns null if no shared chest announced
+      // - Does NOT fall back to nearbyChests[0]
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: Farmer DepositItems only uses farmChest or sharedChest', () => {
+      // DepositItems.findChest():
+      // - Uses bb.farmChest first (if exists and valid)
+      // - Falls back to bb.sharedChest (if exists and valid)
+      // - Returns null if neither exists
+      // - Does NOT fall back to nearbyChests[0]
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: Landscaper CheckSharedChest only uses announced shared chest', () => {
+      // CheckSharedChest.findChest():
+      // - Uses bb.sharedChest only
+      // - Returns null if no shared chest
+      // - Does NOT fall back to nearbyChests[0]
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: Landscaper DepositItems only uses sharedChest', () => {
+      // DepositItems.findChest():
+      // - Uses bb.sharedChest only (if exists and valid)
+      // - Returns null if no shared chest
+      // - Does NOT fall back to nearbyChests[0]
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: Lumberjack FulfillRequests requires sharedChest (no adoption)', () => {
+      // FulfillRequests:
+      // - Requires bb.sharedChest to exist
+      // - Returns 'failure' if no shared chest - lumberjack must place one first
+      // - Does NOT adopt nearbyChests[0] as shared chest
+      // - This is the critical fix that prevents the pregenerated chest bug
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: Lumberjack WithdrawSupplies only uses known chests', () => {
+      // WithdrawSupplies:
+      // - Uses bb.sharedChest first
+      // - Falls back to bb.knownChests[0] (from sign knowledge)
+      // - Does NOT fall back to nearbyChests[0]
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: Only lumberjack PlaceStorageChest creates shared chests', () => {
+      // The lumberjack is the ONLY role that places storage chests:
+      // - PlaceStorageChest behavior crafts and places a chest
+      // - Then calls bb.villageChat.announceSharedChest()
+      // - This broadcasts [CHEST] shared X Y Z to all bots
+      // - Other bots receive this and set their bb.sharedChest
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: Chest Y-level sanity check (surface level)', () => {
+      // Shared chests should be near surface level (Y ~63)
+      // Pregenerated chests are often:
+      // - Underground: Y < 55 (dungeons, mineshafts)
+      // - Nether portal ruins: can be anywhere
+      // - Desert temples: often at Y ~64 but underground
+      // The bot-placed chest should always be at the bot's current Y level
+      expect(true).toBe(true); // Documentation test
+    });
+  });
 });

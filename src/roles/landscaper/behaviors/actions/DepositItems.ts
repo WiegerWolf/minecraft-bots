@@ -34,10 +34,14 @@ export class DepositItems extends BaseDepositItems<LandscaperBlackboard> {
     }
 
     protected findChest(bot: Bot, bb: LandscaperBlackboard): Vec3 | null {
-        // Prefer shared chest, fall back to nearby chests
-        if (bb.sharedChest) return bb.sharedChest;
-        if (bb.nearbyChests.length > 0 && bb.nearbyChests[0]) {
-            return bb.nearbyChests[0].position;
+        // ONLY use shared chest announced by lumberjack (who placed it)
+        // Never adopt random nearby chests - they could be pregenerated
+        // dungeon/mineshaft chests that are unreachable or underground
+        if (bb.sharedChest) {
+            const block = bot.blockAt(bb.sharedChest);
+            if (block && ['chest', 'barrel'].includes(block.name)) {
+                return bb.sharedChest;
+            }
         }
         return null;
     }

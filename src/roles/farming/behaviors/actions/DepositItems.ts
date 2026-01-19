@@ -38,10 +38,20 @@ export class DepositItems extends BaseDepositItems<FarmingBlackboard> {
     }
 
     protected findChest(bot: Bot, bb: FarmingBlackboard): Vec3 | null {
-        // Prefer farm chest, fall back to nearby chests
-        if (bb.farmChest) return bb.farmChest;
-        if (bb.nearbyChests.length > 0 && bb.nearbyChests[0]) {
-            return bb.nearbyChests[0].position;
+        // ONLY use known chests (farm chest or shared chest from lumberjack)
+        // Never adopt random nearby chests - they could be pregenerated
+        // dungeon/mineshaft chests that are unreachable or underground
+        if (bb.farmChest) {
+            const block = bot.blockAt(bb.farmChest);
+            if (block && ['chest', 'barrel'].includes(block.name)) {
+                return bb.farmChest;
+            }
+        }
+        if (bb.sharedChest) {
+            const block = bot.blockAt(bb.sharedChest);
+            if (block && ['chest', 'barrel'].includes(block.name)) {
+                return bb.sharedChest;
+            }
         }
         return null;
     }

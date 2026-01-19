@@ -33,7 +33,9 @@ export class CheckSharedChest extends BaseCheckChest<LandscaperBlackboard> {
     }
 
     protected findChest(bot: Bot, bb: LandscaperBlackboard): Vec3 | null {
-        // Prefer shared chest
+        // ONLY use shared chest announced by lumberjack (who placed it)
+        // Never adopt random nearby chests - they could be pregenerated
+        // dungeon/mineshaft chests that are unreachable or underground
         if (bb.sharedChest) {
             const block = bot.blockAt(bb.sharedChest);
             if (block && ['chest', 'barrel'].includes(block.name)) {
@@ -42,11 +44,7 @@ export class CheckSharedChest extends BaseCheckChest<LandscaperBlackboard> {
             bb.log?.debug(`[Landscaper] Shared chest at ${bb.sharedChest} no longer exists`);
         }
 
-        // Fall back to nearby chests
-        if (bb.nearbyChests.length > 0 && bb.nearbyChests[0]) {
-            return bb.nearbyChests[0].position;
-        }
-
+        // No shared chest available - must wait for lumberjack to place one
         return null;
     }
 
