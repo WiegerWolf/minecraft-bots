@@ -8,6 +8,7 @@ import { useBotManager } from './hooks/useBotManager';
 import { useLogBuffer } from './hooks/useLogBuffer';
 import { useFileWatcher } from './hooks/useFileWatcher';
 import { useRestartTrigger } from './hooks/useRestartTrigger';
+import { useMemoryProfiler } from './hooks/useMemoryProfiler';
 import type { BotConfig, LogEntry, LogLevelName } from './types';
 import { DEFAULT_BOT_CONFIGS, BOT_SPAWN_DELAY, LOG_LEVELS } from './types';
 
@@ -47,6 +48,13 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
   const [bots, botActions] = useBotManager({
     sessionId,
     initialConfigs,
+    onLog: handleLog,
+    getNextLogId: logActions.getNextId,
+  });
+
+  // Memory profiler - logs heap usage every 30s
+  useMemoryProfiler({
+    enabled: true,
     onLog: handleLog,
     getNextLogId: logActions.getNextId,
   });

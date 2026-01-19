@@ -138,6 +138,10 @@ export function spawnBot(options: SpawnBotOptions): SpawnedBot {
             onSpawnSuccess();
           }
 
+          // Quick filter: skip DEBUG logs (level 20) before parsing
+          // This prevents creating objects for ~99% of logs that won't be displayed
+          if (line.includes('"level":20')) continue;
+
           const entry = parseLogLine(line, botName, getNextLogId);
           if (entry) {
             onLog(entry);
@@ -145,7 +149,7 @@ export function spawnBot(options: SpawnBotOptions): SpawnedBot {
         }
       }
 
-      if (buffer) {
+      if (buffer && !buffer.includes('"level":20')) {
         const entry = parseLogLine(buffer, botName, getNextLogId);
         if (entry) {
           onLog(entry);
