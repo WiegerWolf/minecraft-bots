@@ -9,6 +9,9 @@ import {
 
 /**
  * ChopTree - Find and chop trees, uses shared TreeHarvest logic
+ *
+ * IMPORTANT: Only chops trees from forestTrees (verified forest areas).
+ * This prevents dismantling villager houses or other structures.
  */
 export class ChopTree implements BehaviorNode {
     name = 'ChopTree';
@@ -26,56 +29,42 @@ export class ChopTree implements BehaviorNode {
         // Don't start new trees if inventory full
         if (bb.inventoryFull) return 'failure';
 
-        // Use trees from blackboard (already filtered for village distance and reachability)
-        // This avoids the issue where startTreeHarvest searches from bot position
-        // but we need trees near village center
-        if (bb.nearbyTrees.length > 0) {
-            // Find closest tree from the pre-filtered list
-            const botPos = bot.entity.position;
-            const sortedTrees = [...bb.nearbyTrees].sort((a, b) =>
-                a.position.distanceTo(botPos) - b.position.distanceTo(botPos)
-            );
+        // SAFETY: Only use forestTrees - trees verified to be in actual forests
+        // This prevents dismantling villager houses or other structures!
+        if (bb.forestTrees.length === 0) {
+            bb.log?.debug('No forest trees available - refusing to chop isolated trees');
+            return 'failure';
+        }
 
-            for (const tree of sortedTrees) {
-                // Double-check village distance if we have a center
-                if (bb.villageCenter) {
-                    const treeDistFromVillage = tree.position.distanceTo(bb.villageCenter);
-                    if (treeDistFromVillage > 60) {
-                        bb.log?.debug(`[Lumberjack] Tree at ${tree.position.floored()} too far from village (${Math.round(treeDistFromVillage)} blocks), skipping`);
-                        continue;
-                    }
+        // Find closest tree from the pre-filtered forest trees
+        const botPos = bot.entity.position;
+        const sortedTrees = [...bb.forestTrees].sort((a, b) =>
+            a.position.distanceTo(botPos) - b.position.distanceTo(botPos)
+        );
+
+        for (const tree of sortedTrees) {
+            // Double-check village distance if we have a center
+            if (bb.villageCenter) {
+                const treeDistFromVillage = tree.position.distanceTo(bb.villageCenter);
+                if (treeDistFromVillage > 60) {
+                    bb.log?.debug(`Tree at ${tree.position.floored()} too far from village (${Math.round(treeDistFromVillage)} blocks), skipping`);
+                    continue;
                 }
-
-                bb.currentTreeHarvest = {
-                    basePos: tree.position.clone(),
-                    logType: tree.name,
-                    phase: 'chopping'
-                };
-                bb.lastAction = 'chop_tree';
-                bb.log?.debug(`[Lumberjack] Starting tree harvest at ${tree.position.floored()}`);
-                return this.continueHarvest(bot, bb);
             }
+
+            bb.currentTreeHarvest = {
+                basePos: tree.position.clone(),
+                logType: tree.name,
+                phase: 'chopping'
+            };
+            bb.lastAction = 'chop_tree';
+            bb.log?.info({ pos: tree.position.floored().toString() }, 'Starting forest tree harvest');
+            return this.continueHarvest(bot, bb);
         }
 
-        // Fallback: use startTreeHarvest if no pre-filtered trees
-        // (this can happen if blackboard wasn't updated yet)
-        const maxDistance = bb.villageCenter ? 50 : 32;
-        const state = startTreeHarvest(bot, maxDistance);
-        if (!state) return 'failure';
-
-        // If we have a village center, check distance
-        if (bb.villageCenter) {
-            const treeDistFromVillage = state.basePos.distanceTo(bb.villageCenter);
-            if (treeDistFromVillage > 60) {
-                bb.log?.debug(`[Lumberjack] Tree too far from village (${Math.round(treeDistFromVillage)} blocks), skipping`);
-                return 'failure';
-            }
-        }
-
-        bb.currentTreeHarvest = state;
-        bb.lastAction = 'chop_tree';
-        bb.log?.debug(`[Lumberjack] Starting tree harvest at ${state.basePos}`);
-        return this.continueHarvest(bot, bb);
+        // No valid forest trees found
+        bb.log?.debug('No valid forest trees in range');
+        return 'failure';
     }
 
     private async continueHarvest(bot: Bot, bb: LumberjackBlackboard): Promise<BehaviorStatus> {
