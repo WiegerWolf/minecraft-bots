@@ -76,14 +76,35 @@ export class WorldStateBuilder {
     // ═══════════════════════════════════════════════
     // TRADE STATE (shared between roles)
     // ═══════════════════════════════════════════════
-    ws.set('trade.status', bb.activeTrade?.status ?? 'idle');
-    ws.set('trade.inTrade', bb.activeTrade !== null);
-    ws.set('trade.tradeableCount', bb.tradeableItemCount);
-    ws.set('trade.pendingOffers', bb.pendingTradeOffers.length);
-    // Don't mark as cooldown if we're actively offering - need to continue the action
     const tradeStatus = bb.activeTrade?.status ?? 'idle';
+    const isInTrade = bb.activeTrade !== null;
+    const pendingOffers = bb.pendingTradeOffers.length;
+    const tradeableCount = bb.tradeableItemCount;
+
+    // Don't mark as cooldown if we're actively offering - need to continue the action
     const isActivelyOffering = tradeStatus === 'offering';
-    ws.set('trade.onCooldown', !isActivelyOffering && Date.now() - bb.lastOfferTime < 30000);
+    const onCooldown = !isActivelyOffering && Date.now() - bb.lastOfferTime < 30000;
+
+    // Raw trade state
+    ws.set('trade.status', tradeStatus);
+    ws.set('trade.inTrade', isInTrade);
+    ws.set('trade.tradeableCount', tradeableCount);
+    ws.set('trade.pendingOffers', pendingOffers);
+    ws.set('trade.onCooldown', onCooldown);
+
+    // Computed trade booleans (used by goals - single source of truth)
+    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'awaiting_pickup', 'picking_up'];
+    const blockedStatuses = ['wanting', 'accepted', 'traveling'];
+    const broadcastBlockedStatuses = ['wanting', 'offering', 'accepted', 'traveling'];
+
+    // trade.isActive: true when we're in an active trade that needs completion
+    ws.set('trade.isActive', activeStatuses.includes(tradeStatus));
+
+    // trade.canRespondToOffers: true when we can respond to pending trade offers
+    ws.set('trade.canRespondToOffers', pendingOffers > 0 && !isInTrade && !blockedStatuses.includes(tradeStatus));
+
+    // trade.canBroadcastOffer: true when we can broadcast a new trade offer
+    ws.set('trade.canBroadcastOffer', tradeableCount >= 4 && !isInTrade && !onCooldown && !broadcastBlockedStatuses.includes(tradeStatus));
 
     // Tree harvesting state (used by farming and lumberjack roles)
     if ('currentTreeHarvest' in bb && bb.currentTreeHarvest) {

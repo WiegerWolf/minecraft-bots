@@ -42,6 +42,7 @@ describe('Landscaper Trading', () => {
     test('SPEC: Trade offer interrupts idle landscaper', () => {
       const ws = landscaperIdleState();
       ws.set('trade.pendingOffers', 2);
+      ws.set('trade.canRespondToOffers', true);  // Computed boolean
       ws.set('inv.dirt', 64);
 
       arbiter.clearCurrentGoal();
@@ -62,6 +63,7 @@ describe('Landscaper Trading', () => {
     test('SPEC: Cannot broadcast on cooldown', () => {
       const ws = landscaperWithTradeableItemsState();
       ws.set('trade.onCooldown', true);
+      ws.set('trade.canBroadcastOffer', false);  // Computed boolean
 
       const tradeGoal = goals.find((g) => g.name === 'BroadcastTradeOffer')!;
       expect(tradeGoal.getUtility(ws)).toBe(0);
@@ -70,6 +72,7 @@ describe('Landscaper Trading', () => {
     test('SPEC: Cannot broadcast if already in trade', () => {
       const ws = landscaperWithTradeableItemsState();
       ws.set('trade.inTrade', true);
+      ws.set('trade.canBroadcastOffer', false);  // Computed boolean
 
       const tradeGoal = goals.find((g) => g.name === 'BroadcastTradeOffer')!;
       expect(tradeGoal.getUtility(ws)).toBe(0);

@@ -510,19 +510,15 @@ export class CompleteTradeGoal extends BaseGoal {
   ];
 
   getUtility(ws: WorldState): number {
-    const tradeStatus = ws.getString('trade.status');
-    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'awaiting_pickup', 'picking_up'];
-
-    if (!activeStatuses.includes(tradeStatus)) return 0;
+    // Use computed boolean from WorldStateBuilder (single source of truth)
+    if (!ws.getBool('trade.isActive')) return 0;
 
     // Very high priority - finish what we started
     return 150;
   }
 
   override isValid(ws: WorldState): boolean {
-    const tradeStatus = ws.getString('trade.status');
-    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'awaiting_pickup', 'picking_up'];
-    return activeStatuses.includes(tradeStatus);
+    return ws.getBool('trade.isActive');
   }
 }
 
@@ -547,23 +543,15 @@ export class RespondToTradeOfferGoal extends BaseGoal {
   ];
 
   getUtility(ws: WorldState): number {
-    const pendingOffers = ws.getNumber('trade.pendingOffers');
-    const isInTrade = ws.getBool('trade.inTrade');
-    const tradeStatus = ws.getString('trade.status');
-
-    // Don't pursue if already responded/in trade or no offers
-    if (pendingOffers === 0 || isInTrade) return 0;
-    if (['wanting', 'accepted', 'traveling'].includes(tradeStatus)) return 0;
+    // Use computed boolean from WorldStateBuilder (single source of truth)
+    if (!ws.getBool('trade.canRespondToOffers')) return 0;
 
     // High priority - trading saves time vs gathering
     return 120;
   }
 
   override isValid(ws: WorldState): boolean {
-    const pendingOffers = ws.getNumber('trade.pendingOffers');
-    const isInTrade = ws.getBool('trade.inTrade');
-    const tradeStatus = ws.getString('trade.status');
-    return pendingOffers > 0 && !isInTrade && !['wanting', 'accepted', 'traveling'].includes(tradeStatus);
+    return ws.getBool('trade.canRespondToOffers');
   }
 }
 
@@ -590,9 +578,6 @@ export class BroadcastTradeOfferGoal extends BaseGoal {
   ];
 
   getUtility(ws: WorldState): number {
-    const tradeableCount = ws.getNumber('trade.tradeableCount');
-    const isInTrade = ws.getBool('trade.inTrade');
-    const offerCooldown = ws.getBool('trade.onCooldown');
     const tradeStatus = ws.getString('trade.status');
 
     // HIGH priority if already offering - must finish collecting WANT responses
@@ -600,26 +585,20 @@ export class BroadcastTradeOfferGoal extends BaseGoal {
       return 150;
     }
 
-    // Don't pursue if in active trade or on cooldown
-    if (isInTrade || offerCooldown) return 0;
+    // Use computed boolean from WorldStateBuilder (single source of truth)
+    if (!ws.getBool('trade.canBroadcastOffer')) return 0;
 
-    // Need 4+ tradeable items
-    if (tradeableCount < 4) return 0;
-
-    // Low priority - do when idle
-    // Scale slightly with tradeable items (30-50)
+    // Low priority - do when idle, scale with tradeable items
+    const tradeableCount = ws.getNumber('trade.tradeableCount');
     return 30 + Math.min(tradeableCount / 4, 5) * 4;
   }
 
   override isValid(ws: WorldState): boolean {
-    const tradeableCount = ws.getNumber('trade.tradeableCount');
-    const isInTrade = ws.getBool('trade.inTrade');
-    const offerCooldown = ws.getBool('trade.onCooldown');
     const tradeStatus = ws.getString('trade.status');
 
     // Valid if offering (need to continue) OR if ready to start a new offer
     if (tradeStatus === 'offering') return true;
-    return tradeableCount >= 4 && !isInTrade && !offerCooldown;
+    return ws.getBool('trade.canBroadcastOffer');
   }
 }
 

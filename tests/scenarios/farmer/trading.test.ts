@@ -47,6 +47,7 @@ describe('Farmer Trading', () => {
     test('SPEC: Trade offers preempt normal farming', () => {
       const ws = establishedFarmerState();
       ws.set('trade.pendingOffers', 2);
+      ws.set('trade.canRespondToOffers', true);  // Computed boolean
       ws.set('nearby.matureCrops', 5);
 
       arbiter.clearCurrentGoal();
@@ -67,6 +68,7 @@ describe('Farmer Trading', () => {
     test('SPEC: Cannot broadcast if already in trade', () => {
       const ws = farmerWithTradeableItemsState();
       ws.set('trade.inTrade', true);
+      ws.set('trade.canBroadcastOffer', false);  // Computed boolean
 
       const tradeGoal = goals.find((g) => g.name === 'BroadcastTradeOffer')!;
       expect(tradeGoal.getUtility(ws)).toBe(0);
@@ -75,6 +77,7 @@ describe('Farmer Trading', () => {
     test('SPEC: Cannot broadcast on cooldown', () => {
       const ws = farmerWithTradeableItemsState();
       ws.set('trade.onCooldown', true);
+      ws.set('trade.canBroadcastOffer', false);  // Computed boolean
 
       const tradeGoal = goals.find((g) => g.name === 'BroadcastTradeOffer')!;
       expect(tradeGoal.getUtility(ws)).toBe(0);

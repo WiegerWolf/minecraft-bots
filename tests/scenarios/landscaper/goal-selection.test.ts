@@ -60,6 +60,7 @@ describe('Landscaper Goal Selection', () => {
       const ws = landscaperActiveTerraformState();
       ws.set('trade.inTrade', true);
       ws.set('trade.status', 'traveling'); // Must be an active status for CompleteTrade
+      ws.set('trade.isActive', true);  // Computed boolean
 
       arbiter.clearCurrentGoal();
       const result = arbiter.selectGoal(ws);
@@ -115,6 +116,7 @@ describe('Landscaper Goal Selection', () => {
     test('SPEC: Trade offer + terraform = trade wins (higher utility)', () => {
       const ws = landscaperIdleState();
       ws.set('trade.pendingOffers', 2);
+      ws.set('trade.canRespondToOffers', true);  // Computed boolean
       ws.set('has.pendingTerraformRequest', true);
       ws.set('has.shovel', true);
       ws.set('has.pickaxe', true);

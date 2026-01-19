@@ -247,6 +247,7 @@ export function farmerInActiveTradeState(): WorldState {
   const ws = establishedFarmerState();
   ws.set('trade.status', 'traveling');
   ws.set('trade.inTrade', true);
+  ws.set('trade.isActive', true);  // Computed: in active trade
   return ws;
 }
 
@@ -258,6 +259,7 @@ export function farmerWithTradeOffersState(): WorldState {
   ws.set('trade.pendingOffers', 2);
   ws.set('trade.inTrade', false);
   ws.set('trade.status', '');
+  ws.set('trade.canRespondToOffers', true);  // Computed: can respond to offers
   return ws;
 }
 
@@ -306,5 +308,6 @@ export function farmerWithTradeableItemsState(): WorldState {
   ws.set('trade.inTrade', false);
   ws.set('trade.onCooldown', false);
   ws.set('trade.status', '');
+  ws.set('trade.canBroadcastOffer', true);  // Computed: can broadcast offer
   return ws;
 }

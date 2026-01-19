@@ -109,6 +109,7 @@ describe('Landscaper Idle Behavior', () => {
     test('SPEC: Trade offer interrupts idle state', () => {
       const ws = landscaperIdleState();
       ws.set('trade.pendingOffers', 1);
+      ws.set('trade.canRespondToOffers', true);  // Computed boolean
       ws.set('inv.dirt', 64);
 
       arbiter.clearCurrentGoal();

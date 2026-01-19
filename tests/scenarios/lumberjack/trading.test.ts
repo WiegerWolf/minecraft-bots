@@ -64,6 +64,7 @@ describe('Lumberjack Trading', () => {
     test('SPEC: Cannot broadcast if already in trade', () => {
       const ws = lumberjackWithTradeableItemsState();
       ws.set('trade.inTrade', true);
+      ws.set('trade.canBroadcastOffer', false);  // Computed boolean
 
       const tradeGoal = goals.find((g) => g.name === 'BroadcastTradeOffer')!;
       expect(tradeGoal.getUtility(ws)).toBe(0);
@@ -72,6 +73,7 @@ describe('Lumberjack Trading', () => {
     test('SPEC: Cannot broadcast on cooldown', () => {
       const ws = lumberjackWithTradeableItemsState();
       ws.set('trade.onCooldown', true);
+      ws.set('trade.canBroadcastOffer', false);  // Computed boolean
 
       const tradeGoal = goals.find((g) => g.name === 'BroadcastTradeOffer')!;
       expect(tradeGoal.getUtility(ws)).toBe(0);
@@ -80,6 +82,7 @@ describe('Lumberjack Trading', () => {
     test('SPEC: Less than 4 tradeable items = zero utility', () => {
       const ws = lumberjackWithTradeableItemsState();
       ws.set('trade.tradeableCount', 3);
+      ws.set('trade.canBroadcastOffer', false);  // Computed boolean
 
       const tradeGoal = goals.find((g) => g.name === 'BroadcastTradeOffer')!;
       expect(tradeGoal.getUtility(ws)).toBe(0);
@@ -97,6 +100,7 @@ describe('Lumberjack Trading', () => {
       ws.set('trade.tradeableCount', 8);
       ws.set('trade.inTrade', false);
       ws.set('trade.onCooldown', false);
+      ws.set('trade.canBroadcastOffer', true);  // Computed boolean
 
       arbiter.clearCurrentGoal();
       const result = arbiter.selectGoal(ws);

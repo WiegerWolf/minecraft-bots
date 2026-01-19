@@ -171,6 +171,7 @@ export function landscaperInActiveTradeState(): WorldState {
   const ws = landscaperReadyToWorkState();
   ws.set('trade.status', 'traveling');
   ws.set('trade.inTrade', true);
+  ws.set('trade.isActive', true);  // Computed: in active trade
   return ws;
 }
 
@@ -182,6 +183,7 @@ export function landscaperWithTradeOffersState(): WorldState {
   ws.set('trade.pendingOffers', 2);
   ws.set('trade.inTrade', false);
   ws.set('trade.status', '');
+  ws.set('trade.canRespondToOffers', true);  // Computed: can respond to offers
   return ws;
 }
 
@@ -194,5 +196,6 @@ export function landscaperWithTradeableItemsState(): WorldState {
   ws.set('trade.inTrade', false);
   ws.set('trade.onCooldown', false);
   ws.set('trade.status', '');
+  ws.set('trade.canBroadcastOffer', true);  // Computed: can broadcast offer
   return ws;
 }

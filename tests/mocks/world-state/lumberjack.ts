@@ -194,6 +194,7 @@ export function lumberjackInActiveTradeState(): WorldState {
   const ws = lumberjackReadyToChopState();
   ws.set('trade.status', 'traveling');
   ws.set('trade.inTrade', true);
+  ws.set('trade.isActive', true);  // Computed: in active trade
   return ws;
 }
 
@@ -205,6 +206,7 @@ export function lumberjackWithTradeOffersState(): WorldState {
   ws.set('trade.pendingOffers', 2);
   ws.set('trade.inTrade', false);
   ws.set('trade.status', '');
+  ws.set('trade.canRespondToOffers', true);  // Computed: can respond to offers
   return ws;
 }
 
@@ -217,6 +219,7 @@ export function lumberjackWithTradeableItemsState(): WorldState {
   ws.set('trade.inTrade', false);
   ws.set('trade.onCooldown', false);
   ws.set('trade.status', '');
+  ws.set('trade.canBroadcastOffer', true);  // Computed: can broadcast offer
   return ws;
 }
 
