@@ -8,6 +8,8 @@ import {
     formatSignText,
     getSignPositionForType,
     findExistingSignForType,
+    findValidSignPosition,
+    getAlternativeSignPositions,
 } from '../../../../shared/SignKnowledge';
 
 const { GoalNear } = goals;
@@ -120,8 +122,8 @@ export class WriteKnowledgeSign implements BehaviorNode {
             return true;
         }
 
-        // Try alternative positions near spawn
-        const alternativePositions = this.getAlternativePositions(bb.spawnPosition!);
+        // Try alternative positions near spawn (shared utility)
+        const alternativePositions = getAlternativeSignPositions(bb.spawnPosition!);
         for (const altPos of alternativePositions) {
             const placedAlt = await this.tryPlaceSign(bot, bb, altPos, pending);
             if (placedAlt) {
@@ -202,9 +204,15 @@ export class WriteKnowledgeSign implements BehaviorNode {
         targetPos: Vec3,
         pending: PendingSignWrite
     ): Promise<boolean> {
-        // Check if position is valid for placing a sign
-        const groundBlock = bot.blockAt(targetPos.offset(0, -1, 0));
-        const targetBlock = bot.blockAt(targetPos);
+        // Find a valid Y level at this X,Z position (shared utility)
+        const validPos = findValidSignPosition(bot, targetPos);
+        if (!validPos) {
+            return false;
+        }
+
+        // Use the adjusted position with valid ground
+        const groundBlock = bot.blockAt(validPos.offset(0, -1, 0));
+        const targetBlock = bot.blockAt(validPos);
 
         if (!groundBlock || groundBlock.boundingBox !== 'block') {
             return false;
@@ -213,6 +221,9 @@ export class WriteKnowledgeSign implements BehaviorNode {
         if (!targetBlock || targetBlock.name !== 'air') {
             return false;
         }
+
+        // Update targetPos to the valid position for placement
+        targetPos = validPos;
 
         try {
             // Move near the placement position
@@ -264,19 +275,4 @@ export class WriteKnowledgeSign implements BehaviorNode {
         }
     }
 
-    private getAlternativePositions(spawnPos: Vec3): Vec3[] {
-        const alternatives: Vec3[] = [];
-        // Spiral outward from spawn
-        for (let radius = 2; radius <= 6; radius += 2) {
-            for (let x = -radius; x <= radius; x++) {
-                for (let z = -radius; z <= radius; z++) {
-                    // Only positions on the edge of the square
-                    if (Math.abs(x) === radius || Math.abs(z) === radius) {
-                        alternatives.push(new Vec3(spawnPos.x + x, spawnPos.y, spawnPos.z + z));
-                    }
-                }
-            }
-        }
-        return alternatives;
-    }
 }

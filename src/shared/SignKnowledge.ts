@@ -335,3 +335,75 @@ export function findExistingSignForType(
 
     return null;
 }
+
+/**
+ * Find a valid Y level for placing a sign at the given X,Z position.
+ * Scans vertically to find solid ground with air above it.
+ *
+ * This handles cases where spawnPos.y is not at ground level (e.g., over water,
+ * on slabs, in mid-air).
+ *
+ * @param bot - The bot instance
+ * @param pos - Target position (X,Z used, Y is starting point for search)
+ * @returns Valid position for sign placement, or null if none found
+ */
+export function findValidSignPosition(bot: Bot, pos: Vec3): Vec3 | null {
+    const x = Math.floor(pos.x);
+    const z = Math.floor(pos.z);
+    const startY = Math.floor(pos.y);
+
+    // Scan downward first (up to 10 blocks)
+    for (let dy = 0; dy >= -10; dy--) {
+        const checkY = startY + dy;
+        const groundBlock = bot.blockAt(new Vec3(x, checkY - 1, z));
+        const targetBlock = bot.blockAt(new Vec3(x, checkY, z));
+        const aboveBlock = bot.blockAt(new Vec3(x, checkY + 1, z));
+
+        // Valid position: solid ground below, air at target and above
+        if (groundBlock && groundBlock.boundingBox === 'block' &&
+            targetBlock && targetBlock.name === 'air' &&
+            aboveBlock && (aboveBlock.name === 'air' || aboveBlock.name.includes('leaves'))) {
+            return new Vec3(x, checkY, z);
+        }
+    }
+
+    // Scan upward (up to 5 blocks)
+    for (let dy = 1; dy <= 5; dy++) {
+        const checkY = startY + dy;
+        const groundBlock = bot.blockAt(new Vec3(x, checkY - 1, z));
+        const targetBlock = bot.blockAt(new Vec3(x, checkY, z));
+        const aboveBlock = bot.blockAt(new Vec3(x, checkY + 1, z));
+
+        if (groundBlock && groundBlock.boundingBox === 'block' &&
+            targetBlock && targetBlock.name === 'air' &&
+            aboveBlock && (aboveBlock.name === 'air' || aboveBlock.name.includes('leaves'))) {
+            return new Vec3(x, checkY, z);
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Get alternative positions for sign placement in a spiral pattern.
+ * Used when the primary position fails.
+ *
+ * @param spawnPos - Center position to spiral outward from
+ * @param maxRadius - Maximum radius to search (default 6)
+ * @returns Array of alternative positions to try
+ */
+export function getAlternativeSignPositions(spawnPos: Vec3, maxRadius: number = 6): Vec3[] {
+    const alternatives: Vec3[] = [];
+    // Spiral outward from spawn
+    for (let radius = 2; radius <= maxRadius; radius += 2) {
+        for (let x = -radius; x <= radius; x++) {
+            for (let z = -radius; z <= radius; z++) {
+                // Only positions on the edge of the square
+                if (Math.abs(x) === radius || Math.abs(z) === radius) {
+                    alternatives.push(new Vec3(spawnPos.x + x, spawnPos.y, spawnPos.z + z));
+                }
+            }
+        }
+    }
+    return alternatives;
+}
