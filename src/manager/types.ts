@@ -114,6 +114,11 @@ export interface Worldview {
   flags: WorldviewEntry[];
 }
 
+export interface GoalCooldown {
+  name: string;
+  expiresAt: number;
+}
+
 export interface BotStateMessage {
   type: 'bot_state';
   botName: string;
@@ -131,7 +136,7 @@ export interface BotStateMessage {
     actionsFailed: number;
     replansRequested: number;
   };
-  goalsOnCooldown: string[];
+  goalsOnCooldown: GoalCooldown[];
   inventory: InventoryItem[];
   worldview?: Worldview;
   position?: { x: number; y: number; z: number };
@@ -152,7 +157,7 @@ export interface BotState {
     actionsFailed: number;
     replansRequested: number;
   };
-  goalsOnCooldown: string[];
+  goalsOnCooldown: GoalCooldown[];
   inventory: InventoryItem[];
   worldview?: Worldview;
   position?: { x: number; y: number; z: number };

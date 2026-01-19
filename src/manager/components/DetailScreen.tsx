@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { ManagedBot, GoalUtility, ActionHistoryEntry, InventoryItem, WorldviewEntry, Worldview } from '../types';
+import type { ManagedBot, GoalUtility, ActionHistoryEntry, InventoryItem, WorldviewEntry, Worldview, GoalCooldown } from '../types';
 import { getBotColor } from '../types';
 import { StatusIndicator } from './StatusIndicator';
 
@@ -25,9 +25,10 @@ function ActionHistoryItem({ entry }: { entry: ActionHistoryEntry }) {
   );
 }
 
-function GoalItem({ goal, isOnCooldown }: { goal: GoalUtility; isOnCooldown?: boolean }) {
+function GoalItem({ goal, cooldown }: { goal: GoalUtility; cooldown?: GoalCooldown }) {
   const isCurrent = goal.isCurrent;
   const isDimmed = goal.isInvalid || goal.isZero;
+  const isOnCooldown = !!cooldown;
 
   // Marker: ► for current, * for cooldown, · for others (all single-width)
   let marker = '·';
@@ -50,10 +51,19 @@ function GoalItem({ goal, isOnCooldown }: { goal: GoalUtility; isOnCooldown?: bo
     color = 'gray';
   }
 
+  // Calculate remaining cooldown time
+  let cooldownText = '';
+  if (cooldown) {
+    const remaining = Math.max(0, cooldown.expiresAt - Date.now());
+    const seconds = Math.ceil(remaining / 1000);
+    cooldownText = ` (${seconds}s)`;
+  }
+
   return (
     <Box>
       <Text color={markerColor}>{marker} </Text>
       <Text color={color}>{goal.name.padEnd(20)} {goal.utility.toFixed(1).padStart(6)}</Text>
+      {cooldownText && <Text color="cyan">{cooldownText}</Text>}
     </Box>
   );
 }
@@ -157,7 +167,7 @@ export function DetailScreen({ bot, sessionId }: DetailScreenProps) {
                 <GoalItem
                   key={i}
                   goal={goal}
-                  isOnCooldown={state.goalsOnCooldown.includes(goal.name)}
+                  cooldown={state.goalsOnCooldown.find(c => c.name === goal.name)}
                 />
               ))
             ) : (

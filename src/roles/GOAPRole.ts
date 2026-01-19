@@ -409,7 +409,7 @@ export abstract class GOAPRole implements Role {
       goalUtilities,
       actionHistory: this.actionHistory,
       stats,
-      goalsOnCooldown: Array.from(this.failedGoalCooldowns.keys()),
+      goalsOnCooldown: Array.from(this.failedGoalCooldowns.entries()).map(([name, expiresAt]) => ({ name, expiresAt })),
       inventory,
       worldview: this.getWorldview(),
       position,
