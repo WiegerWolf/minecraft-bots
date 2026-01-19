@@ -54,12 +54,18 @@ export const BOT_SPAWN_DELAY = 2000;
 export const BOT_COLORS = ['blue', 'magenta', 'cyan', 'green', 'yellow'] as const;
 export type BotColor = typeof BOT_COLORS[number];
 
+const MAX_BOT_COLOR_ENTRIES = 50;
 const botColorMap = new Map<string, BotColor>();
 let colorIndex = 0;
 
 export function getBotColor(botName: string): BotColor {
   if (!botName) return BOT_COLORS[0]!;
   if (!botColorMap.has(botName)) {
+    // Prevent unbounded growth - clear oldest entries if at limit
+    if (botColorMap.size >= MAX_BOT_COLOR_ENTRIES) {
+      const firstKey = botColorMap.keys().next().value;
+      if (firstKey) botColorMap.delete(firstKey);
+    }
     botColorMap.set(botName, BOT_COLORS[colorIndex % BOT_COLORS.length]!);
     colorIndex++;
   }

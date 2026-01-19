@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import type { LogEntry } from '../types';
 
 const MAX_LOG_ENTRIES = 1000;
@@ -36,5 +36,6 @@ export function useLogBuffer(options: UseLogBufferOptions = {}): [LogEntry[], Lo
     return nextIdRef.current++;
   }, []);
 
-  return [logs, { addLog, clear, getNextId }];
+  const actions = useMemo(() => ({ addLog, clear, getNextId }), [addLog, clear, getNextId]);
+  return [logs, actions];
 }

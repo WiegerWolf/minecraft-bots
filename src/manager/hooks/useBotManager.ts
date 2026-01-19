@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { Subprocess } from 'bun';
 import type { ManagedBot, BotConfig, LogEntry } from '../types';
 import { DEFAULT_BOT_CONFIGS, MAX_BACKOFF, INITIAL_BACKOFF, BOT_SPAWN_DELAY } from '../types';
@@ -216,7 +216,7 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
     };
   }, []);
 
-  return [bots, {
+  const actions = useMemo(() => ({
     startBot,
     stopBot,
     restartBot,
@@ -224,5 +224,7 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
     addBot,
     deleteBot,
     stopAll,
-  }];
+  }), [startBot, stopBot, restartBot, restartAll, addBot, deleteBot, stopAll]);
+
+  return [bots, actions];
 }
