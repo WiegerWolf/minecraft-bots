@@ -85,7 +85,13 @@ We chose chat because it requires zero infrastructure and you can watch coordina
 [CHEST] shared <x> <y> <z>        // Shared chest location
 [CRAFTING] shared <x> <y> <z>     // Shared crafting table
 
-// Chest-based resource exchange
+// Intent-based need system (preferred)
+[NEED] <category>                  // "I need a hoe" (not raw materials)
+[OFFER_FOR_NEED] <needId> <items>  // "I can help with that need"
+[ACCEPT_OFFER] <needId> <provider> // "I accept your offer"
+[PROVIDE_AT] <needId> <method> <x> <y> <z>  // Delivery location
+
+// Chest-based resource exchange (legacy)
 [REQUEST] <item> <quantity>        // Resource request
 [FULFILL] <item> <qty> for <bot>   // Request fulfilled
 [DEPOSIT] <item> <quantity>        // Deposit notification
@@ -275,6 +281,71 @@ Without expiration:
 
 60 second timeout lets abandoned requests die.
 
+## Intent-Based Need System
+
+The intent-based system replaces material-specific requests with high-level needs, enabling smarter cooperation.
+
+### Why Intent Over Materials?
+
+**Material-specific (old):**
+```
+Farmer: [REQUEST] logs 8       // "I need logs"
+Lumberjack: (has planks+sticks but doesn't respond - they weren't asked for)
+```
+
+**Intent-based (new):**
+```
+Farmer: [NEED] hoe             // "I need a hoe"
+Lumberjack: (checks inventory)
+  - Has a hoe? Offer the hoe (0 crafting steps)
+  - Has planks+sticks? Offer materials (1 crafting step)
+  - Has logs? Offer logs (2 crafting steps)
+```
+
+### Recipe Deconstruction
+
+Both requester and responder understand recipes:
+
+**Requester side**: Farmer broadcasts `[NEED] hoe`, not `[REQUEST] logs`. The need system handles finding who can help.
+
+**Responder side**: Lumberjack with `canProvideCategories: ['log', 'planks', 'stick']` sees `[NEED] hoe` and checks:
+1. Do any of my materials appear in hoe recipes?
+2. `getMaterialPaths('wooden_hoe')` → `{planks: 2, stick: 2}` at depth 1
+3. Planks and sticks match! I can help.
+
+```typescript
+// RecipeService.canMaterialsHelpWith('hoe', ['log', 'planks', 'stick'])
+// → true (planks + sticks can craft wooden_hoe)
+```
+
+### Offer Ranking
+
+When multiple bots respond, offers are ranked:
+
+```typescript
+// Score formula
+score = baseTypeScore + completenessBonus - craftingPenalty + chestBonus
+
+// Rankings (best to worst):
+1. Direct item (craftingSteps: 0)     // Best: "Here's a hoe"
+2. Materials (craftingSteps: 1)       // Good: "Here's planks+sticks"
+3. Raw materials (craftingSteps: 2)   // OK: "Here's logs"
+4. Partial materials                   // Last resort
+```
+
+### Need Categories
+
+Categories map to specific items:
+
+```typescript
+'hoe' → ['wooden_hoe', 'stone_hoe', 'iron_hoe', ...]
+'axe' → ['wooden_axe', 'stone_axe', 'iron_axe', ...]
+'log' → ['oak_log', 'spruce_log', 'birch_log', ...]
+'sign' → ['oak_sign', 'spruce_sign', ...]
+```
+
+Broadcasting `[NEED] hoe` means "I need any item from the hoe category."
+
 ## Direct Trading (Hand-to-Hand)
 
 While the Request/Deposit pattern works well for dedicated exchanges, bots often accumulate items they don't need. Direct trading enables bots to hand off items without using shared storage.
@@ -333,15 +404,16 @@ Farmer (Giver)                    Lumberjack (Receiver)
     ├──────────[TRADE_READY]───────────►│
     │                                   │
     │ (drops items, steps back)         │
+    │ Status: 'awaiting_pickup'        │
     │                                   │
     ├──────────[TRADE_DROPPED]─────────►│
     │                                   │
-    │                          (picks up items)
+    │ (waits for confirmation)   (picks up items)
     │                                   │
     │◄─────────[TRADE_DONE]─────────────┤
-    ├──────────[TRADE_DONE]────────────►│
     │                                   │
-    │ Resume normal work                │ Resume normal work
+    │ Trade state cleared              │ Resume normal work
+    │ Resume normal work                │
 ```
 
 ### Why 5-Second Collection Window?
@@ -441,7 +513,10 @@ Trade execution includes safeguards to prevent common issues:
 2. **Quantity control**: Drop only the offered quantity, not the entire stack
 3. **Step back distance**: Move 4 blocks away after dropping (Minecraft pickup range is ~2 blocks)
 4. **Fallback movement**: If pathfinding fails, manually walk backward
-5. **Wait for receiver**: Giver waits for receiver's TRADE_DONE before completing
+5. **Wait for receiver**: After dropping, giver enters `awaiting_pickup` status and waits for receiver's TRADE_DONE
+   - Giver does NOT send their own TRADE_DONE (prevents clearing receiver's trade state prematurely)
+   - Trade only completes when receiver confirms with TRADE_DONE
+   - 2-minute timeout prevents indefinite waiting
 
 **Receiver Safeguards:**
 1. **Inventory tracking**: Record item count before and after pickup

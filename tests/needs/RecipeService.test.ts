@@ -258,6 +258,53 @@ describe('RecipeService', () => {
             expect(path!.items.some((i) => i.name.includes('log'))).toBe(true);
         });
     });
+
+    describe('canMaterialsHelpWith', () => {
+        test('returns true when provider has direct category match', () => {
+            // Provider has 'log', need is 'log'
+            expect(service.canMaterialsHelpWith('log', ['log', 'planks'])).toBe(true);
+        });
+
+        test('returns true when provider materials can craft needed item', () => {
+            // Planks + sticks can craft a hoe
+            expect(service.canMaterialsHelpWith('hoe', ['planks', 'stick'])).toBe(true);
+            // Planks + sticks can craft an axe
+            expect(service.canMaterialsHelpWith('axe', ['planks', 'stick'])).toBe(true);
+            // Planks can craft a boat
+            expect(service.canMaterialsHelpWith('boat', ['planks'])).toBe(true);
+        });
+
+        test('returns true when provider has raw materials for needed item', () => {
+            // Logs can be processed into planks -> sticks -> hoe
+            expect(service.canMaterialsHelpWith('hoe', ['log'])).toBe(true);
+            // Logs can be processed into planks -> boat
+            expect(service.canMaterialsHelpWith('boat', ['log'])).toBe(true);
+        });
+
+        test('returns true for cobblestone with stone tool needs', () => {
+            // Cobblestone + sticks can craft stone tools
+            expect(service.canMaterialsHelpWith('pickaxe', ['cobblestone', 'stick'])).toBe(true);
+            expect(service.canMaterialsHelpWith('shovel', ['cobblestone', 'stick'])).toBe(true);
+            // Cobblestone alone is still helpful (partial)
+            expect(service.canMaterialsHelpWith('pickaxe', ['cobblestone'])).toBe(true);
+        });
+
+        test('returns false when provider materials cannot help with need', () => {
+            // Dirt and gravel cannot help make a hoe
+            expect(service.canMaterialsHelpWith('hoe', ['dirt', 'gravel'])).toBe(false);
+            // Seeds cannot help make an axe
+            expect(service.canMaterialsHelpWith('axe', ['seeds', 'wheat'])).toBe(false);
+        });
+
+        test('handles empty provider categories', () => {
+            expect(service.canMaterialsHelpWith('hoe', [])).toBe(false);
+        });
+
+        test('handles unknown need category', () => {
+            // Unknown category returns false (can't help with unknown needs)
+            expect(service.canMaterialsHelpWith('nonexistent_item', ['log', 'planks'])).toBe(false);
+        });
+    });
 });
 
 describe('ItemCategoryMap', () => {
