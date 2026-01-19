@@ -1,36 +1,25 @@
 import { describe, test, expect } from 'bun:test';
-import { GoalArbiter } from '../../src/planning/GoalArbiter';
-import { createLumberjackGoals } from '../../src/planning/goals/LumberjackGoals';
-import { createLandscaperGoals } from '../../src/planning/goals/LandscaperGoals';
+import { GoalArbiter } from '../../../src/planning/GoalArbiter';
+import { createLumberjackGoals } from '../../../src/planning/goals/LumberjackGoals';
 import {
   lumberjackWithFarmerRequestState,
   lumberjackReadyToChopState,
   lumberjackNeedsInfrastructureState,
-  landscaperWithTerraformRequestState,
-  landscaperActiveTerraformState,
-} from '../mocks';
+} from '../../mocks';
 
 /**
- * SPECIFICATION: Cooperation
+ * SPECIFICATION: Lumberjack Cooperation
  *
- * Bots cooperate through:
- * - Request fulfillment (lumberjack → farmer)
- * - Terraform requests (farmer → landscaper)
- * - Infrastructure creation (shared crafting tables, chests)
- *
- * Key principle: Helping other bots has higher priority than solo work
- * because village success depends on cooperation.
+ * Lumberjacks cooperate through:
+ * - Fulfilling farmer requests for wood
+ * - Creating shared infrastructure (crafting tables, chests)
  */
 
-describe('Cooperation', () => {
-  // ═══════════════════════════════════════════════════════════════════════════
-  // LUMBERJACK FULFILLS FARMER REQUESTS
-  // ═══════════════════════════════════════════════════════════════════════════
+describe('Lumberjack Cooperation', () => {
+  const goals = createLumberjackGoals();
+  const arbiter = new GoalArbiter(goals);
 
-  describe('Lumberjack Fulfills Farmer Requests', () => {
-    const goals = createLumberjackGoals();
-    const arbiter = new GoalArbiter(goals);
-
+  describe('Farmer Request Fulfillment', () => {
     test('SPEC: Pending farmer request = high priority', () => {
       const ws = lumberjackWithFarmerRequestState();
 
@@ -88,45 +77,7 @@ describe('Cooperation', () => {
     });
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // LANDSCAPER FULFILLS TERRAFORM REQUESTS
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  describe('Landscaper Fulfills Terraform Requests', () => {
-    const goals = createLandscaperGoals();
-    const arbiter = new GoalArbiter(goals);
-
-    test('SPEC: Pending terraform request + tools = high priority (100)', () => {
-      const ws = landscaperWithTerraformRequestState();
-
-      const terraformGoal = goals.find((g) => g.name === 'FulfillTerraformRequest')!;
-      expect(terraformGoal.getUtility(ws)).toBe(100);
-    });
-
-    test('SPEC: Active terraform = highest priority (120)', () => {
-      const ws = landscaperActiveTerraformState();
-
-      const terraformGoal = goals.find((g) => g.name === 'FulfillTerraformRequest')!;
-      expect(terraformGoal.getUtility(ws)).toBe(120);
-    });
-
-    test('SPEC: Request triggers immediate work', () => {
-      const ws = landscaperWithTerraformRequestState();
-
-      arbiter.clearCurrentGoal();
-      const result = arbiter.selectGoal(ws);
-
-      expect(result?.goal.name).toBe('FulfillTerraformRequest');
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // INFRASTRUCTURE CREATION
-  // ═══════════════════════════════════════════════════════════════════════════
-
   describe('Infrastructure Creation', () => {
-    const goals = createLumberjackGoals();
-
     test('SPEC: Crafting table + materials = should craft (65)', () => {
       const ws = lumberjackNeedsInfrastructureState();
 
@@ -167,6 +118,31 @@ describe('Cooperation', () => {
 
       const infraGoal = goals.find((g) => g.name === 'CraftInfrastructure')!;
       expect(infraGoal.getUtility(ws)).toBe(0);
+    });
+
+    test('SPEC: No materials = zero utility', () => {
+      const ws = lumberjackNeedsInfrastructureState();
+      ws.set('inv.planks', 0);
+      ws.set('inv.logs', 0);
+
+      const infraGoal = goals.find((g) => g.name === 'CraftInfrastructure')!;
+      expect(infraGoal.getUtility(ws)).toBe(0);
+    });
+
+    test('SPEC: Bootstrap sequence - table then chest', () => {
+      const ws = lumberjackNeedsInfrastructureState();
+
+      arbiter.clearCurrentGoal();
+      let result = arbiter.selectGoal(ws);
+      expect(result?.goal.name).toBe('CraftInfrastructure');
+
+      // After table placed, still need chest
+      ws.set('derived.needsCraftingTable', false);
+      ws.set('derived.needsChest', true);
+      result = arbiter.selectGoal(ws);
+      // Either continues CraftInfrastructure or moves on - depends on utility
+      const infraGoal = goals.find((g) => g.name === 'CraftInfrastructure')!;
+      expect(infraGoal.getUtility(ws)).toBeGreaterThan(0);
     });
   });
 });
