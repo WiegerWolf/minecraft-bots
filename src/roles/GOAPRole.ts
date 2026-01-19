@@ -97,6 +97,12 @@ export abstract class GOAPRole implements Role {
   private static readonly STATE_EMIT_INTERVAL = 5; // Emit every 5 ticks (500ms)
   private static readonly MAX_ACTION_HISTORY = 10;
 
+  // Preemption threshold: a new goal must have this much MORE utility (absolute)
+  // to interrupt a running action. This is higher than normal hysteresis because
+  // interrupting an action mid-execution has a cost.
+  // Example: RespondToTradeOffer (120) can preempt ObtainTools (80) since 120 > 80 + 30
+  private static readonly PREEMPTION_UTILITY_THRESHOLD = 30;
+
   // Actions and goals to use (set by subclass)
   protected abstract getActions(): GOAPAction[];
   protected abstract getGoals(): Goal[];
@@ -245,9 +251,15 @@ export abstract class GOAPRole implements Role {
       await this.updateBlackboard();
       this.currentWorldState = WorldStateBuilder.fromBlackboard(this.bot, this.blackboard);
 
-      // PHASE 2: DECIDE (if no plan is executing)
+      // PHASE 2: DECIDE
       if (this.executor && !this.executor.isExecuting()) {
+        // No plan executing - select a goal and plan
         await this.planNextGoal();
+      } else if (this.executor && this.executor.isExecuting()) {
+        // Plan is executing - check if a much higher priority goal should preempt
+        // This allows urgent goals (like RespondToTradeOffer) to interrupt
+        // long-running actions (like CheckSharedChest returning RUNNING)
+        await this.checkGoalPreemption();
       }
 
       // PHASE 3: ACT
@@ -448,6 +460,72 @@ export abstract class GOAPRole implements Role {
     }
 
     this.executor.loadPlan(planResult.plan, this.currentWorldState);
+  }
+
+  /**
+   * Check if a higher-priority goal should preempt the current running action.
+   * This is called while an action is executing (returning RUNNING) to allow
+   * urgent goals to interrupt long-running actions.
+   *
+   * Uses a higher threshold than normal goal switching to avoid thrashing -
+   * the new goal must be significantly better to justify interrupting.
+   */
+  private async checkGoalPreemption(): Promise<void> {
+    if (!this.currentWorldState || !this.arbiter || !this.executor) return;
+
+    const currentGoal = this.arbiter.getCurrentGoal();
+    if (!currentGoal) return;
+
+    // Get current goal's utility with current world state
+    const currentIsValid = currentGoal.isValid ? currentGoal.isValid(this.currentWorldState) : true;
+    const currentUtility = currentIsValid ? currentGoal.getUtility(this.currentWorldState) : 0;
+
+    // Build skip set from cooldowns
+    const now = Date.now();
+    const goalsOnCooldown = new Set<string>();
+    for (const [goalName, expiry] of this.failedGoalCooldowns) {
+      if (now < expiry) {
+        goalsOnCooldown.add(goalName);
+      }
+    }
+
+    // Find the best available goal (without actually switching)
+    let bestGoal: Goal | null = null;
+    let bestUtility = 0;
+
+    for (const goal of this.getGoals()) {
+      // Skip current goal, goals on cooldown, and invalid goals
+      if (goal === currentGoal) continue;
+      if (goalsOnCooldown.has(goal.name)) continue;
+      if (goal.isValid && !goal.isValid(this.currentWorldState)) continue;
+
+      const utility = goal.getUtility(this.currentWorldState);
+      if (utility > bestUtility) {
+        bestUtility = utility;
+        bestGoal = goal;
+      }
+    }
+
+    // Check if best goal should preempt current action
+    // Requires significantly higher utility to justify interruption
+    if (bestGoal && bestUtility > currentUtility + GOAPRole.PREEMPTION_UTILITY_THRESHOLD) {
+      this.log?.info(
+        {
+          currentGoal: currentGoal.name,
+          currentUtility: currentUtility.toFixed(1),
+          preemptingGoal: bestGoal.name,
+          preemptingUtility: bestUtility.toFixed(1),
+        },
+        'Goal preemption: higher priority goal interrupting'
+      );
+
+      // Cancel current execution and clear goal so planNextGoal picks the new one
+      this.executor.cancel(ReplanReason.WORLD_CHANGED);
+      this.arbiter.clearCurrentGoal();
+
+      // Immediately plan for the new goal
+      await this.planNextGoal();
+    }
   }
 
   /**

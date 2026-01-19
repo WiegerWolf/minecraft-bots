@@ -453,6 +453,48 @@ Prevents thrashing when goals have similar utilities:
 
 With 20% hysteresis, a new goal must be 20% better to trigger a switch.
 
+### Goal Preemption: Interrupting Running Actions
+
+When an action returns `RUNNING`, it holds the executor in a waiting state. Without preemption, long-running actions (like `CheckSharedChest` waiting for materials) would block all goal re-evaluation—even for urgent goals like `RespondToTradeOffer`.
+
+**The preemption mechanism:**
+
+```typescript
+// In GOAPRole.tick()
+if (this.executor.isExecuting()) {
+    await this.checkGoalPreemption();
+}
+```
+
+Every tick while executing, we check if a significantly better goal should interrupt:
+
+```typescript
+// Preemption requires utility > currentUtility + 30
+if (bestUtility > currentUtility + PREEMPTION_UTILITY_THRESHOLD) {
+    this.executor.cancel();
+    this.arbiter.clearCurrentGoal();
+    await this.planNextGoal();  // Switch to new goal
+}
+```
+
+**Why a higher threshold than hysteresis?**
+
+Interrupting a running action has costs:
+- Partial progress is lost
+- Resources may be in inconsistent state
+- Multiple interruptions cause thrashing
+
+The preemption threshold (30 utility points) is higher than normal hysteresis (20%) to ensure only truly urgent goals interrupt.
+
+**Example scenario:**
+
+| Goal | Utility | Action State |
+|------|---------|--------------|
+| ObtainTools | 80 | `CheckSharedChest` returning RUNNING |
+| RespondToTradeOffer | 120 | Not started |
+
+Since 120 > 80 + 30, `RespondToTradeOffer` preempts `CheckSharedChest`. The farmer stops waiting for materials and immediately responds to the trade offer.
+
 ## Debugging Tips
 
 ### Enable Debug Logging

@@ -185,6 +185,7 @@ Press Enter on a bot to see full details:
 |-----------|-------|-----|
 | Tick interval | 100ms | Balance responsiveness vs CPU |
 | Hysteresis threshold | 20% | Prevent goal thrashing |
+| Preemption threshold | 30 utility | Allow urgent goals to interrupt RUNNING actions |
 | Goal cooldown | 5 seconds | Allow retry without spam |
 | Max consecutive failures | 3 | Fail fast on systematic issues |
 | World change threshold | 5 facts | Ignore minor fluctuations |
@@ -204,7 +205,7 @@ Press Enter on a bot to see full details:
 | Trade response window | 5 seconds | Time to collect [WANT] responses |
 | Trade arrival timeout | 2 minutes | Max time to wait for partner arrival |
 | CompleteTrade utility | 150 | Very high - finish active trades first |
-| RespondToTrade utility | 70 | Medium-high when wanted offer exists |
+| RespondToTrade utility | 120 | High priority - can preempt RUNNING actions (120 > 80 + 30) |
 | BroadcastTrade utility | 30-50 | Low priority, when idle with clutter |
 
 ### File Locations
