@@ -25,6 +25,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Old manager**: `bun run start:old` (simple hot-reload manager without TUI)
 - **Development mode**: `bun run dev:farmer` / `dev:lumberjack` / `dev:landscaper`
 - **Type check**: `bunx tsc --noEmit`
+- **Run tests**: `bun test`
+- **Run specific test**: `bun test tests/scenarios/farmer/`
 
 ## Bot Management
 
@@ -232,6 +234,54 @@ The farming bot autonomously:
 3. Tills soil, plants seeds, harvests mature crops
 4. Collects dropped items, deposits produce in chests
 5. Explores for resources when idle
+
+## Testing
+
+Tests are organized by role and behavior specification:
+
+```
+tests/
+  scenarios/           # Behavioral specs
+    farmer/
+      startup.test.ts      # Boot sequence, sign study
+      trading.test.ts      # Trade completion, offers
+      core-work.test.ts    # Harvesting, planting, tilling
+      inventory.test.ts    # Drop collection, deposits
+      tools.test.ts        # Hoe acquisition
+      knowledge.test.ts    # FARM signs, sign reading
+      idle.test.ts         # Exploration behavior
+      goal-selection.test.ts  # Hysteresis tests
+    lumberjack/
+      ... (same pattern + cooperation.test.ts)
+    landscaper/
+      ... (same pattern, no knowledge.test.ts - landscapers only read signs)
+  mocks/
+    world-state/       # WorldState presets by role
+      base.ts              # createWorldState helper
+      farmer.ts            # freshSpawnFarmerState, etc.
+      lumberjack.ts
+      landscaper.ts
+    Vec3Mock.ts
+    BotMock.ts
+    BlackboardMock.ts
+    ActionMock.ts
+```
+
+### Test Philosophy
+
+Tests verify **behavioral specifications**, not implementation details:
+- Each file tests one behavioral aspect (startup, trading, inventory, etc.)
+- Test names start with `SPEC:` to indicate they define expected behavior
+- Tests use WorldState presets from mocks to set up scenarios
+- Focus on goal utility values and goal selection outcomes
+
+### Running Tests
+
+```bash
+bun test                              # All tests
+bun test tests/scenarios/farmer/      # One role
+bun test tests/scenarios/farmer/trading.test.ts  # One file
+```
 
 ## Keeping Documentation Current
 
