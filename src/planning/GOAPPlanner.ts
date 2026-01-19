@@ -328,10 +328,12 @@ export class GOAPPlanner {
       'has.shovel', 'has.pickaxe', // Landscaper tools
       'has.sign', // For sign crafting/writing
       'has.studiedSigns', 'has.checkedStorage', // Startup behaviors
+      'has.knownForest', // Lumberjack forest discovery
       'has.pendingTerraformRequest', 'terraform.active', // Terraform state
       'has.pendingRequests', // Village requests
       'inv.seeds', 'inv.produce', 'inv.logs', 'inv.planks', 'inv.sticks', 'inv.saplings', 'inv.dirt', 'inv.slabs',
       'nearby.matureCrops', 'nearby.farmland', 'nearby.drops', 'nearby.trees', 'nearby.unknownSigns',
+      'nearby.forestTrees', // Lumberjack forest trees (safety: only chop trees in forests)
       'tree.active', 'derived.hasFarmEstablished',
       'derived.hasAnyTool', 'derived.hasStorageAccess', // Derived states
       'state.consecutiveIdleTicks',
@@ -339,6 +341,7 @@ export class GOAPPlanner {
       'state.farmsWithIssues', // Issue-based farm maintenance
       'state.farmMaintenanceNeeded', // Whether any farm needs work
       'pending.signWrites', // Sign knowledge persistence
+      'pending.hasForestSign', // Lumberjack FOREST sign pending
       'trade.status', 'trade.inTrade', // Trade state (different statuses need different plans)
     ];
 

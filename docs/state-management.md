@@ -247,7 +247,7 @@ Example: Blackboard searched 64 blocks for trees, but `ChopTree` action only sea
 interface ExplorationMemory {
     position: Vec3;
     timestamp: number;
-    reason?: string;
+    reason?: string;  // 'visited', 'unreachable', 'no_valid_directions', 'error'
 }
 
 bb.exploredPositions = [
@@ -258,13 +258,46 @@ bb.exploredPositions = [
 
 **Why track exploration?**
 
-Without it, the explore action might:
+Without it, exploration actions might:
 1. Walk 32 blocks north
 2. Walk 32 blocks south (back to start)
 3. Walk 32 blocks north again
 4. ...
 
 Memory ensures "go somewhere new."
+
+**Helper functions for exploration:**
+
+```typescript
+// Record a position as explored
+recordExploredPosition(bb, pos, 'visited');
+
+// Check if a position is near explored areas (within 16 blocks)
+isNearExplored(bb, pos, radius);
+
+// Get a score for a position (100 base, minus penalties for nearby explored)
+// Used to prioritize unexplored directions
+getExplorationScore(bb, pos);
+```
+
+**How `getExplorationScore()` works:**
+
+```typescript
+function getExplorationScore(bb, pos): number {
+    let score = 100;
+    for (const explored of bb.exploredPositions) {
+        const dist = explored.position.distanceTo(pos);
+        if (dist < 32) {
+            score -= (32 - dist) * 2;  // Closer = bigger penalty
+        }
+    }
+    return score;
+}
+```
+
+This gives high scores to unexplored areas and low scores to areas near recent exploration.
+
+**Used by:** `FindForest` (scores all 8 directions, picks highest), `PatrolForest` (scores candidates)
 
 **Why timestamps?**
 

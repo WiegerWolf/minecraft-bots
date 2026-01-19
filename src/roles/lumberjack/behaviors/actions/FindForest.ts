@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
+import { recordExploredPosition, getExplorationScore } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
@@ -10,15 +11,30 @@ const { GoalNear, GoalXZ } = goals;
 
 // Minimum trees in cluster to be considered a forest
 const MIN_FOREST_SIZE = 3;
-// Search radius when exploring for forests
-const EXPLORE_RADIUS = 32;
-// Maximum exploration attempts before giving up
-const MAX_EXPLORE_ATTEMPTS = 8;
+// Base search radius when exploring for forests
+const BASE_EXPLORE_RADIUS = 32;
+// Radius expansion per attempt (explores further when nearby is exhausted)
+const RADIUS_EXPANSION = 8;
+// Maximum exploration radius
+const MAX_EXPLORE_RADIUS = 80;
+// Maximum exploration attempts before giving up this round
+const MAX_EXPLORE_ATTEMPTS = 12;
+// Minimum score to consider a direction worth exploring
+const MIN_EXPLORATION_SCORE = 30;
 // Elevation thresholds for terrain filtering
 const MAX_EXPLORATION_Y = 85;   // Don't explore above this (mountains)
 const MIN_EXPLORATION_Y = 55;   // Don't explore below this (ravines/underground)
-// Water check radius
-const WATER_CHECK_RADIUS = 3;
+
+/**
+ * A scored exploration candidate with terrain and history scores.
+ */
+interface ExplorationCandidate {
+    pos: Vec3;
+    directionName: string;
+    explorationScore: number;  // From getExplorationScore (100 base, minus penalties)
+    terrainScore: number;      // From evaluateTerrain (positive = good terrain)
+    totalScore: number;        // Combined weighted score
+}
 
 /**
  * FindForest - Explore to find a forest area with 3+ trees
@@ -27,27 +43,31 @@ const WATER_CHECK_RADIUS = 3;
  * When a valid forest is found (3+ trees within 16 blocks), it marks the location
  * and sets hasKnownForest to true.
  *
- * Unlike PatrolForest which just wanders, this actively searches for forests
- * and validates that the area has enough trees to be considered a forest.
+ * Unlike the naive approach of cycling through directions, this action:
+ * 1. Scores all potential directions based on exploration history + terrain quality
+ * 2. Prioritizes unexplored areas (using getExplorationScore)
+ * 3. Records visited positions to avoid revisiting (using recordExploredPosition)
+ * 4. Gradually expands search radius when nearby areas are exhausted
  */
 export class FindForest implements BehaviorNode {
     name = 'FindForest';
 
-    private explorationIndex = 0;
+    private attemptCount = 0;
     private readonly explorationDirections: Vec3[] = [
         new Vec3(1, 0, 0),   // East
         new Vec3(-1, 0, 0),  // West
         new Vec3(0, 0, 1),   // South
         new Vec3(0, 0, -1),  // North
-        new Vec3(1, 0, 1),   // Southeast
-        new Vec3(-1, 0, 1),  // Southwest
-        new Vec3(1, 0, -1),  // Northeast
-        new Vec3(-1, 0, -1), // Northwest
+        new Vec3(1, 0, 1).normalize(),   // Southeast (normalized for consistent distance)
+        new Vec3(-1, 0, 1).normalize(),  // Southwest
+        new Vec3(1, 0, -1).normalize(),  // Northeast
+        new Vec3(-1, 0, -1).normalize(), // Northwest
     ];
 
     async tick(bot: Bot, bb: LumberjackBlackboard): Promise<BehaviorStatus> {
         // Already have a known forest
         if (bb.hasKnownForest || bb.knownForests.length > 0) {
+            this.attemptCount = 0;
             return 'success';
         }
 
@@ -61,65 +81,74 @@ export class FindForest implements BehaviorNode {
                 bb.pendingSignWrites.push({ type: 'FOREST', pos: center.clone() });
                 bot.chat('Found a good forest area!');
                 bb.log?.info({ pos: center.floored().toString(), treeCount: bb.forestTrees.length }, 'Discovered forest!');
+                this.attemptCount = 0;
                 return 'success';
             }
         }
 
         bb.lastAction = 'find_forest';
-        bb.log?.debug({ attempt: this.explorationIndex + 1 }, 'Exploring to find forest');
+        this.attemptCount++;
 
-        // Explore in the next direction - find a valid target on land
+        // Gradually expand search radius when nearby areas are exhausted
+        const expansionFactor = Math.floor(this.attemptCount / 4);
+        const currentRadius = Math.min(
+            BASE_EXPLORE_RADIUS + expansionFactor * RADIUS_EXPANSION,
+            MAX_EXPLORE_RADIUS
+        );
+
+        bb.log?.debug({
+            attempt: this.attemptCount,
+            radius: currentRadius
+        }, 'Exploring to find forest');
+
         const pos = bot.entity.position;
-        let targetPos: Vec3 | null = null;
-        let attemptsThisRound = 0;
-        const maxAttemptsPerRound = this.explorationDirections.length;
 
-        // Try to find a good exploration direction (on land, not mountains)
-        while (attemptsThisRound < maxAttemptsPerRound) {
-            const direction = this.explorationDirections[this.explorationIndex % this.explorationDirections.length]!;
-            this.explorationIndex++;
-            attemptsThisRound++;
+        // Score ALL directions and pick the best one
+        const candidates = this.scoreAllDirections(bot, bb, pos, currentRadius);
 
-            // Calculate potential target position
-            const potentialTarget = pos.plus(direction.scaled(EXPLORE_RADIUS));
-
-            // Check terrain quality at this target
-            const terrainScore = this.evaluateTerrain(bot, potentialTarget, bb);
-
-            if (terrainScore > 0) {
-                targetPos = potentialTarget;
-                bb.log?.debug({
-                    direction: `${direction.x},${direction.z}`,
-                    score: terrainScore,
-                    target: potentialTarget.floored().toString()
-                }, 'Found valid exploration direction');
-                break;
-            } else {
-                bb.log?.debug({
-                    direction: `${direction.x},${direction.z}`,
-                    score: terrainScore,
-                    target: potentialTarget.floored().toString()
-                }, 'Skipping bad terrain direction');
-            }
-        }
-
-        // If no valid direction found, we're probably stuck (surrounded by water/mountains)
-        if (!targetPos) {
+        if (candidates.length === 0) {
             bb.log?.warn('All exploration directions lead to bad terrain (water/mountains)');
-            this.explorationIndex = 0;
-            return 'failure';
+            // Record current position as explored to avoid getting stuck
+            recordExploredPosition(bb, pos, 'no_valid_directions');
+
+            if (this.attemptCount >= MAX_EXPLORE_ATTEMPTS) {
+                this.attemptCount = 0;
+                return 'failure';
+            }
+            return 'running';
         }
+
+        // Pick the best candidate (highest combined score)
+        const target = candidates[0]!;
+
+        bb.log?.debug({
+            direction: target.directionName,
+            explorationScore: target.explorationScore,
+            terrainScore: target.terrainScore,
+            totalScore: target.totalScore,
+            target: target.pos.floored().toString(),
+            radius: currentRadius
+        }, 'Selected best exploration direction');
 
         try {
             // Move toward the exploration target
-            const goal = new GoalXZ(targetPos.x, targetPos.z);
-            const success = await pathfinderGotoWithRetry(bot, goal, 3, 15000);
+            const goal = new GoalXZ(target.pos.x, target.pos.z);
+            const success = await pathfinderGotoWithRetry(bot, goal, 3, 20000);
 
             if (!success) {
-                bb.log?.debug({ target: targetPos.floored().toString() }, 'Could not reach exploration target');
-                // Continue to next direction
-                return this.explorationIndex >= MAX_EXPLORE_ATTEMPTS ? 'failure' : 'running';
+                bb.log?.debug({ target: target.pos.floored().toString() }, 'Could not reach exploration target');
+                // Record as explored even on failure to avoid retrying same spot
+                recordExploredPosition(bb, target.pos, 'unreachable');
+
+                if (this.attemptCount >= MAX_EXPLORE_ATTEMPTS) {
+                    this.attemptCount = 0;
+                    return 'failure';
+                }
+                return 'running';
             }
+
+            // Successfully reached target - record it
+            recordExploredPosition(bb, bot.entity.position, 'visited');
 
             // Give time for world to load and blackboard to update
             await sleep(500);
@@ -133,22 +162,85 @@ export class FindForest implements BehaviorNode {
                     bb.pendingSignWrites.push({ type: 'FOREST', pos: center.clone() });
                     bot.chat('Found a forest!');
                     bb.log?.info({ pos: center.floored().toString(), treeCount: bb.forestTrees.length }, 'Discovered forest during exploration!');
+                    this.attemptCount = 0;
                     return 'success';
                 }
             }
 
             // Not enough trees here, keep looking
-            if (this.explorationIndex >= MAX_EXPLORE_ATTEMPTS) {
+            if (this.attemptCount >= MAX_EXPLORE_ATTEMPTS) {
                 bb.log?.warn('Could not find a forest after maximum exploration attempts');
-                this.explorationIndex = 0;
+                this.attemptCount = 0;
                 return 'failure';
             }
 
             return 'running';
         } catch (err) {
             bb.log?.debug({ err }, 'Error during forest exploration');
-            return this.explorationIndex >= MAX_EXPLORE_ATTEMPTS ? 'failure' : 'running';
+            recordExploredPosition(bb, target.pos, 'error');
+
+            if (this.attemptCount >= MAX_EXPLORE_ATTEMPTS) {
+                this.attemptCount = 0;
+                return 'failure';
+            }
+            return 'running';
         }
+    }
+
+    /**
+     * Score all exploration directions and return sorted candidates.
+     * Combines exploration memory score (favoring unexplored) with terrain quality.
+     */
+    private scoreAllDirections(
+        bot: Bot,
+        bb: LumberjackBlackboard,
+        pos: Vec3,
+        radius: number
+    ): ExplorationCandidate[] {
+        const candidates: ExplorationCandidate[] = [];
+        const directionNames = ['E', 'W', 'S', 'N', 'SE', 'SW', 'NE', 'NW'];
+
+        for (let i = 0; i < this.explorationDirections.length; i++) {
+            const direction = this.explorationDirections[i]!;
+            const dirName = directionNames[i]!;
+            const targetPos = pos.plus(direction.scaled(radius));
+
+            // Get exploration score (100 base, minus penalties for nearby explored areas)
+            const explorationScore = getExplorationScore(bb, targetPos);
+
+            // Get terrain quality score
+            const terrainScore = this.evaluateTerrain(bot, targetPos, bb);
+
+            // Skip directions with bad terrain
+            if (terrainScore <= 0) {
+                bb.log?.trace?.({
+                    direction: dirName,
+                    terrainScore,
+                    target: targetPos.floored().toString()
+                }, 'Skipping bad terrain');
+                continue;
+            }
+
+            // Combined score: heavily weight unexplored areas
+            // Exploration score matters more - we want to go somewhere new
+            const totalScore = explorationScore * 2 + terrainScore;
+
+            // Only consider if score is above minimum threshold
+            if (totalScore >= MIN_EXPLORATION_SCORE) {
+                candidates.push({
+                    pos: targetPos,
+                    directionName: dirName,
+                    explorationScore,
+                    terrainScore,
+                    totalScore
+                });
+            }
+        }
+
+        // Sort by total score descending (best first)
+        candidates.sort((a, b) => b.totalScore - a.totalScore);
+
+        return candidates;
     }
 
     /**

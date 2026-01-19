@@ -261,4 +261,65 @@ describe('Lumberjack Forest Safety', () => {
       expect(true).toBe(true); // Documentation test
     });
   });
+
+  describe('Forest Exploration Memory & Prioritization (Documented Specs)', () => {
+    /**
+     * These tests document the exploration memory and direction prioritization
+     * behavior for FindForest. The implementation uses the shared exploration
+     * memory system (recordExploredPosition, getExplorationScore) to avoid
+     * thrashing and prioritize unexplored areas.
+     *
+     * Key behaviors:
+     * 1. Records visited positions to avoid revisiting
+     * 2. Scores directions based on exploration history (unexplored = higher)
+     * 3. Combines exploration score with terrain score
+     * 4. Gradually expands search radius when nearby is exhausted
+     */
+
+    test('SPEC: FindForest prioritizes unexplored directions', () => {
+      // FindForest uses getExplorationScore() to score all 8 directions.
+      // Directions near recently explored areas get penalties.
+      // The direction with the highest combined score is chosen.
+      // This prevents the bot from cycling back to already-visited areas.
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: FindForest records visited positions', () => {
+      // After successfully reaching an exploration target, FindForest calls
+      // recordExploredPosition(bb, position, 'visited').
+      // This adds the position to exploration memory with a 5-minute TTL.
+      // Subsequent exploration will avoid this area.
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: FindForest records unreachable positions', () => {
+      // When pathfinding fails, FindForest records the target as 'unreachable'.
+      // This prevents the bot from repeatedly trying to reach the same spot.
+      // The memory expires after 5 minutes, allowing retry if conditions change.
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: FindForest expands search radius over time', () => {
+      // Starting radius: 32 blocks (BASE_EXPLORE_RADIUS)
+      // After every 4 attempts, radius increases by 8 blocks (RADIUS_EXPANSION)
+      // Maximum radius: 80 blocks (MAX_EXPLORE_RADIUS)
+      // This ensures the bot explores further when nearby areas are exhausted.
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: FindForest combines exploration and terrain scores', () => {
+      // Total score = explorationScore * 2 + terrainScore
+      // Exploration score (from getExplorationScore): 100 base, minus penalties for nearby explored
+      // Terrain score (from evaluateTerrain): positive for solid ground, negative for water/mountains
+      // Heavily weighting exploration score ensures unexplored areas are prioritized.
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: FindForest minimum score threshold', () => {
+      // Directions with totalScore < 30 (MIN_EXPLORATION_SCORE) are rejected.
+      // This prevents the bot from exploring directions that are both
+      // already-explored AND have poor terrain.
+      expect(true).toBe(true); // Documentation test
+    });
+  });
 });
