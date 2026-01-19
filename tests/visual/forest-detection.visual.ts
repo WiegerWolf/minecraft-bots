@@ -34,12 +34,12 @@ async function main() {
     await harness.start(world, 'Forest Detection - Forest World', {
       autoAdvance,
       delay: 1500,
-      center: new Vec3(0, 75, 0),
+      center: new Vec3(10, 75, 10),
     });
 
     await harness.step('Created a forest world with 5 oak trees');
 
-    const botPos = new Vec3(0, 64, 0);
+    const botPos = new Vec3(10, 64, 10); // Clear of trees
     const bot = createBotMock({ world, position: botPos });
     await harness.mark(botPos, 'Bot Position', 'cyan');
 
@@ -54,10 +54,10 @@ async function main() {
 
     await harness.step(`Blackboard updated! Found ${bb.nearbyLogs.length} nearby logs`);
 
-    // Mark all found logs
+    // Mark all found logs (nearbyLogs is Block[], need .position)
     await harness.inspect('nearbyLogs count', bb.nearbyLogs.length);
     for (const log of bb.nearbyLogs.slice(0, 10)) {
-      await harness.mark(log, 'Log', 'orange');
+      await harness.mark(log.position, 'Log', 'orange');
     }
 
     await harness.step(`Found ${bb.nearbyTrees.length} nearby trees (logs with valid base)`);
@@ -84,12 +84,12 @@ async function main() {
     await harness.start(world, 'Forest Detection - Stump Field', {
       autoAdvance,
       delay: 1500,
-      center: new Vec3(0, 75, 0),
+      center: new Vec3(10, 75, 10),
     });
 
     await harness.step('Created a stump field (logs without leaves)');
 
-    const botPos = new Vec3(0, 64, 0);
+    const botPos = new Vec3(10, 64, 10); // Clear of stumps
     const bot = createBotMock({ world, position: botPos });
     await harness.mark(botPos, 'Bot Position', 'cyan');
 
@@ -134,7 +134,8 @@ async function main() {
     await harness.step('Red = stump area, Green = forest area');
 
     // Test with default radius (32 blocks)
-    const botPos = new Vec3(0, 64, 0);
+    // Bot at (1,64,1) - in stump area but not on a stump
+    const botPos = new Vec3(1, 64, 1);
     const bot = createBotMock({ world, position: botPos });
     await harness.mark(botPos, 'Bot (32 block radius)', 'cyan');
 

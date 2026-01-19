@@ -29,7 +29,7 @@ import { MockWorld } from './MockWorld';
 import * as readline from 'readline';
 
 const VERSION = '1.20.1';
-const PORT = 3007; // Different port to avoid conflicts
+let nextPort = 3007; // Auto-increment to avoid conflicts
 
 const data = mcData(VERSION);
 // @ts-ignore
@@ -51,12 +51,22 @@ const MARKER_COLORS: Record<string, string> = {
   black: 'black_concrete',
 };
 
+// Log blocks that need vertical orientation (axis=y)
+const LOG_BLOCKS = new Set([
+  'oak_log', 'birch_log', 'spruce_log', 'jungle_log',
+  'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log',
+]);
+
 function getBlockStateId(blockName: string): number {
   if (blockName === 'air') return 0;
   const block = data.blocksByName[blockName];
   if (!block) {
     console.warn(`Unknown block: ${blockName}, using stone`);
     return data.blocksByName['stone']?.minStateId ?? 1;
+  }
+  // For log blocks, add 1 to get axis=y (vertical) orientation
+  if (LOG_BLOCKS.has(blockName)) {
+    return (block.minStateId ?? block.id ?? 0) + 1;
   }
   return block.minStateId ?? block.id ?? 0;
 }
@@ -78,6 +88,8 @@ export class VisualTestHarness {
   private autoAdvance: boolean = false;
   private autoAdvanceDelay: number = 1000;
   private rl: readline.Interface | null = null;
+  private currentPort: number = 3007;
+  private liveBlockMap: Map<string, string> = new Map(); // Shared with prismarine world
 
   /**
    * Start the visual test harness.
@@ -98,15 +110,17 @@ export class VisualTestHarness {
     // Create prismarine world from MockWorld
     this.prismarineWorld = this.createPrismarineWorld();
 
-    // Start viewer
+    // Start viewer on next available port
+    const port = nextPort++;
     const center = options?.center ?? new Vec3(0, 70, 0);
     this.viewer = standaloneViewer({
       version: VERSION,
       world: this.prismarineWorld,
       center,
-      port: PORT,
+      port,
       viewDistance: 4,
     });
+    this.currentPort = port;
 
     // Setup readline for step control
     if (!this.autoAdvance) {
@@ -119,9 +133,12 @@ export class VisualTestHarness {
     console.log('\n' + '='.repeat(60));
     console.log(`VISUAL TEST: ${testName}`);
     console.log('='.repeat(60));
-    console.log(`Viewer: http://localhost:${PORT}`);
+    console.log(`Viewer: http://localhost:${this.currentPort}`);
     console.log('Controls: [Enter] next step, [a] auto-advance, [q] quit');
     console.log('='.repeat(60) + '\n');
+
+    // Wait for chunks to load before accepting input
+    await this.delay(500);
 
     await this.waitForInput('Press Enter to begin...');
   }
@@ -134,7 +151,7 @@ export class VisualTestHarness {
     const stepLabel = `[Step ${this.stepIndex}]`;
 
     // Update viewer with current world state
-    this.refreshViewer();
+    await this.refreshViewer();
 
     console.log(`\n${stepLabel} ${message}`);
 
@@ -153,25 +170,34 @@ export class VisualTestHarness {
     if (!this.mockWorld) return;
 
     const blockName = MARKER_COLORS[color] ?? 'lime_concrete';
-    const pos = position.floored();
+    // Handle both Vec3 with floored() and plain objects
+    const pos = new Vec3(
+      Math.floor(position.x),
+      Math.floor(position.y),
+      Math.floor(position.z)
+    );
 
     // Store original block
     const originalBlock = this.mockWorld.blockAt(pos)?.name ?? 'air';
 
-    // Create a beacon column (3 blocks high)
-    for (let dy = 0; dy < 3; dy++) {
-      const markerPos = pos.offset(0, dy + 10, 0); // Above the terrain
+    // Place marker as a tall pillar from ground to above canopy
+    // This makes it visible from any angle
+    const groundY = 63; // Standard ground level
+    const pillarHeight = 20;
+
+    for (let y = groundY; y < groundY + pillarHeight; y++) {
+      const markerPos = new Vec3(pos.x, y, pos.z);
       this.mockWorld.setBlock(markerPos, blockName);
     }
 
-    // Add glass on top
-    this.mockWorld.setBlock(pos.offset(0, 13, 0), 'glass');
+    // Add glowstone on top for visibility
+    this.mockWorld.setBlock(new Vec3(pos.x, groundY + pillarHeight, pos.z), 'glowstone');
 
     this.markers.push({ position: pos, label, color, originalBlock });
 
     console.log(`  📍 Marked: ${label} at (${pos.x}, ${pos.y}, ${pos.z}) [${color}]`);
 
-    this.refreshViewer();
+    await this.refreshViewer();
   }
 
   /**
@@ -210,7 +236,7 @@ export class VisualTestHarness {
     }
 
     console.log(`  📐 Region: ${label} (${minX},${minZ}) to (${maxX},${maxZ})`);
-    this.refreshViewer();
+    await this.refreshViewer();
   }
 
   /**
@@ -219,16 +245,20 @@ export class VisualTestHarness {
   async clearMarkers(): Promise<void> {
     if (!this.mockWorld) return;
 
+    const groundY = 63;
+    const pillarHeight = 21; // Include glowstone top
+
     for (const marker of this.markers) {
-      // Remove beacon column
-      for (let dy = 0; dy < 4; dy++) {
-        this.mockWorld.setBlock(marker.position.offset(0, dy + 10, 0), 'air');
+      // Remove pillar
+      for (let y = groundY; y < groundY + pillarHeight; y++) {
+        const clearPos = new Vec3(marker.position.x, y, marker.position.z);
+        this.mockWorld.setBlock(clearPos, 'air');
       }
     }
 
     this.markers = [];
     console.log('  🧹 Cleared all markers');
-    this.refreshViewer();
+    await this.refreshViewer();
   }
 
   /**
@@ -281,13 +311,11 @@ export class VisualTestHarness {
   private createPrismarineWorld(): any {
     if (!this.mockWorld) throw new Error('No MockWorld set');
 
-    const allBlocks = this.mockWorld.getAllBlocks();
-    const blockMap = new Map<string, string>();
+    // Sync MockWorld to our live block map
+    this.syncBlockMap();
 
-    for (const block of allBlocks) {
-      const key = `${Math.floor(block.position.x)},${Math.floor(block.position.y)},${Math.floor(block.position.z)}`;
-      blockMap.set(key, block.name);
-    }
+    // Create world that reads from the live block map (can be updated later)
+    const blockMap = this.liveBlockMap;
 
     return new World((chunkX: number, chunkZ: number) => {
       const chunk = new Chunk();
@@ -311,12 +339,37 @@ export class VisualTestHarness {
     });
   }
 
-  private refreshViewer(): void {
-    // Recreate prismarine world with current MockWorld state
-    this.prismarineWorld = this.createPrismarineWorld();
+  private syncBlockMap(): void {
+    if (!this.mockWorld) return;
 
-    // Update viewer
-    if (this.viewer) {
+    this.liveBlockMap.clear();
+    for (const block of this.mockWorld.getAllBlocks()) {
+      const key = `${Math.floor(block.position.x)},${Math.floor(block.position.y)},${Math.floor(block.position.z)}`;
+      this.liveBlockMap.set(key, block.name);
+    }
+  }
+
+  private async refreshViewer(): Promise<void> {
+    if (!this.mockWorld || !this.prismarineWorld) return;
+
+    // Sync MockWorld changes to our blockMap
+    this.syncBlockMap();
+
+    // Update all blocks in the prismarine world
+    // This works for already-loaded chunks
+    for (const [key, blockName] of this.liveBlockMap) {
+      const [x, y, z] = key.split(',').map(Number);
+      const pos = new Vec3(x, y, z);
+      const stateId = getBlockStateId(blockName);
+      try {
+        await this.prismarineWorld.setBlockStateId(pos, stateId);
+      } catch (e) {
+        // Block might be in unloaded chunk, ignore
+      }
+    }
+
+    // Trigger viewer update
+    if (this.viewer && typeof this.viewer.update === 'function') {
       this.viewer.update();
     }
   }
@@ -355,6 +408,20 @@ export class VisualTestHarness {
     if (this.rl) {
       this.rl.close();
       this.rl = null;
+    }
+    // Close the viewer server
+    if (this.viewer) {
+      try {
+        // prismarine-viewer returns an object with close() or the server itself
+        if (typeof this.viewer.close === 'function') {
+          this.viewer.close();
+        } else if (this.viewer.server && typeof this.viewer.server.close === 'function') {
+          this.viewer.server.close();
+        }
+      } catch (e) {
+        // Ignore close errors
+      }
+      this.viewer = null;
     }
   }
 }

@@ -40,8 +40,17 @@ const World = require('prismarine-world')(VERSION);
 // @ts-ignore
 const Chunk = require('prismarine-chunk')(VERSION);
 
+// Log blocks that need vertical orientation (axis=y)
+const LOG_BLOCKS = new Set([
+  'oak_log', 'birch_log', 'spruce_log', 'jungle_log',
+  'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log',
+  'stripped_oak_log', 'stripped_birch_log', 'stripped_spruce_log',
+  'stripped_jungle_log', 'stripped_acacia_log', 'stripped_dark_oak_log',
+]);
+
 /**
  * Map block names to state IDs.
+ * For logs, uses vertical orientation (axis=y) for proper tree trunks.
  */
 function getBlockStateId(blockName: string): number {
   if (blockName === 'air') return 0;
@@ -51,6 +60,13 @@ function getBlockStateId(blockName: string): number {
     console.warn(`Unknown block: ${blockName}, using stone`);
     return data.blocksByName['stone']?.minStateId ?? 1;
   }
+
+  // For log blocks, add 1 to get axis=y (vertical) orientation
+  // State order is typically: axis=x (min), axis=y (+1), axis=z (+2)
+  if (LOG_BLOCKS.has(blockName)) {
+    return (block.minStateId ?? block.id ?? 0) + 1;
+  }
+
   return block.minStateId ?? block.id ?? 0;
 }
 
