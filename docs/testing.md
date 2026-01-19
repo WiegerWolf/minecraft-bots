@@ -28,7 +28,12 @@ tests/
     world-state/       # WorldState presets by role
     MockWorld.ts       # 3D block grid for world simulation
     BotMock.ts         # Mineflayer bot mock
-    visualize-world.ts # Browser-based world visualization
+    VisualTestServer.ts # Browser-based visual test harness
+    visualize-world.ts  # Static world visualization
+  visual/
+    ui/index.html      # Browser UI for visual tests
+    run-visual.ts      # Visual test runner
+    *.visual.ts        # Visual test files
 ```
 
 ## MockWorld System
@@ -129,87 +134,125 @@ Then open http://localhost:3000 in your browser.
 - Mouse - look around
 - Space/Shift - up/down
 
-## Visual Tests (Step-by-Step)
+## Visual Tests (Browser-Based)
 
-Watch tests execute step-by-step in the 3D viewer, like Cypress/Playwright for Minecraft:
+Watch tests execute step-by-step in a browser UI with the 3D viewer, like Cypress/Playwright for Minecraft.
+
+### Running Visual Tests
 
 ```bash
 # List available visual tests
 bun run test:visual
 
-# Run a visual test (interactive mode)
+# Run a visual test (browser opens automatically)
 bun run test:visual forest-detection
 
-# Run with auto-advance (1.5s per step)
-bun run test:visual forest-detection --auto
-
 # Run all visual tests
-bun run test:visual all --auto
+bun run test:visual all
 ```
 
-**Controls during test:**
-- `Enter` - advance to next step
-- `a` - enable auto-advance
-- `q` - quit
+The browser opens automatically with a split-screen UI:
+- **Left side**: 3D Minecraft world viewer (prismarine-viewer)
+- **Right side**: Test controls, step info, and log output
+
+### Browser Controls
+
+| Control | Action |
+|---------|--------|
+| **Next** button or **Space** | Advance to next step |
+| **Auto** button or **A** | Toggle auto-advance mode |
+
+The UI shows:
+- Current test name
+- Step number and message
+- Log of marks, inspections, and assertions
+- Pass/fail indicators (✅/❌)
 
 ### Available Visual Tests
 
 | Test | Description |
 |------|-------------|
-| `forest-detection` | Watch forest detection algorithm: forest world, stump field, mixed world |
-| `tree-vs-stump` | See how bot distinguishes trees from stumps, leaf threshold demo |
+| `forest-detection` | Forest detection algorithm: forest world, stump field, mixed world |
+| `tree-vs-stump` | Tree vs stump differentiation, leaf threshold demo |
 
 ### Writing Visual Tests
 
-Visual tests use `VisualTestHarness` to step through assertions with viewer updates:
+Visual tests use `VisualTestServer` which provides WebSocket communication with the browser UI:
 
 ```typescript
 // tests/visual/my-test.visual.ts
-import { VisualTestHarness } from '../mocks/VisualTestHarness';
+import { Vec3 } from 'vec3';
+import { getVisualTestServer } from '../mocks/VisualTestServer';
 import { MockWorld, createOakTree } from '../mocks/MockWorld';
 
 async function main() {
-  const autoAdvance = process.argv.includes('--auto');
-  const harness = new VisualTestHarness();
+  const server = getVisualTestServer();
 
   const world = new MockWorld();
   world.fill(new Vec3(-10, 63, -10), new Vec3(10, 63, 10), 'grass_block');
   createOakTree(world, new Vec3(0, 64, 0), 5);
 
-  await harness.start(world, 'My Visual Test', { autoAdvance });
+  await server.start(world, 'My Visual Test', {
+    center: new Vec3(0, 70, 0),  // Camera position
+  });
 
-  await harness.step('Created a tree at origin');
-  await harness.mark(new Vec3(0, 64, 0), 'Tree Base', 'green');
+  await server.step('Created a tree at origin');
+  await server.mark(new Vec3(0, 64, 0), 'Tree Base', 'green');
 
   // Run your test logic
   const result = someDetectionFunction(world);
 
-  await harness.inspect('Result', result);
-  await harness.assert(result.success, 'Detection should succeed');
+  await server.inspect('Result', result);
+  await server.assert(result.success, 'Detection should succeed');
 
-  await harness.end('Test passed!');
+  await server.end('Test passed!');
+  await server.shutdown();
   process.exit(0);
 }
 
-main();
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
 ```
 
-### Harness API
+### Server API
 
 | Method | Description |
 |--------|-------------|
-| `start(world, name, opts)` | Start viewer with MockWorld |
-| `step(message)` | Show step, wait for input |
-| `mark(pos, label, color)` | Add colored marker beacon |
+| `start(world, name, opts)` | Start viewer + browser UI (auto-opens browser) |
+| `step(message)` | Show step, wait for Next click or Space |
+| `mark(pos, label, color)` | Add colored beacon above position |
 | `markMany(positions, label, color)` | Mark multiple positions |
-| `highlightRegion(from, to, label, color)` | Outline a region |
 | `clearMarkers()` | Remove all markers |
-| `inspect(label, value)` | Print value for inspection |
+| `inspect(label, value)` | Log value in browser UI |
 | `assert(condition, message)` | Show pass/fail with icon |
-| `end(message)` | Complete test |
-| `fail(message)` | Fail test with error |
+| `end(message)` | Complete test, close viewer |
+| `shutdown()` | Close UI server (call at end of all tests) |
 
 **Marker colors:** `red`, `green`, `blue`, `yellow`, `lime`, `orange`, `magenta`, `cyan`, `white`, `black`
+
+**Note:** Markers place a small beacon (colored blocks + glowstone) 3 blocks above the marked position, so they don't overwrite the blocks being marked.
+
+### Architecture
+
+```
+┌─────────────────┐     WebSocket      ┌─────────────────┐
+│  Visual Test    │◄──────────────────►│   Browser UI    │
+│  (Bun process)  │                    │  (index.html)   │
+└────────┬────────┘                    └────────┬────────┘
+         │                                      │
+         │ prismarine-viewer                    │ iframe
+         ▼                                      ▼
+┌─────────────────┐                    ┌─────────────────┐
+│  3D World       │◄───────────────────│  Viewer Frame   │
+│  (port 3010+)   │                    │                 │
+└─────────────────┘                    └─────────────────┘
+```
+
+- **UI Server** (port 3008): Serves the HTML UI and handles WebSocket
+- **Viewer** (port 3010+): prismarine-viewer for 3D rendering (port increments per test)
+- Tests run in single browser tab, viewer iframe updates between tests
 
 ### When to Use Static vs Visual
 
@@ -316,5 +359,7 @@ WorldState presets are faster for pure planning tests since they don't need 3D w
 2. **One aspect per file** - keep tests focused (trading.test.ts, inventory.test.ts)
 3. **Use MockWorld for world interaction** - when testing blockAt, findBlocks, detection
 4. **Use WorldState presets for planning** - when testing goal utilities, action preconditions
-5. **Visualize when debugging** - `bun run visualize` to see what's happening
-6. **Keep presets minimal** - only add blocks that matter for the test
+5. **Visual tests for debugging** - `bun run test:visual` to step through algorithm behavior
+6. **Static visualization for design** - `bun run visualize` when designing test scenarios
+7. **Keep presets minimal** - only add blocks that matter for the test
+8. **Spawn bot away from objects** - avoid placing bot at same position as trees/stumps

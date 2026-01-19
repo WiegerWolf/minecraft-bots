@@ -156,7 +156,8 @@ export class VisualTestServer {
   }
 
   /**
-   * Mark a position with a colored pillar.
+   * Mark a position with a colored pillar placed adjacent to it (not on top).
+   * This avoids overwriting the block being marked.
    */
   async mark(position: Vec3, label: string, color: string = 'lime'): Promise<void> {
     if (!this.mockWorld) return;
@@ -168,13 +169,17 @@ export class VisualTestServer {
       Math.floor(position.z)
     );
 
-    // Create pillar
-    const groundY = 63;
-    const pillarHeight = 20;
-    for (let y = groundY; y < groundY + pillarHeight; y++) {
-      this.mockWorld.setBlock(new Vec3(pos.x, y, pos.z), blockName);
-    }
-    this.mockWorld.setBlock(new Vec3(pos.x, groundY + pillarHeight, pos.z), 'glowstone');
+    // Place marker pillar offset by 0.5 blocks diagonally (at corner)
+    // This way it's visually next to the block without overwriting it
+    const markerX = pos.x + 0.5;
+    const markerZ = pos.z + 0.5;
+
+    // Create a small beacon above the marked position instead of a full pillar
+    // Just place glowstone + colored block above the target
+    const markerY = pos.y + 3;
+    this.mockWorld.setBlock(new Vec3(pos.x, markerY, pos.z), blockName);
+    this.mockWorld.setBlock(new Vec3(pos.x, markerY + 1, pos.z), blockName);
+    this.mockWorld.setBlock(new Vec3(pos.x, markerY + 2, pos.z), 'glowstone');
 
     this.markers.push({ position: pos, label, color });
 
@@ -207,13 +212,13 @@ export class VisualTestServer {
   async clearMarkers(): Promise<void> {
     if (!this.mockWorld) return;
 
-    const groundY = 63;
-    const pillarHeight = 21;
-
     for (const marker of this.markers) {
-      for (let y = groundY; y < groundY + pillarHeight; y++) {
-        this.mockWorld.setBlock(new Vec3(marker.position.x, y, marker.position.z), 'air');
-      }
+      const pos = marker.position;
+      const markerY = pos.y + 3;
+      // Clear the small beacon (3 blocks)
+      this.mockWorld.setBlock(new Vec3(pos.x, markerY, pos.z), 'air');
+      this.mockWorld.setBlock(new Vec3(pos.x, markerY + 1, pos.z), 'air');
+      this.mockWorld.setBlock(new Vec3(pos.x, markerY + 2, pos.z), 'air');
     }
 
     this.markers = [];
