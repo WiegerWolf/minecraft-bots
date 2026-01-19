@@ -567,9 +567,26 @@ export class BroadcastTradeOfferAction extends BaseGOAPAction {
 
   preconditions = [
     numericPrecondition('trade.tradeableCount', v => v >= 4, 'has tradeable items'),
-    booleanPrecondition('trade.inTrade', false, 'not in trade'),
     booleanPrecondition('trade.onCooldown', false, 'not on cooldown'),
   ];
+
+  // Custom precondition check: allow starting new offer OR continuing existing one
+  override checkPreconditions(ws: WorldState): boolean {
+    const tradeableCount = ws.getNumber('trade.tradeableCount');
+    const onCooldown = ws.getBool('trade.onCooldown');
+    const tradeStatus = ws.getString('trade.status');
+    const inTrade = ws.getBool('trade.inTrade');
+
+    // Always allow if already offering (need to continue collecting WANTs and accept)
+    if (tradeStatus === 'offering') return true;
+
+    // For starting a new offer: need items, not on cooldown, not in another trade
+    if (tradeableCount < 4) return false;
+    if (onCooldown) return false;
+    if (inTrade) return false;
+
+    return true;
+  }
 
   // Effect is 'accepted' because the action broadcasts, waits for responses,
   // and accepts the best offer. 'offering' is just an intermediate state.
