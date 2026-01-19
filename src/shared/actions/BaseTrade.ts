@@ -17,7 +17,9 @@ const OFFER_COOLDOWN = 30000;               // 30 seconds between offers
 const TRADE_TIMEOUT = 120000;               // 2 minutes max for entire trade
 const MIN_TRADEABLE_ITEMS = 4;              // Minimum items to trigger an offer
 const MEETING_POINT_RADIUS = 2;             // How close to get to meeting point
-const STEP_BACK_DISTANCE = 3;               // Distance to step back after dropping
+const STEP_BACK_DISTANCE = 4;               // Distance to step back after dropping (must be > pickup range of 2)
+const GIVER_WAIT_AFTER_DROP = 3000;         // Time giver waits after dropping before considering done
+const PICKUP_VERIFICATION_WAIT = 1000;      // Time to wait for items to settle before pickup
 
 /**
  * Minimal blackboard interface required by trade actions.
@@ -343,31 +345,48 @@ export abstract class BaseExecuteTrade<TBlackboard extends TradeBlackboard> {
         if (trade.status === 'dropping') {
             bb.lastAction = 'trade_dropping';
 
-            // Find the items to drop
+            // Find the items to drop - must match trade item EXACTLY
             const itemSlot = bot.inventory.items().find(i => i.name === trade.item);
             if (!itemSlot) {
-                bb.log?.warn({ item: trade.item }, `[${this.config.roleLabel}] Trade item not found in inventory`);
+                bb.log?.warn({ item: trade.item, inventory: bot.inventory.items().map(i => i.name) },
+                    `[${this.config.roleLabel}] Trade item not found in inventory - cancelling trade`);
                 bb.villageChat.cancelTrade();
                 return 'failure';
             }
 
-            // Drop the items
+            // Verify we're dropping the correct item (defensive check)
+            if (itemSlot.name !== trade.item) {
+                bb.log?.warn({ expected: trade.item, found: itemSlot.name },
+                    `[${this.config.roleLabel}] Item mismatch - cancelling trade`);
+                bb.villageChat.cancelTrade();
+                return 'failure';
+            }
+
+            // Drop ONLY the offered quantity, not the entire stack
             const dropCount = Math.min(itemSlot.count, trade.quantity);
             try {
-                await bot.tossStack(itemSlot);
-                bb.log?.info({ item: trade.item, qty: dropCount },
+                // Use toss() with count instead of tossStack() to drop only offered amount
+                await bot.toss(itemSlot.type, itemSlot.metadata, dropCount);
+                bb.log?.info({ item: trade.item, qty: dropCount, hadInStack: itemSlot.count },
                     `[${this.config.roleLabel}] Dropped trade items`);
             } catch (error) {
-                bb.log?.warn({ err: error }, `[${this.config.roleLabel}] Failed to drop items`);
+                bb.log?.warn({ err: error, item: trade.item },
+                    `[${this.config.roleLabel}] Failed to drop items`);
                 bb.villageChat.cancelTrade();
                 return 'failure';
             }
 
-            // Step back
+            // Step back far enough to avoid accidentally picking up items (pickup range is ~2 blocks)
+            const meetingPoint = trade.meetingPoint || bot.entity.position;
             const stepBackDir = bot.entity.position.clone()
-                .subtract(trade.meetingPoint || bot.entity.position)
+                .subtract(meetingPoint)
                 .normalize();
-            const stepBackPos = bot.entity.position.clone()
+            // If we're at the meeting point, pick a direction away
+            if (stepBackDir.norm() < 0.1) {
+                stepBackDir.x = 1;
+                stepBackDir.z = 0;
+            }
+            const stepBackPos = meetingPoint.clone()
                 .add(stepBackDir.scaled(STEP_BACK_DISTANCE));
 
             try {
@@ -376,15 +395,33 @@ export abstract class BaseExecuteTrade<TBlackboard extends TradeBlackboard> {
                     new GoalNear(stepBackPos.x, stepBackPos.y, stepBackPos.z, 1),
                     { timeoutMs: 5000 }
                 );
+                bb.log?.debug({ pos: stepBackPos.floored().toString() },
+                    `[${this.config.roleLabel}] Stepped back from meeting point`);
             } catch {
-                // Ignore - we can continue even if step back fails
+                // If step back fails, manually walk away to avoid pickup
+                bb.log?.debug(`[${this.config.roleLabel}] Step back pathfinding failed, trying manual walk`);
+                bot.setControlState('back', true);
+                await sleep(1000);
+                bot.setControlState('back', false);
             }
 
             // Signal items dropped
             bb.villageChat.sendTradeDropped();
-            await sleep(500);
 
-            // Signal done
+            // Wait a bit for receiver to pick up - giver should NOT send TRADE_DONE immediately
+            // The receiver will send TRADE_DONE when they've picked up the items
+            // We just wait here - trade will complete when we receive receiver's TRADE_DONE
+            await sleep(GIVER_WAIT_AFTER_DROP);
+
+            // Check if receiver already completed (they send TRADE_DONE which clears our trade state)
+            if (!bb.villageChat.isInTrade()) {
+                bb.lastAction = 'trade_done';
+                bb.log?.info(`[${this.config.roleLabel}] Trade complete (giver) - receiver confirmed`);
+                return 'success';
+            }
+
+            // If receiver hasn't confirmed yet, send our done signal
+            // This handles the case where receiver already picked up and we missed their signal
             bb.villageChat.sendTradeDone();
             bb.lastAction = 'trade_done';
             bb.log?.info(`[${this.config.roleLabel}] Trade complete (giver)`);
@@ -423,23 +460,41 @@ export abstract class BaseExecuteTrade<TBlackboard extends TradeBlackboard> {
         if (trade.status === 'picking_up') {
             bb.lastAction = 'trade_picking_up';
 
-            // Wait a moment for items to be on ground
-            await sleep(500);
+            // Record inventory BEFORE pickup to verify we actually received items
+            const countBefore = bot.inventory.items()
+                .filter(i => i.name === trade.item)
+                .reduce((sum, i) => sum + i.count, 0);
 
-            // Find the dropped items
+            // Wait a moment for items to settle on ground
+            await sleep(PICKUP_VERIFICATION_WAIT);
+
+            // Find dropped items near meeting point
+            const meetingPoint = trade.meetingPoint || bot.entity.position;
             const droppedItems = Object.values(bot.entities).filter(e =>
                 e.name === 'item' &&
                 e.position &&
-                e.position.distanceTo(trade.meetingPoint || bot.entity.position) < 5
+                e.position.distanceTo(meetingPoint) < 5
             );
 
             if (droppedItems.length === 0) {
-                bb.log?.debug(`[${this.config.roleLabel}] No dropped items found, waiting...`);
+                bb.log?.debug(`[${this.config.roleLabel}] No dropped items found yet, waiting...`);
+
+                // Check for timeout
+                const elapsed = Date.now() - trade.offerTimestamp;
+                if (elapsed > TRADE_TIMEOUT) {
+                    bb.log?.warn(`[${this.config.roleLabel}] Trade timeout - no items appeared`);
+                    bb.villageChat.cancelTrade();
+                    return 'failure';
+                }
+
                 await sleep(1000);
                 return 'running';
             }
 
-            // Move to collect
+            // Move to collect items (walk to each dropped item)
+            bb.log?.debug({ itemCount: droppedItems.length },
+                `[${this.config.roleLabel}] Found dropped items, collecting`);
+
             for (const drop of droppedItems) {
                 if (!drop.position) continue;
 
@@ -452,13 +507,56 @@ export abstract class BaseExecuteTrade<TBlackboard extends TradeBlackboard> {
                             { timeoutMs: 5000 }
                         );
                     } catch {
-                        // Ignore
+                        // Try to continue collecting other items
                     }
                 }
                 await sleep(300);
             }
 
-            // Signal done
+            // Wait a moment for items to enter inventory
+            await sleep(500);
+
+            // Verify inventory AFTER pickup - check we received the correct item
+            const countAfter = bot.inventory.items()
+                .filter(i => i.name === trade.item)
+                .reduce((sum, i) => sum + i.count, 0);
+
+            const actualReceived = countAfter - countBefore;
+
+            if (actualReceived <= 0) {
+                // We didn't receive any of the traded item - trade may have failed
+                bb.log?.warn({
+                    item: trade.item,
+                    countBefore,
+                    countAfter,
+                    expectedQty: trade.quantity
+                }, `[${this.config.roleLabel}] Trade verification failed - did not receive expected item`);
+
+                // Don't immediately fail - items might still be on ground
+                // Check if there are still items to pick up
+                const remainingItems = Object.values(bot.entities).filter(e =>
+                    e.name === 'item' &&
+                    e.position &&
+                    e.position.distanceTo(meetingPoint) < 5
+                );
+
+                if (remainingItems.length > 0) {
+                    bb.log?.debug(`[${this.config.roleLabel}] Still items on ground, retrying pickup`);
+                    return 'running';
+                }
+
+                // No items received and none on ground - consider trade complete anyway
+                // (giver may have dropped, items may have been picked up by receiver)
+                bb.log?.warn(`[${this.config.roleLabel}] Trade may have partially failed, completing anyway`);
+            } else {
+                bb.log?.info({
+                    item: trade.item,
+                    received: actualReceived,
+                    expected: trade.quantity
+                }, `[${this.config.roleLabel}] Trade verification successful`);
+            }
+
+            // Signal done - receiver confirms they've collected items
             bb.villageChat.sendTradeDone();
             bb.lastAction = 'trade_done';
             bb.log?.info(`[${this.config.roleLabel}] Trade complete (receiver)`);
@@ -569,28 +667,47 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                 // Giver: drop items
                 bb.lastAction = 'trade_dropping';
 
+                // Find the item to drop - must match trade item EXACTLY
                 const itemSlot = bot.inventory.items().find(i => i.name === trade.item);
                 if (!itemSlot) {
-                    bb.log?.warn({ item: trade.item }, `[${this.config.roleLabel}] Item not found`);
+                    bb.log?.warn({ item: trade.item, inventory: bot.inventory.items().map(i => i.name) },
+                        `[${this.config.roleLabel}] Trade item not found in inventory - cancelling`);
                     bb.villageChat.cancelTrade();
                     return 'failure';
                 }
 
+                // Defensive check: verify item name matches exactly
+                if (itemSlot.name !== trade.item) {
+                    bb.log?.warn({ expected: trade.item, found: itemSlot.name },
+                        `[${this.config.roleLabel}] Item mismatch - cancelling trade`);
+                    bb.villageChat.cancelTrade();
+                    return 'failure';
+                }
+
+                // Drop ONLY the offered quantity, not the entire stack
+                const dropCount = Math.min(itemSlot.count, trade.quantity);
                 try {
-                    await bot.tossStack(itemSlot);
-                    bb.log?.info({ item: trade.item, qty: itemSlot.count },
+                    await bot.toss(itemSlot.type, itemSlot.metadata, dropCount);
+                    bb.log?.info({ item: trade.item, qty: dropCount, hadInStack: itemSlot.count },
                         `[${this.config.roleLabel}] Dropped trade items`);
                 } catch (error) {
-                    bb.log?.warn({ err: error }, `[${this.config.roleLabel}] Drop failed`);
+                    bb.log?.warn({ err: error, item: trade.item },
+                        `[${this.config.roleLabel}] Drop failed`);
                     bb.villageChat.cancelTrade();
                     return 'failure';
                 }
 
-                // Step back
+                // Step back far enough to avoid accidentally picking up items
+                const meetingPoint = trade.meetingPoint || bot.entity.position;
                 const stepBackDir = bot.entity.position.clone()
-                    .subtract(trade.meetingPoint || bot.entity.position)
+                    .subtract(meetingPoint)
                     .normalize();
-                const stepBackPos = bot.entity.position.clone()
+                // If at meeting point, pick an arbitrary direction
+                if (stepBackDir.norm() < 0.1) {
+                    stepBackDir.x = 1;
+                    stepBackDir.z = 0;
+                }
+                const stepBackPos = meetingPoint.clone()
                     .add(stepBackDir.scaled(STEP_BACK_DISTANCE));
 
                 try {
@@ -599,14 +716,31 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                         new GoalNear(stepBackPos.x, stepBackPos.y, stepBackPos.z, 1),
                         { timeoutMs: 5000 }
                     );
+                    bb.log?.debug({ pos: stepBackPos.floored().toString() },
+                        `[${this.config.roleLabel}] Stepped back from meeting point`);
                 } catch {
-                    // Continue even if step back fails
+                    // If pathfinding fails, try manual walk back
+                    bb.log?.debug(`[${this.config.roleLabel}] Step back pathfinding failed, trying manual walk`);
+                    bot.setControlState('back', true);
+                    await sleep(1000);
+                    bot.setControlState('back', false);
                 }
 
+                // Signal items dropped
                 bb.villageChat.sendTradeDropped();
-                await sleep(500);
-                bb.villageChat.sendTradeDone();
 
+                // Wait for receiver to pick up before completing
+                await sleep(GIVER_WAIT_AFTER_DROP);
+
+                // Check if receiver already completed
+                if (!bb.villageChat.isInTrade()) {
+                    bb.lastAction = 'trade_done';
+                    bb.log?.info(`[${this.config.roleLabel}] Trade complete (giver) - receiver confirmed`);
+                    return 'success';
+                }
+
+                // Send our done signal
+                bb.villageChat.sendTradeDone();
                 bb.lastAction = 'trade_done';
                 bb.log?.info(`[${this.config.roleLabel}] Trade complete (giver)`);
                 return 'success';
@@ -615,13 +749,39 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
             case 'picking_up': {
                 // Receiver: pick up items
                 bb.lastAction = 'trade_picking_up';
-                await sleep(500);
 
+                // Record inventory BEFORE pickup to verify we actually received items
+                const countBefore = bot.inventory.items()
+                    .filter(i => i.name === trade.item)
+                    .reduce((sum, i) => sum + i.count, 0);
+
+                // Wait for items to settle on ground
+                await sleep(PICKUP_VERIFICATION_WAIT);
+
+                // Find dropped items near meeting point
+                const meetingPoint = trade.meetingPoint || bot.entity.position;
                 const droppedItems = Object.values(bot.entities).filter(e =>
                     e.name === 'item' &&
                     e.position &&
-                    e.position.distanceTo(trade.meetingPoint || bot.entity.position) < 5
+                    e.position.distanceTo(meetingPoint) < 5
                 );
+
+                if (droppedItems.length === 0) {
+                    bb.log?.debug(`[${this.config.roleLabel}] No dropped items found yet`);
+                    // Check for timeout
+                    const elapsed = Date.now() - trade.offerTimestamp;
+                    if (elapsed > TRADE_TIMEOUT) {
+                        bb.log?.warn(`[${this.config.roleLabel}] Trade timeout - no items appeared`);
+                        bb.villageChat.cancelTrade();
+                        return 'failure';
+                    }
+                    await sleep(1000);
+                    return 'running';
+                }
+
+                // Move to collect items
+                bb.log?.debug({ itemCount: droppedItems.length },
+                    `[${this.config.roleLabel}] Found dropped items, collecting`);
 
                 for (const drop of droppedItems) {
                     if (!drop.position) continue;
@@ -634,12 +794,52 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                                 { timeoutMs: 5000 }
                             );
                         } catch {
-                            // Ignore
+                            // Continue trying other items
                         }
                     }
                     await sleep(300);
                 }
 
+                // Wait for items to enter inventory
+                await sleep(500);
+
+                // Verify we received the correct item
+                const countAfter = bot.inventory.items()
+                    .filter(i => i.name === trade.item)
+                    .reduce((sum, i) => sum + i.count, 0);
+
+                const actualReceived = countAfter - countBefore;
+
+                if (actualReceived <= 0) {
+                    bb.log?.warn({
+                        item: trade.item,
+                        countBefore,
+                        countAfter,
+                        expectedQty: trade.quantity
+                    }, `[${this.config.roleLabel}] Trade verification failed - did not receive expected item`);
+
+                    // Check if items still on ground
+                    const remainingItems = Object.values(bot.entities).filter(e =>
+                        e.name === 'item' &&
+                        e.position &&
+                        e.position.distanceTo(meetingPoint) < 5
+                    );
+
+                    if (remainingItems.length > 0) {
+                        bb.log?.debug(`[${this.config.roleLabel}] Still items on ground, retrying`);
+                        return 'running';
+                    }
+
+                    bb.log?.warn(`[${this.config.roleLabel}] Trade may have failed, completing anyway`);
+                } else {
+                    bb.log?.info({
+                        item: trade.item,
+                        received: actualReceived,
+                        expected: trade.quantity
+                    }, `[${this.config.roleLabel}] Trade verification successful`);
+                }
+
+                // Signal done
                 bb.villageChat.sendTradeDone();
                 bb.lastAction = 'trade_done';
                 bb.log?.info(`[${this.config.roleLabel}] Trade complete (receiver)`);

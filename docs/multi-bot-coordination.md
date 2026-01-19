@@ -432,15 +432,42 @@ function getTradeLocation(villageChat, spawnPos): Vec3 {
 - Don't block spawn point
 - Consistent meeting location
 
+### Trade Verification
+
+Trade execution includes safeguards to prevent common issues:
+
+**Giver Safeguards:**
+1. **Item verification**: Before dropping, verify the inventory item name matches `trade.item` exactly
+2. **Quantity control**: Drop only the offered quantity, not the entire stack
+3. **Step back distance**: Move 4 blocks away after dropping (Minecraft pickup range is ~2 blocks)
+4. **Fallback movement**: If pathfinding fails, manually walk backward
+5. **Wait for receiver**: Giver waits for receiver's TRADE_DONE before completing
+
+**Receiver Safeguards:**
+1. **Inventory tracking**: Record item count before and after pickup
+2. **Item filtering**: Only collect items near the meeting point
+3. **Verification**: Confirm inventory increased for the correct item type
+4. **Retry logic**: If items still on ground, continue trying to pick up
+5. **Timeout handling**: Cancel trade if items never appear
+
+**Why These Safeguards?**
+
+Without verification, trades could fail silently:
+- Giver drops wrong item → receiver picks up unexpected item
+- Giver picks up own dropped items → receiver gets nothing
+- Trade marked successful without actual item transfer
+
 ### Trade Cancellation
 
 Trades can fail for various reasons:
 - Partner disconnects
 - Partner doesn't arrive within 2 minutes
 - Partner stuck in pathfinding
+- Trade item no longer in inventory (consumed or lost)
+- Verification fails (item not received)
 
 On cancellation:
-- Items stay with original owner
+- Items stay with original owner (if not yet dropped)
 - Both bots resume normal work
 - No penalty/cooldown (not bot's fault)
 

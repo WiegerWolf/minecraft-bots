@@ -204,6 +204,9 @@ Press Enter on a bot to see full details:
 | Trade offer cooldown | 30 seconds | Time between trade broadcasts |
 | Trade response window | 5 seconds | Time to collect [WANT] responses |
 | Trade arrival timeout | 2 minutes | Max time to wait for partner arrival |
+| Trade step back distance | 4 blocks | Distance giver moves back after dropping (pickup range is ~2) |
+| Trade giver wait after drop | 3 seconds | Time giver waits for receiver confirmation |
+| Trade pickup verification wait | 1 second | Time to wait for items to settle before pickup |
 | CompleteTrade utility | 150 | Very high - finish active trades first |
 | RespondToTrade utility | 120 | High priority - can preempt RUNNING actions (120 > 80 + 30) |
 | BroadcastTrade utility | 30-50 | Low priority, when idle with clutter |
