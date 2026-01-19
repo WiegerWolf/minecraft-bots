@@ -93,6 +93,12 @@ export interface LumberjackBlackboard {
     stuckTracker: StuckTracker;
 
     // ═══════════════════════════════════════════════════════════════
+    // EXPLORATION STATE
+    // ═══════════════════════════════════════════════════════════════
+    hasBoat: boolean;              // Has a boat in inventory
+    maxWaterAhead: number;         // Maximum water distance in exploration directions
+
+    // ═══════════════════════════════════════════════════════════════
     // TRADE STATE
     // ═══════════════════════════════════════════════════════════════
     tradeableItems: InventoryItem[];            // Items we can offer for trade
@@ -162,6 +168,10 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         // Stuck detection
         stuckTracker: createStuckTracker(),
 
+        // Exploration state
+        hasBoat: false,
+        maxWaterAhead: 0,
+
         // Trade state
         tradeableItems: [],
         tradeableItemCount: 0,
@@ -179,6 +189,7 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     // INVENTORY ANALYSIS
     // ═══════════════════════════════════════════════
     bb.hasAxe = inv.some(i => i.name.includes('axe'));
+    bb.hasBoat = inv.some(i => i.name.includes('boat'));
     bb.emptySlots = bot.inventory.emptySlotCount();
     bb.inventoryFull = bb.emptySlots < 3;
 
@@ -390,6 +401,13 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     bb.unknownSigns = nearbySigns
         .filter(signPos => !bb.readSignPositions.has(posToKey(signPos)))
         .map(p => new Vec3(p.x, p.y, p.z));
+
+    // ═══════════════════════════════════════════════
+    // WATER AHEAD DETECTION
+    // Measures water distance in exploration directions to determine
+    // if a boat is needed for exploration
+    // ═══════════════════════════════════════════════
+    bb.maxWaterAhead = detectMaxWaterAhead(bot, pos);
 
     // ═══════════════════════════════════════════════
     // COMPUTED DECISIONS
@@ -685,4 +703,144 @@ function getClusterCenter(positions: Vec3[]): Vec3 | null {
         Math.floor(sumY / positions.length),
         Math.floor(sumZ / positions.length)
     );
+}
+
+// ═══════════════════════════════════════════════
+// WATER DETECTION HELPERS
+// ═══════════════════════════════════════════════
+
+// Maximum distance to check for water ahead
+const WATER_CHECK_DISTANCE = 40;
+
+// Exploration directions to check for water
+const EXPLORATION_DIRECTIONS = [
+    new Vec3(1, 0, 0),   // East
+    new Vec3(-1, 0, 0),  // West
+    new Vec3(0, 0, 1),   // South
+    new Vec3(0, 0, -1),  // North
+    new Vec3(1, 0, 1),   // Southeast
+    new Vec3(-1, 0, 1),  // Southwest
+    new Vec3(1, 0, -1),  // Northeast
+    new Vec3(-1, 0, -1), // Northwest
+];
+
+/**
+ * Detect the maximum continuous water distance in any exploration direction.
+ * This helps determine if the bot needs a boat to explore.
+ *
+ * The algorithm samples points along each direction and measures continuous
+ * water stretches. If there's a large body of water (like an ocean) in any
+ * direction the bot might explore, it returns that distance.
+ *
+ * @param bot - The bot instance
+ * @param pos - Current position
+ * @returns Maximum water distance in blocks (0 if no significant water)
+ */
+function detectMaxWaterAhead(bot: Bot, pos: Vec3): number {
+    let maxWaterDistance = 0;
+
+    for (const direction of EXPLORATION_DIRECTIONS) {
+        const waterDist = measureWaterDistance(bot, pos, direction);
+        if (waterDist > maxWaterDistance) {
+            maxWaterDistance = waterDist;
+        }
+    }
+
+    return maxWaterDistance;
+}
+
+/**
+ * Measure the continuous water distance in a specific direction.
+ *
+ * @param bot - The bot instance
+ * @param startPos - Starting position
+ * @param direction - Direction to check (normalized)
+ * @returns Continuous water distance in blocks
+ */
+function measureWaterDistance(bot: Bot, startPos: Vec3, direction: Vec3): number {
+    let waterStart = -1;
+    let maxWaterStretch = 0;
+    let currentWaterStretch = 0;
+
+    // Sample points along the direction
+    for (let dist = 3; dist <= WATER_CHECK_DISTANCE; dist += 2) {
+        const checkPos = startPos.plus(direction.scaled(dist));
+        const surfaceY = findSurfaceY(bot, checkPos);
+
+        if (surfaceY === null) continue;
+
+        const surfaceBlock = bot.blockAt(new Vec3(checkPos.x, surfaceY, checkPos.z));
+
+        if (surfaceBlock && (surfaceBlock.name === 'water' || surfaceBlock.name === 'flowing_water')) {
+            if (waterStart === -1) {
+                waterStart = dist;
+            }
+            currentWaterStretch = dist - waterStart + 1;
+            if (currentWaterStretch > maxWaterStretch) {
+                maxWaterStretch = currentWaterStretch;
+            }
+        } else {
+            // Hit land - reset water tracking
+            waterStart = -1;
+            currentWaterStretch = 0;
+        }
+    }
+
+    return maxWaterStretch;
+}
+
+/**
+ * Find the surface Y level at a given XZ position.
+ * Searches from current Y level up and down to find the surface.
+ *
+ * @param bot - The bot instance
+ * @param pos - Position to check (only X and Z are used)
+ * @returns Surface Y level, or null if no surface found
+ */
+function findSurfaceY(bot: Bot, pos: Vec3): number | null {
+    const x = Math.floor(pos.x);
+    const z = Math.floor(pos.z);
+    const startY = Math.floor(bot.entity.position.y);
+    const searchRange = 15;
+
+    // Search down first
+    for (let y = startY; y > startY - searchRange; y--) {
+        const block = bot.blockAt(new Vec3(x, y, z));
+        if (!block) continue;
+
+        // Water surface
+        if (block.name === 'water' || block.name === 'flowing_water') {
+            // Check if this is the surface (air above)
+            const above = bot.blockAt(new Vec3(x, y + 1, z));
+            if (above && above.name === 'air') {
+                return y;
+            }
+        }
+
+        // Solid ground
+        if (!block.transparent && block.name !== 'air') {
+            return y;
+        }
+    }
+
+    // Search up
+    for (let y = startY + 1; y < startY + searchRange; y++) {
+        const block = bot.blockAt(new Vec3(x, y, z));
+        if (!block) continue;
+
+        // Water surface
+        if (block.name === 'water' || block.name === 'flowing_water') {
+            const above = bot.blockAt(new Vec3(x, y + 1, z));
+            if (above && above.name === 'air') {
+                return y;
+            }
+        }
+
+        // Solid ground
+        if (!block.transparent && block.name !== 'air') {
+            return y;
+        }
+    }
+
+    return null;
 }

@@ -274,6 +274,10 @@ export class WorldStateBuilder {
 
     // Forest safety - only chop in known forests
     ws.set('has.knownForest', bb.hasKnownForest);
+
+    // Exploration state - boat and water detection
+    ws.set('has.boat', bb.hasBoat);
+    ws.set('exploration.waterAhead', bb.maxWaterAhead);
   }
 
   /**

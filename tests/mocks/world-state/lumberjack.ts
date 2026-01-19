@@ -47,6 +47,10 @@ export function freshSpawnLumberjackState(): WorldState {
     'trade.tradeableCount': 0,
     'trade.pendingOffers': 0,
     'trade.onCooldown': false,
+
+    // Exploration state
+    'has.boat': false,
+    'exploration.waterAhead': 0,
   });
 }
 

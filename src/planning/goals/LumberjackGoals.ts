@@ -2,6 +2,13 @@ import { BaseGoal, numericGoalCondition, booleanGoalCondition } from '../Goal';
 import { WorldState } from '../WorldState';
 
 /**
+ * Maximum water distance (in blocks) the bot can swim without a boat.
+ * Beyond this distance, exploration actions require a boat.
+ * This prevents the lumberjack from swimming across oceans to find forests.
+ */
+export const MAX_SWIMMING_DISTANCE = 20;
+
+/**
  * Goal: Collect dropped items before they despawn.
  * HIGHEST PRIORITY - items despawn after 5 minutes.
  */
@@ -516,6 +523,15 @@ export class PatrolForestGoal extends BaseGoal {
   ];
 
   getUtility(ws: WorldState): number {
+    // Check for water crossing requirement first
+    const waterAhead = ws.getNumber('exploration.waterAhead');
+    const hasBoat = ws.getBool('has.boat');
+
+    // If large water body ahead and no boat, can't patrol
+    if (waterAhead >= MAX_SWIMMING_DISTANCE && !hasBoat) {
+      return 0;
+    }
+
     const reachableTreeCount = ws.getNumber('nearby.reachableTrees');
     const idleTicks = ws.getNumber('state.consecutiveIdleTicks');
 
@@ -537,7 +553,7 @@ export class PatrolForestGoal extends BaseGoal {
     return 5;
   }
 
-  // Patrol is always valid
+  // Patrol is always valid unless blocked by water
   override isValid(ws: WorldState): boolean {
     return true;
   }
@@ -651,7 +667,20 @@ export class FindForestGoal extends BaseGoal {
   override isValid(ws: WorldState): boolean {
     const hasKnownForest = ws.getBool('has.knownForest');
     const hasStudiedSigns = ws.getBool('has.studiedSigns');
-    return !hasKnownForest && hasStudiedSigns;
+
+    // Can't explore if already know a forest or haven't studied signs
+    if (hasKnownForest || !hasStudiedSigns) return false;
+
+    // Check for water crossing requirement
+    const waterAhead = ws.getNumber('exploration.waterAhead');
+    const hasBoat = ws.getBool('has.boat');
+
+    // If large water body ahead, require a boat
+    if (waterAhead >= MAX_SWIMMING_DISTANCE && !hasBoat) {
+      return false;
+    }
+
+    return true;
   }
 }
 
