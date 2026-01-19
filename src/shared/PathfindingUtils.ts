@@ -239,9 +239,13 @@ async function walkDirection(bot: Bot, direction: Vec3, blocks: number): Promise
 /**
  * Smart pathfinding wrapper with timeout and optional knight's move recovery.
  *
- * When direct pathfinding fails, attempts recovery by:
+ * When direct pathfinding fails and knightMoveRecovery is enabled, attempts recovery by:
  * 1. Backing out (walking opposite direction)
  * 2. Approaching from an angle (knight's move - L-shaped path)
+ *
+ * Note: knightMoveRecovery defaults to FALSE because it causes disruptive L-shaped
+ * movements even on transient failures. Only enable it for situations where the bot
+ * is likely to be physically stuck (e.g., exploration in tight spaces).
  */
 export async function smartPathfinderGoto(
     bot: Bot,
@@ -249,13 +253,13 @@ export async function smartPathfinderGoto(
     options?: {
         timeoutMs?: number;
         stuckDetection?: Partial<StuckDetectionConfig>;  // Kept for API compatibility
-        knightMoveRecovery?: boolean;  // Enable knight's move recovery (default: true)
+        knightMoveRecovery?: boolean;  // Enable knight's move recovery (default: false)
         debug?: boolean;
         logger?: Logger | null;
     }
 ): Promise<PathfindingResult> {
     const timeoutMs = options?.timeoutMs ?? 30000;
-    const knightMoveRecovery = options?.knightMoveRecovery ?? true;
+    const knightMoveRecovery = options?.knightMoveRecovery ?? false;
     const debug = options?.debug ?? false;
     const log = options?.logger;
     const startTime = Date.now();
