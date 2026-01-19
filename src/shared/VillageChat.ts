@@ -102,6 +102,9 @@ export interface ActiveTrade {
     partnerReady: boolean;
     wantResponses: WantResponse[];  // Collected during 5s window (giver only)
     offerTimestamp: number;         // When offer was made (for timeout)
+    retryCount: number;             // Number of trade retry attempts
+    giverDroppedCount: number;      // Items giver dropped (for verification)
+    partnerPosition: Vec3 | null;   // Partner's position (for facing/proximity)
 }
 
 export interface VillageChatState {
@@ -456,6 +459,26 @@ export class VillageChat {
                     if (this.state.activeTrade?.partner === username) {
                         this.state.activeTrade = null;
                     }
+                }
+            }
+
+            // Parse position update: [TRADE_POS] x y z
+            if (message.startsWith('[TRADE_POS] ')) {
+                const match = message.match(/\[TRADE_POS\] (-?\d+\.?\d*) (-?\d+\.?\d*) (-?\d+\.?\d*)/);
+                if (match && this.state.activeTrade?.partner === username) {
+                    const pos = new Vec3(parseFloat(match[1]!), parseFloat(match[2]!), parseFloat(match[3]!));
+                    this.state.activeTrade.partnerPosition = pos;
+                    this.log?.debug({ from: username, pos: pos.toString() }, 'Trade partner position received');
+                }
+            }
+
+            // Parse retry: [TRADE_RETRY]
+            if (message === '[TRADE_RETRY]') {
+                if (this.state.activeTrade?.partner === username) {
+                    this.state.activeTrade.retryCount++;
+                    this.state.activeTrade.status = 'traveling';
+                    this.state.activeTrade.partnerReady = false;
+                    this.log?.info({ from: username, retryCount: this.state.activeTrade.retryCount }, 'Trade retry requested');
                 }
             }
 
@@ -962,6 +985,9 @@ export class VillageChat {
             partnerReady: false,
             wantResponses: [],
             offerTimestamp: Date.now(),
+            retryCount: 0,
+            giverDroppedCount: 0,
+            partnerPosition: null,
         };
 
         const msg = `[OFFER] ${item} ${quantity}`;
@@ -991,6 +1017,9 @@ export class VillageChat {
             partnerReady: false,
             wantResponses: [],
             offerTimestamp: offer.timestamp,
+            retryCount: 0,
+            giverDroppedCount: 0,
+            partnerPosition: null,
         };
 
         const msg = `[WANT] ${offer.item} ${offer.quantity} from ${offer.from} (have ${currentCount})`;
@@ -1081,6 +1110,55 @@ export class VillageChat {
 
         // Clear trade state
         this.state.activeTrade = null;
+    }
+
+    /**
+     * Send our position to the trade partner (for facing/proximity checks).
+     */
+    sendTradePosition(pos: Vec3): void {
+        if (!this.state.activeTrade) return;
+
+        const msg = `[TRADE_POS] ${pos.x.toFixed(1)} ${pos.y.toFixed(1)} ${pos.z.toFixed(1)}`;
+        this.bot.chat(msg);
+        this.log?.debug({ pos: pos.toString() }, 'Sent trade position');
+    }
+
+    /**
+     * Signal a retry attempt after failed trade verification.
+     */
+    sendTradeRetry(): void {
+        if (!this.state.activeTrade) return;
+
+        this.state.activeTrade.retryCount++;
+        this.state.activeTrade.status = 'traveling';
+        this.state.activeTrade.partnerReady = false;
+
+        const msg = '[TRADE_RETRY]';
+        this.bot.chat(msg);
+        this.log?.info({ retryCount: this.state.activeTrade.retryCount }, 'Sent trade retry');
+    }
+
+    /**
+     * Set the number of items the giver dropped (for verification).
+     */
+    setGiverDroppedCount(count: number): void {
+        if (this.state.activeTrade) {
+            this.state.activeTrade.giverDroppedCount = count;
+        }
+    }
+
+    /**
+     * Get the maximum number of trade retries allowed.
+     */
+    getMaxRetries(): number {
+        return 3;
+    }
+
+    /**
+     * Check if trade has exceeded max retries.
+     */
+    hasExceededMaxRetries(): boolean {
+        return (this.state.activeTrade?.retryCount ?? 0) >= this.getMaxRetries();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

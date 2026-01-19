@@ -20,6 +20,10 @@ const MEETING_POINT_RADIUS = 2;             // How close to get to meeting point
 const STEP_BACK_DISTANCE = 4;               // Distance to step back after dropping (must be > pickup range of 2)
 const GIVER_WAIT_AFTER_DROP = 3000;         // Time giver waits after dropping before considering done
 const PICKUP_VERIFICATION_WAIT = 1000;      // Time to wait for items to settle before pickup
+const MAX_PARTNER_DISTANCE = 4;             // Maximum allowed distance between trading partners
+const MAX_TRADE_RETRIES = 3;                // Maximum number of trade retry attempts
+const OTHER_BOT_EXCLUSION_RADIUS = 8;       // Distance at which other bots make a meeting point unsuitable
+const POSITION_SHARE_INTERVAL = 2000;       // How often to share position with partner (ms)
 
 /**
  * Minimal blackboard interface required by trade actions.
@@ -151,13 +155,59 @@ export abstract class BaseBroadcastOffer<TBlackboard extends TradeBlackboard> {
     }
 
     protected getMeetingPoint(bot: Bot, bb: TBlackboard): Vec3 {
+        // Get the partner name from trade state
+        const trade = bb.villageChat?.getActiveTrade();
+        const partnerName = trade?.partner;
+
+        // Try several potential meeting points, checking each for other bots/players
+        const potentialPoints: Vec3[] = [];
+
         if (bb.villageCenter) {
-            return bb.villageCenter.offset(3, 0, 3);
+            // Try multiple offsets from village center
+            potentialPoints.push(bb.villageCenter.offset(3, 0, 3));
+            potentialPoints.push(bb.villageCenter.offset(-3, 0, 3));
+            potentialPoints.push(bb.villageCenter.offset(3, 0, -3));
+            potentialPoints.push(bb.villageCenter.offset(-3, 0, -3));
         }
+
         if (bb.spawnPosition) {
-            return bb.spawnPosition.offset(3, 0, 3);
+            potentialPoints.push(bb.spawnPosition.offset(3, 0, 3));
+            potentialPoints.push(bb.spawnPosition.offset(-3, 0, 3));
         }
-        return bot.entity.position.offset(3, 0, 0);
+
+        // Fallback: offset from current position
+        potentialPoints.push(bot.entity.position.offset(3, 0, 0));
+
+        // Find a meeting point that's clear of other bots/players
+        for (const point of potentialPoints) {
+            if (this.isMeetingPointClear(bot, point, partnerName)) {
+                return point;
+            }
+        }
+
+        // If no clear point found, use the first option anyway (better than nothing)
+        bb.log?.warn('No clear meeting point found, using default');
+        return potentialPoints[0]!;
+    }
+
+    /**
+     * Check if a meeting point is clear of other bots/players (excluding our trade partner).
+     */
+    protected isMeetingPointClear(bot: Bot, point: Vec3, partnerName?: string): boolean {
+        for (const entity of Object.values(bot.entities)) {
+            if (!entity.position) continue;
+            if (entity.username === bot.username) continue; // Skip self
+            if (partnerName && entity.username === partnerName) continue; // Skip trade partner
+
+            // Check if this entity is a player/bot
+            if (entity.type === 'player') {
+                const dist = entity.position.distanceTo(point);
+                if (dist < OTHER_BOT_EXCLUSION_RADIUS) {
+                    return false; // Too close to another player/bot
+                }
+            }
+        }
+        return true;
     }
 }
 
@@ -661,8 +711,32 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                     return 'failure';
                 }
 
+                // Share our position with partner
+                bb.villageChat.sendTradePosition(bot.entity.position);
+
                 if (!trade.partnerReady) {
                     return 'running';
+                }
+
+                // Verify proximity: both bots must be close to each other
+                if (trade.partnerPosition) {
+                    const distanceToPartner = bot.entity.position.distanceTo(trade.partnerPosition);
+                    if (distanceToPartner > MAX_PARTNER_DISTANCE) {
+                        bb.log?.warn({ distance: distanceToPartner.toFixed(1), max: MAX_PARTNER_DISTANCE },
+                            `[${this.config.roleLabel}] Trade partners too far apart`);
+
+                        // Check retry count
+                        if (bb.villageChat.hasExceededMaxRetries()) {
+                            bb.log?.warn(`[${this.config.roleLabel}] Max retries exceeded, cancelling trade`);
+                            bb.villageChat.cancelTrade();
+                            return 'failure';
+                        }
+
+                        // Request retry with new convergence attempt
+                        bb.log?.info(`[${this.config.roleLabel}] Requesting trade retry (proximity)`);
+                        bb.villageChat.sendTradeRetry();
+                        return 'running';
+                    }
                 }
 
                 // Partner ready - giver drops items
@@ -693,6 +767,34 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                     return 'failure';
                 }
 
+                // Face the partner before dropping items (so items go towards them)
+                if (trade.partnerPosition) {
+                    try {
+                        await bot.lookAt(trade.partnerPosition.offset(0, 1.6, 0)); // Look at partner's head level
+                        bb.log?.debug({ partnerPos: trade.partnerPosition.floored().toString() },
+                            `[${this.config.roleLabel}] Facing trade partner`);
+                        await sleep(200); // Brief pause after turning
+                    } catch (error) {
+                        bb.log?.debug({ err: error }, `[${this.config.roleLabel}] Failed to face partner, continuing anyway`);
+                    }
+                } else {
+                    // No partner position known - face the meeting point
+                    const meetingPoint = trade.meetingPoint || bot.entity.position;
+                    if (bot.entity.position.distanceTo(meetingPoint) > 0.5) {
+                        try {
+                            await bot.lookAt(meetingPoint.offset(0, 1, 0));
+                            await sleep(200);
+                        } catch {
+                            // Continue anyway
+                        }
+                    }
+                }
+
+                // Record inventory count BEFORE dropping for verification
+                const countBeforeDrop = bot.inventory.items()
+                    .filter(i => i.name === trade.item)
+                    .reduce((sum, i) => sum + i.count, 0);
+
                 // Drop ONLY the offered quantity, not the entire stack
                 const dropCount = Math.min(itemSlot.count, trade.quantity);
                 try {
@@ -706,17 +808,57 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                     return 'failure';
                 }
 
-                // Step back far enough to avoid accidentally picking up items
-                const meetingPoint = trade.meetingPoint || bot.entity.position;
-                const stepBackDir = bot.entity.position.clone()
-                    .subtract(meetingPoint)
-                    .normalize();
-                // If at meeting point, pick an arbitrary direction
-                if (stepBackDir.norm() < 0.1) {
-                    stepBackDir.x = 1;
-                    stepBackDir.z = 0;
+                // Wait for toss to complete and verify items left inventory
+                await sleep(300);
+                const countAfterDrop = bot.inventory.items()
+                    .filter(i => i.name === trade.item)
+                    .reduce((sum, i) => sum + i.count, 0);
+
+                const actualDropped = countBeforeDrop - countAfterDrop;
+                bb.villageChat.setGiverDroppedCount(actualDropped);
+
+                if (actualDropped <= 0) {
+                    bb.log?.warn({ countBefore: countBeforeDrop, countAfter: countAfterDrop },
+                        `[${this.config.roleLabel}] Items did not leave inventory - may have picked them up`);
+
+                    // Check retry count
+                    if (bb.villageChat.hasExceededMaxRetries()) {
+                        bb.log?.warn(`[${this.config.roleLabel}] Max retries exceeded after failed drop, cancelling`);
+                        bb.villageChat.cancelTrade();
+                        return 'failure';
+                    }
+
+                    // Request retry
+                    bb.log?.info(`[${this.config.roleLabel}] Requesting trade retry (drop verification failed)`);
+                    bb.villageChat.sendTradeRetry();
+                    return 'running';
                 }
-                const stepBackPos = meetingPoint.clone()
+
+                bb.log?.info({ droppedCount: actualDropped, expected: dropCount },
+                    `[${this.config.roleLabel}] Verified items dropped`);
+
+                // Step back far enough to avoid accidentally picking up items
+                // Step AWAY from the partner (opposite direction) to prevent picking up own items
+                const meetingPoint = trade.meetingPoint || bot.entity.position;
+                let stepBackDir: Vec3;
+
+                if (trade.partnerPosition) {
+                    // Step away from partner (opposite direction from partner)
+                    stepBackDir = bot.entity.position.clone()
+                        .subtract(trade.partnerPosition)
+                        .normalize();
+                } else {
+                    stepBackDir = bot.entity.position.clone()
+                        .subtract(meetingPoint)
+                        .normalize();
+                }
+
+                // If direction is too small, pick an arbitrary direction
+                if (stepBackDir.norm() < 0.1) {
+                    stepBackDir = new Vec3(1, 0, 0);
+                }
+
+                const stepBackPos = bot.entity.position.clone()
                     .add(stepBackDir.scaled(STEP_BACK_DISTANCE));
 
                 try {
@@ -731,7 +873,7 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                     // If pathfinding fails, try manual walk back
                     bb.log?.debug(`[${this.config.roleLabel}] Step back pathfinding failed, trying manual walk`);
                     bot.setControlState('back', true);
-                    await sleep(1000);
+                    await sleep(1500);
                     bot.setControlState('back', false);
                 }
 
@@ -779,12 +921,13 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                 // Wait for items to settle on ground
                 await sleep(PICKUP_VERIFICATION_WAIT);
 
-                // Find dropped items near meeting point
+                // Find dropped items near meeting point OR near partner's position (where items were dropped)
                 const meetingPoint = trade.meetingPoint || bot.entity.position;
+                const searchCenter = trade.partnerPosition || meetingPoint;
                 const droppedItems = Object.values(bot.entities).filter(e =>
                     e.name === 'item' &&
                     e.position &&
-                    e.position.distanceTo(meetingPoint) < 5
+                    (e.position.distanceTo(meetingPoint) < 6 || e.position.distanceTo(searchCenter) < 6)
                 );
 
                 if (droppedItems.length === 0) {
@@ -793,6 +936,14 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                     const elapsed = Date.now() - trade.offerTimestamp;
                     if (elapsed > TRADE_TIMEOUT) {
                         bb.log?.warn(`[${this.config.roleLabel}] Trade timeout - no items appeared`);
+
+                        // Check if we should retry
+                        if (!bb.villageChat.hasExceededMaxRetries()) {
+                            bb.log?.info(`[${this.config.roleLabel}] Requesting trade retry (no items found)`);
+                            bb.villageChat.sendTradeRetry();
+                            return 'running';
+                        }
+
                         bb.villageChat.cancelTrade();
                         return 'failure';
                     }
@@ -800,7 +951,7 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                     return 'running';
                 }
 
-                // Move to collect items
+                // Move to collect items - go to each dropped item
                 bb.log?.debug({ itemCount: droppedItems.length },
                     `[${this.config.roleLabel}] Found dropped items, collecting`);
 
@@ -836,27 +987,39 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                         item: trade.item,
                         countBefore,
                         countAfter,
-                        expectedQty: trade.quantity
+                        expectedQty: trade.quantity,
+                        giverDropped: trade.giverDroppedCount
                     }, `[${this.config.roleLabel}] Trade verification failed - did not receive expected item`);
 
                     // Check if items still on ground
                     const remainingItems = Object.values(bot.entities).filter(e =>
                         e.name === 'item' &&
                         e.position &&
-                        e.position.distanceTo(meetingPoint) < 5
+                        (e.position.distanceTo(meetingPoint) < 6 || e.position.distanceTo(searchCenter) < 6)
                     );
 
                     if (remainingItems.length > 0) {
-                        bb.log?.debug(`[${this.config.roleLabel}] Still items on ground, retrying`);
+                        bb.log?.debug({ remaining: remainingItems.length },
+                            `[${this.config.roleLabel}] Still items on ground, retrying pickup`);
                         return 'running';
                     }
 
-                    bb.log?.warn(`[${this.config.roleLabel}] Trade may have failed, completing anyway`);
+                    // No items on ground and we didn't receive anything - trade failed
+                    if (!bb.villageChat.hasExceededMaxRetries()) {
+                        bb.log?.info(`[${this.config.roleLabel}] Requesting trade retry (pickup verification failed)`);
+                        bb.villageChat.sendTradeRetry();
+                        return 'running';
+                    }
+
+                    bb.log?.warn(`[${this.config.roleLabel}] Trade failed after max retries, cancelling`);
+                    bb.villageChat.cancelTrade();
+                    return 'failure';
                 } else {
                     bb.log?.info({
                         item: trade.item,
                         received: actualReceived,
-                        expected: trade.quantity
+                        expected: trade.quantity,
+                        giverDropped: trade.giverDroppedCount
                     }, `[${this.config.roleLabel}] Trade verification successful`);
                 }
 

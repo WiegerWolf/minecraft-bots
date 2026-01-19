@@ -107,9 +107,11 @@ We chose chat because it requires zero infrastructure and you can watch coordina
 [TRADE_ACCEPT] <partner>                        // Accept trade with partner
 [TRADE_AT] <x> <y> <z>                          // Meeting point for trade
 [TRADE_READY]                                   // Arrived at meeting point
+[TRADE_POS] <x> <y> <z>                         // Share position for facing/proximity
 [TRADE_DROPPED]                                 // Items dropped, stepped back
 [TRADE_DONE]                                    // Trade complete
 [TRADE_CANCEL]                                  // Trade cancelled
+[TRADE_RETRY]                                   // Request trade retry after failure
 ```
 
 ### Why Prefix Format?
@@ -403,17 +405,35 @@ Farmer (Giver)                    Lumberjack (Receiver)
     │◄─────────[TRADE_READY]────────────┤
     ├──────────[TRADE_READY]───────────►│
     │                                   │
-    │ (drops items, steps back)         │
+    │◄─────────[TRADE_POS] 102 64 201───┤
+    ├──────────[TRADE_POS] 99 64 199───►│
+    │                                   │
+    │ (verify proximity < 4 blocks)     │
+    │ (face partner using lookAt)       │
+    │ (drop items, verify inventory)    │
+    │ (step back AWAY from partner)     │
     │ Status: 'awaiting_pickup'        │
     │                                   │
     ├──────────[TRADE_DROPPED]─────────►│
     │                                   │
-    │ (waits for confirmation)   (picks up items)
+    │                            (walk to items)
+    │                            (pick up items)
+    │                            (verify inventory ++)
     │                                   │
     │◄─────────[TRADE_DONE]─────────────┤
     │                                   │
     │ Trade state cleared              │ Resume normal work
     │ Resume normal work                │
+
+On Failure (proximity/verification):
+    │                                   │
+    │◄─────────[TRADE_RETRY]────────────┤
+    │ (or)                              │
+    ├──────────[TRADE_RETRY]───────────►│
+    │                                   │
+    │ Reset to 'traveling' status      │ Reset to 'traveling' status
+    │ retryCount++                      │ retryCount++
+    │ (max 3 retries before cancel)     │
 ```
 
 ### Why 5-Second Collection Window?
@@ -506,31 +526,48 @@ function getTradeLocation(villageChat, spawnPos): Vec3 {
 
 ### Trade Verification
 
-Trade execution includes safeguards to prevent common issues:
+Trade execution includes comprehensive safeguards to ensure items are actually exchanged:
+
+**Pre-Exchange Verification:**
+1. **Proximity check**: Both bots must be within 4 blocks of each other before exchange
+2. **Position sharing**: Bots share their positions via `[TRADE_POS]` messages
+3. **Meeting point selection**: Chooses locations clear of other bots (8 block exclusion radius)
 
 **Giver Safeguards:**
-1. **Item verification**: Before dropping, verify the inventory item name matches `trade.item` exactly
-2. **Quantity control**: Drop only the offered quantity, not the entire stack
-3. **Step back distance**: Move 4 blocks away after dropping (Minecraft pickup range is ~2 blocks)
-4. **Fallback movement**: If pathfinding fails, manually walk backward
-5. **Wait for receiver**: After dropping, giver enters `awaiting_pickup` status and waits for receiver's TRADE_DONE
+1. **Face partner**: Before dropping, giver uses `bot.lookAt()` to face the receiver
+2. **Item verification**: Before dropping, verify the inventory item name matches `trade.item` exactly
+3. **Quantity control**: Drop only the offered quantity, not the entire stack
+4. **Drop verification**: After tossing, verify inventory count decreased (items actually left)
+5. **Step back away from partner**: Move 4 blocks in direction opposite to partner (not just meeting point)
+6. **Fallback movement**: If pathfinding fails, manually walk backward for 1.5 seconds
+7. **Wait for receiver**: After dropping, giver enters `awaiting_pickup` status and waits for receiver's TRADE_DONE
    - Giver does NOT send their own TRADE_DONE (prevents clearing receiver's trade state prematurely)
    - Trade only completes when receiver confirms with TRADE_DONE
    - 2-minute timeout prevents indefinite waiting
 
 **Receiver Safeguards:**
 1. **Inventory tracking**: Record item count before and after pickup
-2. **Item filtering**: Only collect items near the meeting point
+2. **Item filtering**: Collect items near meeting point OR partner's position (6 block radius)
 3. **Verification**: Confirm inventory increased for the correct item type
 4. **Retry logic**: If items still on ground, continue trying to pick up
 5. **Timeout handling**: Cancel trade if items never appear
 
+**Retry System:**
+1. **Max retries**: 3 attempts before giving up
+2. **Retry triggers**: Proximity failure, drop verification failure, pickup failure
+3. **Retry message**: `[TRADE_RETRY]` resets both bots to `traveling` status
+4. **State reset**: On retry, `partnerReady` is cleared to force re-synchronization
+
 **Why These Safeguards?**
 
-Without verification, trades could fail silently:
+Without verification, trades failed silently:
 - Giver drops wrong item → receiver picks up unexpected item
-- Giver picks up own dropped items → receiver gets nothing
+- Giver turns wrong direction, picks up own dropped items → receiver gets nothing
+- Bots not close enough → items land in wrong place
+- Other bots nearby → third party steals items
 - Trade marked successful without actual item transfer
+
+The retry system allows recovery from transient failures while the max retry limit prevents infinite loops.
 
 ### Trade Cancellation
 
