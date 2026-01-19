@@ -93,6 +93,7 @@ export class GOAPLumberjackRole extends GOAPRole {
       ],
       inventory: [
         { label: 'axe', value: bb.hasAxe ? 'yes' : 'no', color: bb.hasAxe ? 'green' : 'red' },
+        { label: 'boat', value: bb.hasBoat ? 'yes' : 'no', color: bb.hasBoat ? 'cyan' : 'gray' },
         { label: 'logs', value: bb.logCount },
         { label: 'planks', value: bb.plankCount },
         { label: 'saplings', value: bb.saplingCount },
@@ -108,6 +109,7 @@ export class GOAPLumberjackRole extends GOAPRole {
         { label: 'needsDeposit', value: bb.needsToDeposit, color: bb.needsToDeposit ? 'yellow' : 'gray' },
         { label: 'hasRequests', value: bb.hasPendingRequests, color: bb.hasPendingRequests ? 'cyan' : 'gray' },
         { label: 'invFull', value: bb.inventoryFull, color: bb.inventoryFull ? 'red' : 'gray' },
+        { label: 'waterAhead', value: bb.maxWaterAhead, color: bb.maxWaterAhead >= 20 ? (bb.hasBoat ? 'cyan' : 'red') : 'gray' },
       ],
     };
   }

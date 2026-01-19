@@ -200,6 +200,7 @@ Press Enter on a bot to see full details:
 | ReadUnknownSign utility | 45-60 | Low priority curiosity behavior (both bots) |
 | Sign crafting materials | 6 planks + 1 stick | GetSignMaterials can chain to satisfy this |
 | Lumberjack tree search | 50/32 blocks | With/without village center (must match blackboard) |
+| Max swimming distance | 20 blocks | Water crossing >20 blocks requires a boat (prevents ocean exploration) |
 | Full chest memory | 5 minutes | Time before retrying a full chest |
 | Trade offer threshold | 4+ items | Minimum unwanted items before offering trade |
 | Trade offer cooldown | 30 seconds | Time between trade broadcasts |
