@@ -68,7 +68,7 @@ export class CraftAxe implements BehaviorNode {
             }
 
             // Craft the axe at the crafting table
-            return this.craftAxeAtTable(bot, craftingTable);
+            return this.craftAxeAtTable(bot, craftingTable, bb);
         }
 
         return 'failure';
@@ -241,7 +241,7 @@ export class CraftAxe implements BehaviorNode {
         return null;
     }
 
-    private async craftAxeAtTable(bot: Bot, craftingTable: any): Promise<BehaviorStatus> {
+    private async craftAxeAtTable(bot: Bot, craftingTable: any, bb: LumberjackBlackboard): Promise<BehaviorStatus> {
         try {
             // Move to crafting table
             const result = await smartPathfinderGoto(
@@ -250,23 +250,40 @@ export class CraftAxe implements BehaviorNode {
                 { timeoutMs: 15000 }
             );
             if (!result.success) {
+                bb.log?.debug(`[Lumberjack] CraftAxe: Failed to reach crafting table - ${result.failureReason}`);
                 return 'failure';
             }
 
             // Get wooden axe recipe
             const axeId = bot.registry.itemsByName['wooden_axe']?.id;
             if (!axeId) {
+                bb.log?.debug('[Lumberjack] CraftAxe: wooden_axe not found in registry');
+                return 'failure';
+            }
+
+            // Verify we have materials before crafting
+            const planks = bot.inventory.items().filter(i => i.name.endsWith('_planks'));
+            const sticks = bot.inventory.items().filter(i => i.name === 'stick');
+            const plankCount = planks.reduce((s, i) => s + i.count, 0);
+            const stickCount = sticks.reduce((s, i) => s + i.count, 0);
+
+            if (plankCount < 3 || stickCount < 2) {
+                bb.log?.debug({ plankCount, stickCount }, '[Lumberjack] CraftAxe: Missing materials (need 3 planks, 2 sticks)');
                 return 'failure';
             }
 
             const recipe = bot.recipesFor(axeId, null, 1, craftingTable)[0];
             if (!recipe) {
+                bb.log?.debug('[Lumberjack] CraftAxe: No recipe found for wooden_axe at crafting table');
                 return 'failure';
             }
 
             await bot.craft(recipe, 1, craftingTable);
+            bb.log?.info('[Lumberjack] Successfully crafted wooden axe');
             return 'success';
-        } catch {
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : 'unknown';
+            bb.log?.debug(`[Lumberjack] CraftAxe: Crafting failed - ${msg}`);
             return 'failure';
         }
     }

@@ -320,6 +320,10 @@ export class GOAPPlanner {
   /**
    * Generate a unique key for a state (for closed set checking).
    * Uses a subset of important facts to avoid false negatives.
+   *
+   * IMPORTANT: Any fact that is modified by action effects MUST be included here,
+   * otherwise states with different values for that fact will be treated as identical,
+   * causing the planner to skip valid paths.
    */
   private getStateKey(state: WorldState): string {
     // Only include facts that are likely to be affected by actions
@@ -331,11 +335,18 @@ export class GOAPPlanner {
       'has.knownForest', // Lumberjack forest discovery
       'has.pendingTerraformRequest', 'terraform.active', // Terraform state
       'has.pendingRequests', // Village requests
+      'has.incomingNeeds', // FulfillNeeds goal - must be in key to differentiate states
       'inv.seeds', 'inv.produce', 'inv.logs', 'inv.planks', 'inv.sticks', 'inv.saplings', 'inv.dirt', 'inv.slabs',
       'nearby.matureCrops', 'nearby.farmland', 'nearby.drops', 'nearby.trees', 'nearby.unknownSigns',
       'nearby.forestTrees', // Lumberjack forest trees (safety: only chop trees in forests)
+      'nearby.hasLumberjack', // Farmer lumberjack tracking for FollowLumberjack goal
+      'nearby.lumberjackDistance', // Distance to lumberjack - affects FollowLumberjack planning
       'tree.active', 'derived.hasFarmEstablished',
       'derived.hasAnyTool', 'derived.hasStorageAccess', // Derived states
+      'derived.hasVillage', // Village center - affects FollowLumberjack and other goals
+      'derived.needsCraftingTable', 'derived.needsChest', // Infrastructure needs
+      'can.spareForNeeds', // FulfillNeeds action precondition
+      'needs.tools', // ObtainTools goal - farmer needs hoe
       'state.consecutiveIdleTicks',
       'state.farmsNeedingCheck', // Landscaper farm checking
       'state.farmsWithIssues', // Issue-based farm maintenance

@@ -321,7 +321,14 @@ export class CheckSharedChestAction extends BaseGOAPAction {
  *
  * This action broadcasts a need for shovel/pickaxe. Other bots can offer
  * to provide the item directly, crafting materials, or raw materials.
- * Returns SUCCESS when need is broadcast (action runs asynchronously).
+ * Returns RUNNING while waiting for materials.
+ *
+ * IMPORTANT: Effects are OPTIMISTIC - they assume the lumberjack will respond
+ * and provide materials. This allows the planner to chain:
+ * BroadcastNeed → CraftShovel/CraftPickaxe
+ *
+ * Note: Chest access is NOT required - lumberjack can deliver items directly
+ * via item drop or respond to the need broadcast.
  */
 export class BroadcastNeedAction extends BaseGOAPAction {
   name = 'BroadcastNeed';
@@ -331,12 +338,13 @@ export class BroadcastNeedAction extends BaseGOAPAction {
     // Need tools but don't have materials
     booleanPrecondition('needs.tools', true, 'needs tools'),
     numericPrecondition('inv.logs', v => v < 2, 'needs logs'),
-    // Only broadcast if we have chest access (where delivery may happen)
-    booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
+    // Note: Removed hasStorageAccess requirement - lumberjack can deliver directly
   ];
 
   effects = [
-    // Broadcasting a need starts the process of getting tools
+    // Optimistic effects: assume lumberjack will provide logs
+    // This enables planner to chain BroadcastNeed → CraftShovel/CraftPickaxe
+    incrementEffect('inv.logs', 4, 'may receive logs from need response'),
     setEffect('state.needBroadcast', true, 'need broadcast'),
   ];
 

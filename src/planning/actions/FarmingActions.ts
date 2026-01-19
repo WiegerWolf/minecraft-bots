@@ -278,6 +278,13 @@ export class CheckSharedChestAction extends BaseGOAPAction {
  * This action broadcasts a need for a hoe. Other bots can offer to provide
  * the item directly, crafting materials, or raw materials. Returns RUNNING
  * while waiting for offers and delivery.
+ *
+ * IMPORTANT: Effects are OPTIMISTIC - they assume the lumberjack will respond
+ * and provide materials. This allows the planner to chain:
+ * BroadcastNeed → CraftHoe
+ *
+ * If materials don't arrive, the action will keep returning RUNNING until
+ * they do, or fail after timeout.
  */
 export class BroadcastNeedAction extends BaseGOAPAction {
   name = 'BroadcastNeed';
@@ -288,7 +295,9 @@ export class BroadcastNeedAction extends BaseGOAPAction {
   ];
 
   effects = [
-    // Broadcasting a need starts the process of getting tools
+    // Optimistic effects: assume lumberjack will provide logs
+    // This enables planner to chain BroadcastNeed → CraftHoe
+    incrementEffect('inv.logs', 4, 'may receive logs from need response'),
     setEffect('state.needBroadcast', true, 'need broadcast'),
   ];
 

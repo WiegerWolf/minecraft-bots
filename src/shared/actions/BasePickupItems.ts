@@ -161,6 +161,19 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
 
             if (!result.success) {
                 bb.log?.debug(`[${this.config.roleLabel}] Pickup path failed: ${result.failureReason}`);
+
+                // If pathfinder says "unreachable", this is definitive - mark immediately
+                // Don't waste attempts retrying something that truly can't be reached
+                if (result.failureReason === 'unreachable') {
+                    bb.log?.debug(
+                        `[${this.config.roleLabel}] Item ${dropId} at ${drop.position.floored()} marked unreachable (pathfinder)`
+                    );
+                    bb.unreachableDrops.set(dropId, now + UNREACHABLE_COOLDOWN);
+                    this.lastTargetId = null;
+                    this.failedAttemptsAtTarget = 0;
+                }
+                // For timeout/cancelled, we retry (might succeed from different approach)
+
                 return 'failure';
             }
 
