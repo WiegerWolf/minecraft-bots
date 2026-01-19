@@ -101,39 +101,65 @@ LOG_LEVEL=debug bun run start farmer  # Set log level
 
 ## TUI Dashboard
 
-The bot manager (`src/manager/`) provides an interactive terminal interface for managing multiple bots.
+The bot manager (`src/manager/`) provides an interactive terminal interface for managing multiple bots with two views: Overview and Detail.
 
-### Layout
+### Overview Screen (Default)
+
+Full-screen grid of bot cards showing at-a-glance status:
 ```
-+----------------------------------------------------------+
-|  Minecraft Bot Manager [session-id]     hotReload:off quit|
-+------------------+---------------------------------------+
-|  BOTS            |  BOT STATE                            |
-|  ┌ Farmer (2)    |  ╭─ Emma_Farmer [running] ──────────╮ |
-|  │ > Emma   [R]  |  │ Goal: HarvestCrops (75.5)        │ |
-|  │   Oscar  [S]  |  │ Action: HarvestCrops [3/5] 60%   │ |
-|  ┌ Lmbr (1)      |  │ Stats: 42/45 ok, 3 fail, 2 replan│ |
-|  │   Carl   [R]  |  │ Recent: ✓ PlantSeeds             │ |
-|  ──────────────  |  │         ✓ CollectDrops           │ |
-|  s x r a d R     |  │ Goals: HarvestCrops: 75.5 ←      │ |
-+------------------+  │        PlantSeeds: 45.0          │ |
-                      ╰──────────────────────────────────╯ |
-+----------------------------------------------------------+
++------------------------------------------------------------------+
+| Minecraft Bot Manager [session-id]            HotReload:on  quit |
++------------------------------------------------------------------+
+| ╭─ Emma_Farmer ────[R]─╮  ╭─ Oscar_Farmer ──[R]─╮                |
+| │ Goal: HarvestCrops   │  │ Goal: PlantSeeds    │                |
+| │ Act: HarvestCrops    │  │ Act: TillGround     │                |
+| │ Stats: 42/45 ok 3 fl │  │ Stats: 18/20 ok 2 fl│                |
+| │ Progress: ████░░ 60% │  │ Progress: ██░░░ 40% │                |
+| ╰──────────────────────╯  ╰─────────────────────╯                |
++------------------------------------------------------------------+
+| ↑↓←→/hjkl navigate  Enter details  s/x/r bot ctrl  a/d add/del  |
++------------------------------------------------------------------+
+```
+
+### Detail Screen
+
+Press Enter on a bot to see full details:
+```
++------------------------------------------------------------------+
+| Emma_Farmer [R]  [session-id]      Esc/Backspace back  s x r     |
++------------------------------------------------------------------+
+| Current State                    │ Goal Utilities                |
+| Goal: HarvestCrops (75.5)        │   HarvestCrops    75.5 ← CUR  |
+| Action: HarvestCrops [3/5]       │   PlantSeeds      45.0        |
+| Plan Progress: ████████░░ 60%    │   CollectDrops     0.0 [ZERO] |
+|                                  │                               |
+| Statistics                       │ Recent Actions                |
+| Actions executed: 45             │ 10:23:15 ✓ HarvestCrops       |
+| Actions succeeded: 42            │ 10:23:12 ✓ PlantSeeds         |
+| Actions failed: 3                │ 10:23:08 ✗ CollectDrops (3x)  |
+| Success rate: 93.3%              │                               |
++------------------------------------------------------------------+
 ```
 
 ### Keyboard Shortcuts
 
-| Key | Action | Context |
-|-----|--------|---------|
-| `j`/`k` or arrows | Navigate bot list | Bot panel |
-| `s` | Start selected bot | Bot panel |
-| `x` | Stop selected bot | Bot panel |
-| `r` | Restart selected bot | Bot panel |
-| `R` | Restart all bots | Bot panel |
-| `a` | Add new bot (session-only) | Bot panel |
-| `d` | Delete selected bot | Bot panel |
-| `h` | Toggle hot-reload | Header |
-| `q` | Quit (stops all bots first) | Header |
+**Overview Screen:**
+| Key | Action |
+|-----|--------|
+| `↑↓←→` or `hjkl` | Navigate grid |
+| `Enter` | Open detail view |
+| `s` / `x` / `r` | Start / Stop / Restart bot |
+| `R` | Restart all bots |
+| `a` / `d` | Add / Delete bot |
+| `H` | Toggle hot-reload |
+| `q` | Quit |
+
+**Detail Screen:**
+| Key | Action |
+|-----|--------|
+| `Esc` / `Backspace` | Back to overview |
+| `s` / `x` / `r` | Start / Stop / Restart this bot |
+| `q` | Quit |
 
 ### Bot Status Indicators
 
@@ -142,27 +168,14 @@ The bot manager (`src/manager/`) provides an interactive terminal interface for 
 | `[R]` | Running |
 | `[S]` | Stopped |
 | `[C]` | Crashed (will auto-restart with backoff) |
-| `[.]` | Starting or Restarting (yellow, animated) |
-
-### State Panel
-
-The state panel shows real-time bot state instead of logs:
-- **Current Goal**: The active goal and its utility score
-- **Current Action**: What the bot is doing right now, with plan progress
-- **Stats**: Success rate and replan count
-- **Recent Actions**: Last few actions with success/failure status
-- **Goal Utilities**: All goals ranked by utility (current goal marked with ←)
-- **Cooldowns**: Goals that recently failed and are on cooldown
-
-Logs are still written to `logs/SESSION_ID/` for analysis. Use the `/logs` skill to analyze them.
+| `[.]` | Starting or Restarting |
 
 ### Design Decisions
 
-- **Session-only bot changes**: Added/deleted bots are lost when you quit. Keeps config simple.
-- **Grouped by role**: Bots are grouped under their role (Farmer, Lmbr, etc.) with count displayed.
-- **Contextual shortcuts**: Shortcuts appear near their relevant UI sections.
-- **Auto-start on add**: New bots start immediately after being added.
-- **State over logs**: The TUI shows live bot state for debugging, logs go to files for detailed analysis.
+- **Overview + Detail pattern**: Quick glance at all bots, drill down for details
+- **Grid layout**: Adapts to terminal width, shows more bots on wider terminals
+- **Session-only bot changes**: Added/deleted bots are lost when you quit
+- **State over logs**: TUI shows live bot state; logs go to files for `/logs` analysis
 
 ## Quick Reference
 

@@ -1,8 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Box, useInput, useApp, useStdout } from 'ink';
-import { Header } from './components/Header';
-import { BotList } from './components/BotList';
-import { StatePanel } from './components/StatePanel';
+import { OverviewScreen } from './components/OverviewScreen';
+import { DetailScreen } from './components/DetailScreen';
 import { RoleSelector } from './components/RoleSelector';
 import { useBotManager } from './hooks/useBotManager';
 import { useLogBuffer } from './hooks/useLogBuffer';
@@ -18,17 +17,16 @@ interface AppProps {
   autoStart?: boolean;
 }
 
+type ViewMode = 'overview' | 'detail';
 type InputMode = 'normal' | 'add-bot';
 
 export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart = true }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const terminalHeight = stdout?.rows || 24;
-
-  // Calculate content height: total - header(2)
-  const contentHeight = Math.max(5, terminalHeight - 2);
+  const terminalWidth = stdout?.columns || 80;
 
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>('overview');
   const [inputMode, setInputMode] = useState<InputMode>('normal');
   const [addBotIndex, setAddBotIndex] = useState(0);
 
@@ -53,23 +51,12 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
     getNextLogId: logActions.getNextId,
   });
 
-  // Compute visual order: bots grouped by role, flattened to original indices
-  // This matches the display order in BotList
-  const visualOrder = useMemo(() => {
-    const groups = new Map<string, number[]>();
-    bots.forEach((bot, index) => {
-      const role = bot.config.role;
-      if (!groups.has(role)) {
-        groups.set(role, []);
-      }
-      groups.get(role)!.push(index);
-    });
-    return Array.from(groups.values()).flat();
-  }, [bots]);
+  // Calculate grid dimensions for navigation
+  const cardWidth = 38;
+  const cardsPerRow = Math.max(1, Math.floor(terminalWidth / cardWidth));
 
   // File watcher for hot-reload
   const handleFileChange = useCallback((filename: string) => {
-    // Add a log entry for the file change
     handleLog({
       id: logActions.getNextId(),
       timestamp: new Date(),
@@ -145,28 +132,46 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
 
   // Keyboard input handling
   useInput((input, key) => {
+    // Handle role selector input mode
     if (inputMode === 'add-bot') {
-      // RoleSelector handles its own input
       return;
     }
 
-    // Navigation (follows visual grouped order)
-    if (input === 'j' || key.downArrow) {
-      setSelectedIndex(currentIndex => {
-        const visualPos = visualOrder.indexOf(currentIndex);
-        const nextVisualPos = Math.min(visualPos + 1, visualOrder.length - 1);
-        return visualOrder[nextVisualPos] ?? currentIndex;
-      });
-    } else if (input === 'k' || key.upArrow) {
-      setSelectedIndex(currentIndex => {
-        const visualPos = visualOrder.indexOf(currentIndex);
-        const prevVisualPos = Math.max(visualPos - 1, 0);
-        return visualOrder[prevVisualPos] ?? currentIndex;
-      });
+    // Back to overview from detail view
+    if (viewMode === 'detail') {
+      if (key.escape || key.backspace || key.delete) {
+        setViewMode('overview');
+        return;
+      }
     }
 
-    // Bot actions
-    else if (input === 's') {
+    // Navigation
+    if (viewMode === 'overview') {
+      // Grid navigation
+      if (input === 'j' || key.downArrow) {
+        setSelectedIndex(i => Math.min(i + cardsPerRow, bots.length - 1));
+      } else if (input === 'k' || key.upArrow) {
+        setSelectedIndex(i => Math.max(i - cardsPerRow, 0));
+      } else if (input === 'l' || key.rightArrow) {
+        setSelectedIndex(i => Math.min(i + 1, bots.length - 1));
+      } else if (input === 'h' && !key.ctrl || key.leftArrow) {
+        // 'h' for left navigation, but not if ctrl+h (could be backspace on some terminals)
+        if (input === 'h') {
+          setSelectedIndex(i => Math.max(i - 1, 0));
+        } else {
+          setSelectedIndex(i => Math.max(i - 1, 0));
+        }
+      }
+      // Enter detail view
+      else if (key.return) {
+        if (bots.length > 0) {
+          setViewMode('detail');
+        }
+      }
+    }
+
+    // Bot actions (work in both views)
+    if (input === 's') {
       const bot = bots[selectedIndex];
       if (bot) botActions.startBot(bot.id);
     } else if (input === 'x') {
@@ -177,20 +182,19 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
       if (bot) botActions.restartBot(bot.id);
     } else if (input === 'R') {
       botActions.restartAll();
-    } else if (input === 'a') {
+    } else if (input === 'a' && viewMode === 'overview') {
       setAddBotIndex(0);
       setInputMode('add-bot');
-    } else if (input === 'd') {
+    } else if (input === 'd' && viewMode === 'overview') {
       const bot = bots[selectedIndex];
       if (bot) {
         botActions.deleteBot(bot.id);
-        // Select first bot after deletion (safe default)
-        setSelectedIndex(0);
+        setSelectedIndex(i => Math.max(0, Math.min(i, bots.length - 2)));
       }
     }
 
-    // Hot-reload toggle
-    else if (input === 'h') {
+    // Hot-reload toggle (use 'H' to avoid conflict with 'h' for left nav)
+    else if (input === 'H') {
       setHotReload(!hotReloadEnabled);
       handleLog({
         id: logActions.getNextId(),
@@ -211,7 +215,7 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
     }
   });
 
-  // Handle add bot from role selector - adds and auto-starts
+  // Handle add bot from role selector
   const handleAddBot = useCallback((config: BotConfig) => {
     const botId = botActions.addBot(config);
     handleLog({
@@ -224,7 +228,6 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
       raw: '',
     });
     setInputMode('normal');
-    // Auto-start the new bot
     setTimeout(() => botActions.startBot(botId), 100);
   }, [botActions, handleLog, logActions]);
 
@@ -236,17 +239,26 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
     setAddBotIndex(i => Math.max(0, Math.min(i + delta, DEFAULT_BOT_CONFIGS.length - 1)));
   }, []);
 
-  // Adjust content height when role selector is shown
-  const effectiveContentHeight = inputMode === 'add-bot' ? contentHeight - 3 : contentHeight;
+  // Get selected bot for detail view
+  const selectedBot = bots[selectedIndex];
 
   return (
-    <Box flexDirection="column">
-      <Header sessionId={sessionId} hotReloadEnabled={hotReloadEnabled} />
-
-      <Box height={effectiveContentHeight}>
-        <BotList bots={bots} selectedIndex={selectedIndex} />
-        <StatePanel bots={bots} selectedIndex={selectedIndex} height={effectiveContentHeight} />
-      </Box>
+    <Box flexDirection="column" flexGrow={1}>
+      {viewMode === 'overview' ? (
+        <OverviewScreen
+          bots={bots}
+          selectedIndex={selectedIndex}
+          hotReloadEnabled={hotReloadEnabled}
+          sessionId={sessionId}
+        />
+      ) : (
+        selectedBot && (
+          <DetailScreen
+            bot={selectedBot}
+            sessionId={sessionId}
+          />
+        )
+      )}
 
       {inputMode === 'add-bot' && (
         <RoleSelector

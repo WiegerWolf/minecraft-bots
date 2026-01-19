@@ -51,7 +51,7 @@ bun run start:old farmer
 - `R` - Restart all bots
 - `x` - Stop selected bot
 - `s` - Start selected bot
-- `h` - Toggle hot-reload on/off
+- `H` - Toggle hot-reload on/off
 - `q` - Quit (stops all bots first)
 
 **From command line** (while bots are running):
@@ -69,17 +69,19 @@ kill -USR1 <manager-pid>
 
 ### Monitoring Bot Status
 
-**TUI Dashboard** (`bun run start`):
-- Shows all bots with status indicators: `[R]` Running, `[S]` Stopped, `[C]` Crashed, `[.]` Starting/Restarting
-- Real-time state panel showing:
-  - Current goal and utility
-  - Current action and plan progress
-  - Action success/failure stats
-  - Recent action history
-  - Goal utilities (all goals ranked)
-  - Goals on cooldown
-- Add/delete bots (`a`/`d`) - session-only, not persisted
-- Logs still written to files for detailed analysis (use `/logs` skill)
+**TUI Dashboard** (`bun run start`) has two views:
+
+**Overview Screen** (default):
+- Grid of bot cards showing: status, goal, action, stats, progress bar
+- Navigate with arrow keys or `hjkl`
+- Press `Enter` to see bot details
+- Add/delete bots with `a`/`d`
+
+**Detail Screen** (press Enter on a bot):
+- Full bot state: goal utilities, action history, statistics
+- Press `Esc` or `Backspace` to return to overview
+
+Logs still written to files for detailed analysis (use `/logs` skill)
 
 ## Logging
 
