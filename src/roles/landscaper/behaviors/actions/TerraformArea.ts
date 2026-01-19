@@ -741,8 +741,8 @@ export class TerraformArea implements BehaviorNode {
         if (candidates.length === 0) {
             // Last resort: try to find any dirt underground even further away
             bb.log?.debug(`[Landscaper] No dirt in primary search, trying extended underground search`);
-            for (let dx = -32; dx <= 32; dx += 2) {
-                for (let dz = -32; dz <= 32; dz += 2) {
+            for (let dx = -32; dx <= 32; dx++) {
+                for (let dz = -32; dz <= 32; dz++) {
                     if (Math.abs(dx) <= workRadius && Math.abs(dz) <= workRadius) continue;
 
                     const x = Math.floor(waterCenter.x) + dx;

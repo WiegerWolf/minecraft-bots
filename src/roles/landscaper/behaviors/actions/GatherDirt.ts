@@ -126,8 +126,8 @@ export class GatherDirt implements BehaviorNode {
         const candidates: { pos: Vec3; score: number }[] = [];
         const botPos = bot.entity.position;
 
-        for (let dx = -radius; dx <= radius; dx += 2) {
-            for (let dz = -radius; dz <= radius; dz += 2) {
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dz = -radius; dz <= radius; dz++) {
                 const x = Math.floor(center.x) + dx;
                 const z = Math.floor(center.z) + dz;
 
