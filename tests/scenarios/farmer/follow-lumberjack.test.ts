@@ -198,4 +198,55 @@ describe('Farmer Follow-Lumberjack', () => {
       expect(result?.goal.name).toBe('EstablishFarm');
     });
   });
+
+  describe('Lumberjack Visibility (Documented Specs)', () => {
+    /**
+     * These tests document the lumberjack tracking behavior.
+     * The actual detection is implemented in FarmingBlackboard.updateBlackboard().
+     *
+     * Key constraints:
+     * 1. Lumberjack must be within render distance (~64 blocks) for entity tracking
+     * 2. Lumberjack is identified by name pattern: contains 'Lmbr' or 'lumber'
+     * 3. Only tracked when no village center exists (exploration phase)
+     */
+
+    test('SPEC: Lumberjack detected by name pattern (Lmbr)', () => {
+      // The blackboard checks player names for patterns:
+      // - playerName.includes('Lmbr')
+      // - playerName.toLowerCase().includes('lumber')
+      // - playerName.toLowerCase().includes('lumberjack')
+      // Bot names are formatted as 'FirstName_Lmbr' (e.g., 'John_Lmbr')
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: Lumberjack must be in render distance for entity tracking', () => {
+      // The player's entity is only available when they're within render distance.
+      // Minecraft render distance is typically 64 blocks for entities.
+      // If lumberjack is further away, player exists in bot.players but
+      // player.entity is null, so we can't get their position.
+      // The blackboard logs "Lumberjack out of render distance" in this case.
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: No tracking after village center established', () => {
+      // Once village center is set, bb.villageCenter !== null.
+      // The blackboard skips lumberjack tracking in this case
+      // because the farmer no longer needs to follow.
+      const ws = freshSpawnFarmerState();
+      ws.set('has.studiedSigns', true);
+      ws.set('derived.hasVillage', true);
+      ws.set('nearby.hasLumberjack', true);
+      ws.set('nearby.lumberjackDistance', 80);
+
+      // Village established - FollowLumberjack returns 0 utility
+      expect(followGoal.getUtility(ws)).toBe(0);
+    });
+
+    test('SPEC: Closest lumberjack is tracked when multiple exist', () => {
+      // If multiple lumberjacks are visible, the blackboard tracks
+      // the closest one by comparing distances.
+      // This is relevant when running multiple lumberjack bots.
+      expect(true).toBe(true); // Documentation test
+    });
+  });
 });

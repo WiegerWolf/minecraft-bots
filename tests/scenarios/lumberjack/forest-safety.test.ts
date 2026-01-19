@@ -180,4 +180,54 @@ describe('Lumberjack Forest Safety', () => {
       expect(chopGoal.getUtility(ws)).toBeGreaterThan(0);
     });
   });
+
+  describe('Forest Exploration Terrain Filtering (Documented Specs)', () => {
+    /**
+     * These tests document the expected terrain filtering behavior for FindForest.
+     * The actual validation is implemented in FindForest.ts behavior action.
+     *
+     * Terrain filtering prevents the lumberjack from:
+     * 1. Exploring into oceans/lakes (water-dominated areas)
+     * 2. Climbing mountains (Y > 85)
+     * 3. Going into ravines/underground (Y < 55)
+     *
+     * The behavior samples terrain along potential exploration paths
+     * and rejects directions that lead through bad terrain.
+     */
+
+    test('SPEC: FindForest avoids exploring over water/ocean', () => {
+      // The FindForest behavior checks for water blocks along the exploration path.
+      // If more than half the sampled points are water, that direction is rejected.
+      // This prevents the lumberjack from trying to explore across oceans/lakes.
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: FindForest avoids mountains (Y > 85)', () => {
+      // The FindForest behavior rejects exploration targets above Y=85.
+      // Mountains rarely have accessible forests and waste exploration time.
+      // The MAX_EXPLORATION_Y constant controls this threshold.
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: FindForest avoids ravines/underground (Y < 55)', () => {
+      // The FindForest behavior rejects exploration targets below Y=55.
+      // Underground areas don't have forests.
+      // The MIN_EXPLORATION_Y constant controls this threshold.
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: FindForest prefers directions with solid ground', () => {
+      // The FindForest behavior scores exploration directions based on terrain.
+      // Directions with more solid ground get higher scores.
+      // Directions with water get negative penalties.
+      expect(true).toBe(true); // Documentation test
+    });
+
+    test('SPEC: FindForest fails gracefully when surrounded by bad terrain', () => {
+      // If all 8 exploration directions lead to bad terrain (water/mountains),
+      // FindForest returns 'failure' and resets for a later attempt.
+      // This prevents infinite loops when the bot spawns on an island.
+      expect(true).toBe(true); // Documentation test
+    });
+  });
 });

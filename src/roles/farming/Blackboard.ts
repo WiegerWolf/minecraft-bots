@@ -524,6 +524,10 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
         bb.lumberjackName = null;
 
         // Find the closest lumberjack player
+        let lumberjackFound = false;
+        let lumberjackOutOfRange = false;
+        let lumberjackOutOfRangeName: string | null = null;
+
         for (const [playerName, player] of Object.entries(bot.players)) {
             // Skip self
             if (playerName === bot.username) continue;
@@ -534,9 +538,16 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
                                  playerName.toLowerCase().includes('lumberjack');
             if (!isLumberjack) continue;
 
+            lumberjackFound = true;
+
             // Get their entity (only works if they're in render distance)
             const entity = player.entity;
-            if (!entity) continue;
+            if (!entity) {
+                // Player is in players list but entity not loaded (out of render distance)
+                lumberjackOutOfRange = true;
+                lumberjackOutOfRangeName = playerName;
+                continue;
+            }
 
             const distance = pos.distanceTo(entity.position);
 
@@ -552,6 +563,11 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
                 lumberjack: bb.lumberjackName,
                 distance: pos.distanceTo(bb.lumberjackPosition).toFixed(1)
             }, 'Tracking lumberjack');
+        } else if (lumberjackOutOfRange) {
+            // Log when lumberjack exists but is out of render distance
+            bb.log?.debug({
+                lumberjack: lumberjackOutOfRangeName
+            }, 'Lumberjack out of render distance - cannot follow');
         }
     } else {
         // Village established, no need to follow

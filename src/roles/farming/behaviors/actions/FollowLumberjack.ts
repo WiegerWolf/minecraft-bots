@@ -20,6 +20,7 @@ export class FollowLumberjack {
     private minDistance = 15;          // Don't get closer than this
     private lastPathTime = 0;
     private pathCooldown = 2000;       // Don't repath more often than every 2s
+    private hasAnnounced = false;      // Track if we've announced following
 
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<'success' | 'failure' | 'running'> {
         // Check if we have a lumberjack to follow
@@ -50,6 +51,12 @@ export class FollowLumberjack {
             return 'running';
         }
         this.lastPathTime = now;
+
+        // Announce following start
+        if (!this.hasAnnounced) {
+            bot.chat(`Following ${bb.lumberjackName} during exploration`);
+            this.hasAnnounced = true;
+        }
 
         bb.log?.info({
             lumberjack: bb.lumberjackName,

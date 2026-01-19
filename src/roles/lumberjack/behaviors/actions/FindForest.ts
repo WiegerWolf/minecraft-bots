@@ -14,6 +14,11 @@ const MIN_FOREST_SIZE = 3;
 const EXPLORE_RADIUS = 32;
 // Maximum exploration attempts before giving up
 const MAX_EXPLORE_ATTEMPTS = 8;
+// Elevation thresholds for terrain filtering
+const MAX_EXPLORATION_Y = 85;   // Don't explore above this (mountains)
+const MIN_EXPLORATION_Y = 55;   // Don't explore below this (ravines/underground)
+// Water check radius
+const WATER_CHECK_RADIUS = 3;
 
 /**
  * FindForest - Explore to find a forest area with 3+ trees
@@ -63,13 +68,47 @@ export class FindForest implements BehaviorNode {
         bb.lastAction = 'find_forest';
         bb.log?.debug({ attempt: this.explorationIndex + 1 }, 'Exploring to find forest');
 
-        // Explore in the next direction
+        // Explore in the next direction - find a valid target on land
         const pos = bot.entity.position;
-        const direction = this.explorationDirections[this.explorationIndex % this.explorationDirections.length]!;
-        this.explorationIndex++;
+        let targetPos: Vec3 | null = null;
+        let attemptsThisRound = 0;
+        const maxAttemptsPerRound = this.explorationDirections.length;
 
-        // Calculate target position
-        const targetPos = pos.plus(direction.scaled(EXPLORE_RADIUS));
+        // Try to find a good exploration direction (on land, not mountains)
+        while (attemptsThisRound < maxAttemptsPerRound) {
+            const direction = this.explorationDirections[this.explorationIndex % this.explorationDirections.length]!;
+            this.explorationIndex++;
+            attemptsThisRound++;
+
+            // Calculate potential target position
+            const potentialTarget = pos.plus(direction.scaled(EXPLORE_RADIUS));
+
+            // Check terrain quality at this target
+            const terrainScore = this.evaluateTerrain(bot, potentialTarget, bb);
+
+            if (terrainScore > 0) {
+                targetPos = potentialTarget;
+                bb.log?.debug({
+                    direction: `${direction.x},${direction.z}`,
+                    score: terrainScore,
+                    target: potentialTarget.floored().toString()
+                }, 'Found valid exploration direction');
+                break;
+            } else {
+                bb.log?.debug({
+                    direction: `${direction.x},${direction.z}`,
+                    score: terrainScore,
+                    target: potentialTarget.floored().toString()
+                }, 'Skipping bad terrain direction');
+            }
+        }
+
+        // If no valid direction found, we're probably stuck (surrounded by water/mountains)
+        if (!targetPos) {
+            bb.log?.warn('All exploration directions lead to bad terrain (water/mountains)');
+            this.explorationIndex = 0;
+            return 'failure';
+        }
 
         try {
             // Move toward the exploration target
@@ -110,6 +149,128 @@ export class FindForest implements BehaviorNode {
             bb.log?.debug({ err }, 'Error during forest exploration');
             return this.explorationIndex >= MAX_EXPLORE_ATTEMPTS ? 'failure' : 'running';
         }
+    }
+
+    /**
+     * Evaluate terrain quality at a position.
+     * Returns a score: positive = good to explore, 0 or negative = bad terrain.
+     *
+     * Checks:
+     * - Is the position over water/ocean? (bad)
+     * - Is the position at extreme elevation? (mountains = bad, ravines = bad)
+     * - Is there solid ground to walk on? (good)
+     */
+    private evaluateTerrain(bot: Bot, targetPos: Vec3, bb: LumberjackBlackboard): number {
+        let score = 100;
+
+        // Check Y level - avoid mountains and ravines
+        const targetY = Math.floor(targetPos.y);
+        if (targetY > MAX_EXPLORATION_Y) {
+            bb.log?.trace?.({ y: targetY, max: MAX_EXPLORATION_Y }, 'Position too high (mountain)');
+            return -50; // Mountains - hard no
+        }
+        if (targetY < MIN_EXPLORATION_Y) {
+            bb.log?.trace?.({ y: targetY, min: MIN_EXPLORATION_Y }, 'Position too low (ravine/underground)');
+            return -50; // Underground/ravine - hard no
+        }
+
+        // Sample points along the path to check for water
+        const currentPos = bot.entity.position;
+        const direction = targetPos.minus(currentPos).normalize();
+        const distance = currentPos.distanceTo(targetPos);
+
+        // Check at intervals along the path
+        const checkPoints = Math.min(5, Math.floor(distance / 8));
+        let waterBlockCount = 0;
+        let solidBlockCount = 0;
+
+        for (let i = 1; i <= checkPoints; i++) {
+            const checkPos = currentPos.plus(direction.scaled((distance / checkPoints) * i));
+            const x = Math.floor(checkPos.x);
+            const z = Math.floor(checkPos.z);
+
+            // Find the surface at this XZ position
+            const surfaceInfo = this.findSurface(bot, x, z, Math.floor(currentPos.y));
+
+            if (surfaceInfo.isWater) {
+                waterBlockCount++;
+            } else if (surfaceInfo.isSolid) {
+                solidBlockCount++;
+            }
+        }
+
+        // Also check the target position itself
+        const targetSurface = this.findSurface(bot, Math.floor(targetPos.x), Math.floor(targetPos.z), Math.floor(targetPos.y));
+        if (targetSurface.isWater) {
+            waterBlockCount += 2; // Weight target more heavily
+        } else if (targetSurface.isSolid) {
+            solidBlockCount += 2;
+        }
+
+        // Evaluate based on findings
+        if (waterBlockCount > checkPoints / 2) {
+            // More than half the path is water - this is ocean/lake
+            bb.log?.trace?.({ waterCount: waterBlockCount, total: checkPoints }, 'Path goes over water');
+            return -30;
+        }
+
+        if (solidBlockCount === 0) {
+            // No solid ground found
+            bb.log?.trace?.('No solid ground found along path');
+            return -20;
+        }
+
+        // Bonus for more solid ground
+        score += solidBlockCount * 5;
+
+        // Penalty for any water
+        score -= waterBlockCount * 10;
+
+        return score;
+    }
+
+    /**
+     * Find the surface block at an XZ position, searching from a starting Y.
+     * Returns information about what's at the surface.
+     */
+    private findSurface(bot: Bot, x: number, z: number, startY: number): { isWater: boolean; isSolid: boolean; y: number } {
+        // Search up and down from startY to find surface
+        const searchRange = 15;
+
+        // First search down
+        for (let y = startY; y > startY - searchRange; y--) {
+            const block = bot.blockAt(new Vec3(x, y, z));
+            if (!block) continue;
+
+            // Water
+            if (block.name === 'water' || block.name === 'flowing_water') {
+                return { isWater: true, isSolid: false, y };
+            }
+
+            // Solid ground
+            if (!block.transparent && block.name !== 'air' && !block.name.includes('leaves')) {
+                return { isWater: false, isSolid: true, y };
+            }
+        }
+
+        // Then search up
+        for (let y = startY + 1; y < startY + searchRange; y++) {
+            const block = bot.blockAt(new Vec3(x, y, z));
+            if (!block) continue;
+
+            // Water
+            if (block.name === 'water' || block.name === 'flowing_water') {
+                return { isWater: true, isSolid: false, y };
+            }
+
+            // Solid ground
+            if (!block.transparent && block.name !== 'air' && !block.name.includes('leaves')) {
+                return { isWater: false, isSolid: true, y };
+            }
+        }
+
+        // Couldn't determine - assume unloaded chunk
+        return { isWater: false, isSolid: false, y: startY };
     }
 
     private getClusterCenter(positions: Vec3[]): Vec3 | null {
