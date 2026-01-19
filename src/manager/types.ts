@@ -15,6 +15,7 @@ export interface ManagedBot {
   process: Subprocess | null;
   name: string;
   reconnectAttempts: number;
+  state: BotState | null;
 }
 
 export interface LogEntry {
@@ -70,4 +71,58 @@ export function getBotColor(botName: string): BotColor {
     colorIndex++;
   }
   return botColorMap.get(botName)!;
+}
+
+// Bot state message protocol
+export interface GoalUtility {
+  name: string;
+  utility: number;
+  isCurrent: boolean;
+  isInvalid?: boolean;
+  isZero?: boolean;
+}
+
+export interface ActionHistoryEntry {
+  action: string;
+  timestamp: number;
+  success: boolean;
+  failureCount?: number;
+}
+
+export interface BotStateMessage {
+  type: 'bot_state';
+  botName: string;
+  timestamp: number;
+  currentGoal: string | null;
+  currentGoalUtility: number;
+  currentAction: string | null;
+  actionProgress: { current: number; total: number } | null;
+  planProgress: number; // 0-100
+  goalUtilities: GoalUtility[];
+  actionHistory: ActionHistoryEntry[];
+  stats: {
+    actionsExecuted: number;
+    actionsSucceeded: number;
+    actionsFailed: number;
+    replansRequested: number;
+  };
+  goalsOnCooldown: string[];
+}
+
+export interface BotState {
+  lastUpdate: number;
+  currentGoal: string | null;
+  currentGoalUtility: number;
+  currentAction: string | null;
+  actionProgress: { current: number; total: number } | null;
+  planProgress: number;
+  goalUtilities: GoalUtility[];
+  actionHistory: ActionHistoryEntry[];
+  stats: {
+    actionsExecuted: number;
+    actionsSucceeded: number;
+    actionsFailed: number;
+    replansRequested: number;
+  };
+  goalsOnCooldown: string[];
 }

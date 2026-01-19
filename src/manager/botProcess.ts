@@ -2,7 +2,7 @@ import { spawn, type Subprocess } from 'bun';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { faker } from '@faker-js/faker';
-import type { BotConfig, LogEntry } from './types';
+import type { BotConfig, LogEntry, BotStateMessage, BotState } from './types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -81,9 +81,36 @@ export interface SpawnBotOptions {
   sessionId: string;
   botName: string;
   onLog: (entry: LogEntry) => void;
+  onState: (state: BotState) => void;
   onExit: (exitCode: number) => void;
   onSpawnSuccess: () => void;
   getNextLogId: () => number;
+}
+
+/**
+ * Parse a state message from bot output.
+ * Returns the state if valid, null otherwise.
+ */
+function parseStateMessage(line: string): BotState | null {
+  try {
+    const data = JSON.parse(line);
+    if (data.type !== 'bot_state') return null;
+
+    return {
+      lastUpdate: data.timestamp,
+      currentGoal: data.currentGoal,
+      currentGoalUtility: data.currentGoalUtility,
+      currentAction: data.currentAction,
+      actionProgress: data.actionProgress,
+      planProgress: data.planProgress,
+      goalUtilities: data.goalUtilities,
+      actionHistory: data.actionHistory,
+      stats: data.stats,
+      goalsOnCooldown: data.goalsOnCooldown,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export interface SpawnedBot {
@@ -96,7 +123,7 @@ export interface SpawnedBot {
  * Returns the process and a cleanup function to cancel readers.
  */
 export function spawnBot(options: SpawnBotOptions): SpawnedBot {
-  const { config, sessionId, botName, onLog, onExit, onSpawnSuccess, getNextLogId } = options;
+  const { config, sessionId, botName, onLog, onState, onExit, onSpawnSuccess, getNextLogId } = options;
 
   const botProcess = spawn(['bun', 'run', BOT_PATH], {
     stdout: 'pipe',
@@ -136,6 +163,15 @@ export function spawnBot(options: SpawnBotOptions): SpawnedBot {
           // Check for spawn marker
           if (line.includes('✅ Bot has spawned!')) {
             onSpawnSuccess();
+          }
+
+          // Check for state message first (type: 'bot_state')
+          if (line.includes('"type":"bot_state"')) {
+            const state = parseStateMessage(line);
+            if (state) {
+              onState(state);
+              continue;
+            }
           }
 
           // Quick filter: skip DEBUG logs (level 20) before parsing

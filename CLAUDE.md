@@ -71,10 +71,15 @@ kill -USR1 <manager-pid>
 
 **TUI Dashboard** (`bun run start`):
 - Shows all bots with status indicators: `[R]` Running, `[S]` Stopped, `[C]` Crashed, `[.]` Starting/Restarting
-- Real-time log viewer with level filtering (`l` to cycle: TRACE→DEBUG→INFO→WARN→ERROR)
-- Filter logs by bot (`f` to toggle)
-- Clear logs (`c`)
+- Real-time state panel showing:
+  - Current goal and utility
+  - Current action and plan progress
+  - Action success/failure stats
+  - Recent action history
+  - Goal utilities (all goals ranked)
+  - Goals on cooldown
 - Add/delete bots (`a`/`d`) - session-only, not persisted
+- Logs still written to files for detailed analysis (use `/logs` skill)
 
 ## Logging
 

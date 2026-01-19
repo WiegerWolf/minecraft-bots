@@ -17,6 +17,16 @@ import {
 } from '../shared/PathfindingUtils';
 
 /**
+ * Action history entry for state reporting.
+ */
+interface ActionHistoryEntry {
+  action: string;
+  timestamp: number;
+  success: boolean;
+  failureCount?: number;
+}
+
+/**
  * Configuration for GOAP-based roles.
  */
 export interface GOAPRoleConfig {
@@ -79,6 +89,14 @@ export abstract class GOAPRole implements Role {
   private consecutivePlanningFailures: number = 0;
   private lastPlanningFailureTime: number = 0;
 
+  // State reporting for TUI
+  private actionHistory: ActionHistoryEntry[] = [];
+  private stateEmitCounter: number = 0;
+  private lastAction: string | null = null;
+  private botName: string = '';
+  private static readonly STATE_EMIT_INTERVAL = 5; // Emit every 5 ticks (500ms)
+  private static readonly MAX_ACTION_HISTORY = 10;
+
   // Actions and goals to use (set by subclass)
   protected abstract getActions(): GOAPAction[];
   protected abstract getGoals(): Goal[];
@@ -99,6 +117,9 @@ export abstract class GOAPRole implements Role {
   start(bot: Bot, options?: RoleStartOptions): void {
     this.bot = bot;
     this.blackboard = this.createBlackboard();
+
+    // Store bot name for state reporting
+    this.botName = bot.username || process.env.BOT_NAME || 'Unknown';
 
     // Initialize logger from options or config
     if (options?.logger) {
@@ -231,9 +252,18 @@ export abstract class GOAPRole implements Role {
 
       // PHASE 3: ACT
       let actionExecuted = false;
+      const actionBefore = this.executor?.getCurrentAction()?.name ?? null;
       if (this.executor && this.executor.isExecuting() && this.currentWorldState) {
         await this.executor.tick(this.currentWorldState);
         actionExecuted = true;
+      }
+      const actionAfter = this.executor?.getCurrentAction()?.name ?? null;
+
+      // Track action completion for history
+      if (actionBefore && actionBefore !== actionAfter) {
+        // Action changed - previous action completed
+        const hadFailures = this.executor?.hadRecentFailures() ?? false;
+        this.recordActionCompletion(actionBefore, !hadFailures);
       }
 
       // PHASE 4: MONITOR
@@ -253,9 +283,98 @@ export abstract class GOAPRole implements Role {
           this.blackboard.consecutiveIdleTicks++;
         }
       }
+
+      // PHASE 6: STATE EMISSION
+      this.stateEmitCounter++;
+      if (this.stateEmitCounter >= GOAPRole.STATE_EMIT_INTERVAL) {
+        this.stateEmitCounter = 0;
+        this.emitState();
+      }
     } catch (error) {
       this.log?.error({ err: error }, 'Error in tick');
     }
+  }
+
+  /**
+   * Record an action completion for history tracking.
+   */
+  private recordActionCompletion(actionName: string, success: boolean): void {
+    // Check if the last entry is the same action (update failure count)
+    const lastEntry = this.actionHistory[0];
+    if (lastEntry && lastEntry.action === actionName && !success && !lastEntry.success) {
+      lastEntry.failureCount = (lastEntry.failureCount || 1) + 1;
+      lastEntry.timestamp = Date.now();
+      return;
+    }
+
+    // Add new entry
+    this.actionHistory.unshift({
+      action: actionName,
+      timestamp: Date.now(),
+      success,
+      failureCount: success ? undefined : 1,
+    });
+
+    // Trim to max size
+    if (this.actionHistory.length > GOAPRole.MAX_ACTION_HISTORY) {
+      this.actionHistory.pop();
+    }
+  }
+
+  /**
+   * Emit current bot state to stdout for the TUI manager.
+   */
+  private emitState(): void {
+    if (!this.arbiter || !this.executor || !this.currentWorldState) return;
+
+    const currentGoal = this.arbiter.getCurrentGoal();
+    const currentAction = this.executor.getCurrentAction();
+    const stats = this.executor.getStats();
+
+    // Build goal utilities list
+    const goalUtilities = this.getGoals().map(goal => {
+      const isValid = goal.isValid ? goal.isValid(this.currentWorldState!) : true;
+      const utility = isValid ? goal.getUtility(this.currentWorldState!) : 0;
+      return {
+        name: goal.name,
+        utility,
+        isCurrent: goal === currentGoal,
+        isInvalid: !isValid,
+        isZero: utility <= 0,
+      };
+    });
+
+    // Sort by utility descending
+    goalUtilities.sort((a, b) => b.utility - a.utility);
+
+    // Get action progress info from executor status
+    let actionProgress: { current: number; total: number } | null = null;
+    const status = this.executor.getStatus();
+    const progressMatch = status.match(/\((\d+)\/(\d+)\)/);
+    if (progressMatch) {
+      actionProgress = {
+        current: parseInt(progressMatch[1]!, 10),
+        total: parseInt(progressMatch[2]!, 10),
+      };
+    }
+
+    const stateMessage = {
+      type: 'bot_state',
+      botName: this.botName,
+      timestamp: Date.now(),
+      currentGoal: currentGoal?.name ?? null,
+      currentGoalUtility: this.arbiter.getCurrentUtility(),
+      currentAction: currentAction?.name ?? null,
+      actionProgress,
+      planProgress: this.executor.getProgress(),
+      goalUtilities,
+      actionHistory: this.actionHistory,
+      stats,
+      goalsOnCooldown: Array.from(this.failedGoalCooldowns.keys()),
+    };
+
+    // Write to stdout as JSON (will be parsed by manager)
+    console.log(JSON.stringify(stateMessage));
   }
 
   /**

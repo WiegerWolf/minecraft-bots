@@ -2,17 +2,15 @@ import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Box, useInput, useApp, useStdout } from 'ink';
 import { Header } from './components/Header';
 import { BotList } from './components/BotList';
-import { LogPanel } from './components/LogPanel';
+import { StatePanel } from './components/StatePanel';
 import { RoleSelector } from './components/RoleSelector';
 import { useBotManager } from './hooks/useBotManager';
 import { useLogBuffer } from './hooks/useLogBuffer';
 import { useFileWatcher } from './hooks/useFileWatcher';
 import { useRestartTrigger } from './hooks/useRestartTrigger';
 import { useMemoryProfiler } from './hooks/useMemoryProfiler';
-import type { BotConfig, LogEntry, LogLevelName } from './types';
-import { DEFAULT_BOT_CONFIGS, BOT_SPAWN_DELAY, LOG_LEVELS } from './types';
-
-const LOG_LEVEL_ORDER: LogLevelName[] = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR'];
+import type { BotConfig, LogEntry } from './types';
+import { DEFAULT_BOT_CONFIGS, BOT_SPAWN_DELAY } from './types';
 
 interface AppProps {
   sessionId: string;
@@ -31,14 +29,10 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
   const contentHeight = Math.max(5, terminalHeight - 2);
 
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [filterBotName, setFilterBotName] = useState<string | null>(null);
-  const [logLevelIndex, setLogLevelIndex] = useState(2); // Default to INFO
   const [inputMode, setInputMode] = useState<InputMode>('normal');
   const [addBotIndex, setAddBotIndex] = useState(0);
 
-  const logLevelName = LOG_LEVEL_ORDER[logLevelIndex]!;
-  const minLogLevel = LOG_LEVELS[logLevelName];
-
+  // Keep log buffer for file logging and internal events
   const [logs, logActions] = useLogBuffer();
 
   const handleLog = useCallback((entry: LogEntry) => {
@@ -209,21 +203,6 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
       });
     }
 
-    // Log actions
-    else if (input === 'c') {
-      logActions.clear();
-    } else if (input === 'f') {
-      if (filterBotName) {
-        setFilterBotName(null);
-      } else {
-        const bot = bots[selectedIndex];
-        if (bot && bot.name) setFilterBotName(bot.name);
-      }
-    } else if (input === 'l') {
-      // Cycle through log levels
-      setLogLevelIndex(i => (i + 1) % LOG_LEVEL_ORDER.length);
-    }
-
     // Quit
     else if (input === 'q') {
       botActions.stopAll().then(() => {
@@ -266,7 +245,7 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
 
       <Box height={effectiveContentHeight}>
         <BotList bots={bots} selectedIndex={selectedIndex} />
-        <LogPanel logs={logs} filterBotName={filterBotName} minLevel={minLogLevel} levelName={logLevelName} height={effectiveContentHeight} />
+        <StatePanel bots={bots} selectedIndex={selectedIndex} height={effectiveContentHeight} />
       </Box>
 
       {inputMode === 'add-bot' && (

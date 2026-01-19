@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { Subprocess } from 'bun';
-import type { ManagedBot, BotConfig, LogEntry } from '../types';
+import type { ManagedBot, BotConfig, LogEntry, BotState } from '../types';
 import { DEFAULT_BOT_CONFIGS, MAX_BACKOFF, INITIAL_BACKOFF, BOT_SPAWN_DELAY } from '../types';
 import { generateBotName, spawnBot } from '../botProcess';
 
@@ -32,6 +32,7 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
       process: null,
       name: '',
       reconnectAttempts: 0,
+      state: null,
     }))
   );
 
@@ -76,6 +77,9 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
       botName,
       onLog,
       getNextLogId,
+      onState: (state: BotState) => {
+        updateBot(botId, { state });
+      },
       onSpawnSuccess: () => {
         reconnectAttemptsRef.current.set(botId, 0);
         updateBot(botId, { status: 'running', reconnectAttempts: 0 });
@@ -144,7 +148,7 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
     }
 
     reconnectAttemptsRef.current.set(botId, 0);
-    updateBot(botId, { status: 'stopped', process: null, reconnectAttempts: 0 });
+    updateBot(botId, { status: 'stopped', process: null, reconnectAttempts: 0, state: null });
   }, [updateBot]);
 
   // Restart a specific bot
@@ -180,6 +184,7 @@ export function useBotManager(options: UseBotManagerOptions): [ManagedBot[], Bot
       process: null,
       name: '',
       reconnectAttempts: 0,
+      state: null,
     }]);
     return id;
   }, []);

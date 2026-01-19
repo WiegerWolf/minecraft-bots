@@ -108,15 +108,17 @@ The bot manager (`src/manager/`) provides an interactive terminal interface for 
 +----------------------------------------------------------+
 |  Minecraft Bot Manager [session-id]     hotReload:off quit|
 +------------------+---------------------------------------+
-|  BOTS            |  LOGS                    level:INFO   |
-|  ┌ Farmer (2)    |  10:22:15 INFO [Farmer] Goal selected |
-|  │ > Emma   [R]  |  10:22:16 DEBUG [Lmbr] Chopping tree  |
-|  │   Oscar  [S]  |  10:22:17 WARN [Land] No pickaxe...   |
-|  ┌ Lmbr (1)      |                                       |
-|  │   Carl   [R]  |                                       |
-|  ──────────────  |                                       |
-|  s x r a d R     |                        l f c          |
-+------------------+---------------------------------------+
+|  BOTS            |  BOT STATE                            |
+|  ┌ Farmer (2)    |  ╭─ Emma_Farmer [running] ──────────╮ |
+|  │ > Emma   [R]  |  │ Goal: HarvestCrops (75.5)        │ |
+|  │   Oscar  [S]  |  │ Action: HarvestCrops [3/5] 60%   │ |
+|  ┌ Lmbr (1)      |  │ Stats: 42/45 ok, 3 fail, 2 replan│ |
+|  │   Carl   [R]  |  │ Recent: ✓ PlantSeeds             │ |
+|  ──────────────  |  │         ✓ CollectDrops           │ |
+|  s x r a d R     |  │ Goals: HarvestCrops: 75.5 ←      │ |
++------------------+  │        PlantSeeds: 45.0          │ |
+                      ╰──────────────────────────────────╯ |
++----------------------------------------------------------+
 ```
 
 ### Keyboard Shortcuts
@@ -130,9 +132,6 @@ The bot manager (`src/manager/`) provides an interactive terminal interface for 
 | `R` | Restart all bots | Bot panel |
 | `a` | Add new bot (session-only) | Bot panel |
 | `d` | Delete selected bot | Bot panel |
-| `l` | Cycle log level (TRACE→DEBUG→INFO→WARN→ERROR) | Log panel |
-| `f` | Toggle log filter (all / selected bot) | Log panel |
-| `c` | Clear logs | Log panel |
 | `h` | Toggle hot-reload | Header |
 | `q` | Quit (stops all bots first) | Header |
 
@@ -145,13 +144,25 @@ The bot manager (`src/manager/`) provides an interactive terminal interface for 
 | `[C]` | Crashed (will auto-restart with backoff) |
 | `[.]` | Starting or Restarting (yellow, animated) |
 
+### State Panel
+
+The state panel shows real-time bot state instead of logs:
+- **Current Goal**: The active goal and its utility score
+- **Current Action**: What the bot is doing right now, with plan progress
+- **Stats**: Success rate and replan count
+- **Recent Actions**: Last few actions with success/failure status
+- **Goal Utilities**: All goals ranked by utility (current goal marked with ←)
+- **Cooldowns**: Goals that recently failed and are on cooldown
+
+Logs are still written to `logs/SESSION_ID/` for analysis. Use the `/logs` skill to analyze them.
+
 ### Design Decisions
 
 - **Session-only bot changes**: Added/deleted bots are lost when you quit. Keeps config simple.
 - **Grouped by role**: Bots are grouped under their role (Farmer, Lmbr, etc.) with count displayed.
 - **Contextual shortcuts**: Shortcuts appear near their relevant UI sections.
 - **Auto-start on add**: New bots start immediately after being added.
-- **Log level filtering**: View-only filter, doesn't affect file logging.
+- **State over logs**: The TUI shows live bot state for debugging, logs go to files for detailed analysis.
 
 ## Quick Reference
 
