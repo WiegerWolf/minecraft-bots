@@ -24,6 +24,7 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
   const { exit } = useApp();
   const { stdout } = useStdout();
   const terminalWidth = stdout?.columns || 80;
+  const terminalHeight = stdout?.rows || 24;
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>('overview');
@@ -243,7 +244,7 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
   const selectedBot = bots[selectedIndex];
 
   return (
-    <Box flexDirection="column" flexGrow={1}>
+    <Box flexDirection="column" height={terminalHeight}>
       {viewMode === 'overview' ? (
         <OverviewScreen
           bots={bots}

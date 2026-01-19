@@ -70,4 +70,41 @@ export class GOAPFarmingRole extends GOAPRole {
     this.log?.info('Stopping GOAP farming bot');
     super.stop(bot);
   }
+
+  protected override getWorldview() {
+    const bb = this.blackboard as FarmingBlackboard;
+    if (!bb) return null;
+
+    const formatPos = (v: { x: number; y: number; z: number } | null) =>
+      v ? `${Math.floor(v.x)},${Math.floor(v.y)},${Math.floor(v.z)}` : '-';
+
+    return {
+      nearby: [
+        { label: 'water', value: bb.nearbyWater.length },
+        { label: 'farmland', value: bb.nearbyFarmland.length },
+        { label: 'crops', value: bb.nearbyMatureCrops.length, color: bb.nearbyMatureCrops.length > 0 ? 'green' : undefined },
+        { label: 'grass', value: bb.nearbyGrass.length },
+        { label: 'drops', value: bb.nearbyDrops.length, color: bb.nearbyDrops.length > 0 ? 'yellow' : undefined },
+        { label: 'chests', value: bb.nearbyChests.length },
+      ],
+      inventory: [
+        { label: 'hoe', value: bb.hasHoe ? 'yes' : 'no', color: bb.hasHoe ? 'green' : 'red' },
+        { label: 'seeds', value: bb.seedCount },
+        { label: 'produce', value: bb.produceCount },
+        { label: 'slots', value: bb.emptySlots, color: bb.emptySlots < 5 ? 'yellow' : undefined },
+      ],
+      positions: [
+        { label: 'farm', value: formatPos(bb.farmCenter) },
+        { label: 'village', value: formatPos(bb.villageCenter) },
+        { label: 'chest', value: formatPos(bb.sharedChest) },
+      ],
+      flags: [
+        { label: 'canPlant', value: bb.canPlant, color: bb.canPlant ? 'green' : 'gray' },
+        { label: 'canHarvest', value: bb.canHarvest, color: bb.canHarvest ? 'green' : 'gray' },
+        { label: 'needsTools', value: bb.needsTools, color: bb.needsTools ? 'yellow' : 'gray' },
+        { label: 'needsSeeds', value: bb.needsSeeds, color: bb.needsSeeds ? 'yellow' : 'gray' },
+        { label: 'invFull', value: bb.inventoryFull, color: bb.inventoryFull ? 'red' : 'gray' },
+      ],
+    };
+  }
 }

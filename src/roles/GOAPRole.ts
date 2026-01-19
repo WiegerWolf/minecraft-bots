@@ -94,7 +94,7 @@ export abstract class GOAPRole implements Role {
   private stateEmitCounter: number = 0;
   private lastAction: string | null = null;
   private botName: string = '';
-  private static readonly STATE_EMIT_INTERVAL = 5; // Emit every 5 ticks (500ms)
+  private static readonly STATE_EMIT_INTERVAL = 1; // Emit every tick (100ms) for realtime updates
   private static readonly MAX_ACTION_HISTORY = 10;
 
   // Preemption threshold: a new goal must have this much MORE utility (absolute)
@@ -106,6 +106,19 @@ export abstract class GOAPRole implements Role {
   // Actions and goals to use (set by subclass)
   protected abstract getActions(): GOAPAction[];
   protected abstract getGoals(): Goal[];
+
+  /**
+   * Extract worldview data from blackboard for TUI display.
+   * Override in subclasses to provide role-specific worldview.
+   */
+  protected getWorldview(): {
+    nearby: { label: string; value: string | number | boolean; color?: string }[];
+    inventory: { label: string; value: string | number | boolean; color?: string }[];
+    positions: { label: string; value: string | number | boolean; color?: string }[];
+    flags: { label: string; value: string | number | boolean; color?: string }[];
+  } | null {
+    return null;
+  }
 
   constructor(config?: GOAPRoleConfig) {
     this.config = {
@@ -370,6 +383,15 @@ export abstract class GOAPRole implements Role {
       };
     }
 
+    // Build inventory list with held item marked
+    const heldItemSlot = this.bot?.quickBarSlot ?? -1;
+    const inventory = this.bot?.inventory.items().map(item => ({
+      name: item.name,
+      count: item.count,
+      slot: item.slot,
+      isHeld: item.slot === heldItemSlot + 36, // Hotbar slots are 36-44
+    })) ?? [];
+
     const stateMessage = {
       type: 'bot_state',
       botName: this.botName,
@@ -383,6 +405,8 @@ export abstract class GOAPRole implements Role {
       actionHistory: this.actionHistory,
       stats,
       goalsOnCooldown: Array.from(this.failedGoalCooldowns.keys()),
+      inventory,
+      worldview: this.getWorldview(),
     };
 
     // Write to stdout as JSON (will be parsed by manager)

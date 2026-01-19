@@ -89,6 +89,31 @@ export interface ActionHistoryEntry {
   failureCount?: number;
 }
 
+export interface InventoryItem {
+  name: string;
+  count: number;
+  slot: number;
+  isHeld: boolean;
+}
+
+// Worldview data for displaying bot perception/state
+export interface WorldviewEntry {
+  label: string;
+  value: string | number | boolean;
+  color?: 'green' | 'red' | 'yellow' | 'cyan' | 'gray';
+}
+
+export interface Worldview {
+  // Nearby perception (e.g., water: 3, crops: 5)
+  nearby: WorldviewEntry[];
+  // Inventory summary (e.g., seeds: 54, hasHoe: true)
+  inventory: WorldviewEntry[];
+  // Strategic positions (e.g., farmCenter, villageCenter)
+  positions: WorldviewEntry[];
+  // Status flags (e.g., canPlant, needsTools)
+  flags: WorldviewEntry[];
+}
+
 export interface BotStateMessage {
   type: 'bot_state';
   botName: string;
@@ -107,6 +132,8 @@ export interface BotStateMessage {
     replansRequested: number;
   };
   goalsOnCooldown: string[];
+  inventory: InventoryItem[];
+  worldview?: Worldview;
 }
 
 export interface BotState {
@@ -125,4 +152,6 @@ export interface BotState {
     replansRequested: number;
   };
   goalsOnCooldown: string[];
+  inventory: InventoryItem[];
+  worldview?: Worldview;
 }

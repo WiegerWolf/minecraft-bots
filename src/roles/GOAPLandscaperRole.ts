@@ -85,4 +85,45 @@ export class GOAPLandscaperRole extends GOAPRole {
     this.log?.info('Stopping GOAP landscaper bot');
     super.stop(bot);
   }
+
+  protected override getWorldview() {
+    const bb = this.blackboard as LandscaperBlackboard;
+    if (!bb) return null;
+
+    const formatPos = (v: { x: number; y: number; z: number } | null) =>
+      v ? `${Math.floor(v.x)},${Math.floor(v.y)},${Math.floor(v.z)}` : '-';
+
+    // Show terraform progress if active
+    const tfPhase = bb.currentTerraformTask?.phase ?? '-';
+    const tfProgress = bb.currentTerraformTask?.progress ?? 0;
+
+    return {
+      nearby: [
+        { label: 'drops', value: bb.nearbyDrops.length, color: bb.nearbyDrops.length > 0 ? 'yellow' : undefined },
+        { label: 'chests', value: bb.nearbyChests.length },
+        { label: 'tables', value: bb.nearbyCraftingTables.length },
+        { label: 'farms', value: bb.knownFarms.length },
+        { label: 'issues', value: bb.farmsWithIssues.length, color: bb.farmsWithIssues.length > 0 ? 'yellow' : undefined },
+      ],
+      inventory: [
+        { label: 'shovel', value: bb.hasShovel ? 'yes' : 'no', color: bb.hasShovel ? 'green' : 'red' },
+        { label: 'pick', value: bb.hasPickaxe ? 'yes' : 'no', color: bb.hasPickaxe ? 'green' : 'gray' },
+        { label: 'dirt', value: bb.dirtCount },
+        { label: 'cobble', value: bb.cobblestoneCount },
+        { label: 'slots', value: bb.emptySlots, color: bb.emptySlots < 5 ? 'yellow' : undefined },
+      ],
+      positions: [
+        { label: 'village', value: formatPos(bb.villageCenter) },
+        { label: 'chest', value: formatPos(bb.sharedChest) },
+        { label: 'terraform', value: formatPos(bb.currentTerraformTask?.waterCenter ?? null) },
+      ],
+      flags: [
+        { label: 'canTF', value: bb.canTerraform, color: bb.canTerraform ? 'green' : 'gray' },
+        { label: 'hasTFReq', value: bb.hasPendingTerraformRequest, color: bb.hasPendingTerraformRequest ? 'cyan' : 'gray' },
+        { label: 'needsTools', value: bb.needsTools, color: bb.needsTools ? 'yellow' : 'gray' },
+        { label: 'tfPhase', value: tfPhase },
+        { label: 'tfProg', value: `${tfProgress}%` },
+      ],
+    };
+  }
 }

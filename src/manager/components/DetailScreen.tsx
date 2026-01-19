@@ -1,24 +1,12 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { ManagedBot, GoalUtility, ActionHistoryEntry } from '../types';
+import type { ManagedBot, GoalUtility, ActionHistoryEntry, InventoryItem, WorldviewEntry, Worldview } from '../types';
 import { getBotColor } from '../types';
 import { StatusIndicator } from './StatusIndicator';
 
 interface DetailScreenProps {
   bot: ManagedBot;
   sessionId: string;
-}
-
-function ProgressBar({ progress, width = 20 }: { progress: number; width?: number }) {
-  const filled = Math.round((progress / 100) * width);
-  const empty = width - filled;
-  return (
-    <Text>
-      <Text color="green">{'█'.repeat(filled)}</Text>
-      <Text dimColor>{'░'.repeat(empty)}</Text>
-      <Text> {progress.toFixed(0)}%</Text>
-    </Text>
-  );
 }
 
 function ActionHistoryItem({ entry }: { entry: ActionHistoryEntry }) {
@@ -37,25 +25,94 @@ function ActionHistoryItem({ entry }: { entry: ActionHistoryEntry }) {
   );
 }
 
-function GoalItem({ goal }: { goal: GoalUtility }) {
-  let color: string = 'white';
-  let suffix = '';
+function GoalItem({ goal, isOnCooldown }: { goal: GoalUtility; isOnCooldown?: boolean }) {
+  const isCurrent = goal.isCurrent;
+  const isDimmed = goal.isInvalid || goal.isZero;
 
-  if (goal.isCurrent) {
+  // Marker: ► for current (like equipped item), ❄ for cooldown, space otherwise
+  let marker = '  ';
+  let markerColor: string | undefined;
+  if (isCurrent) {
+    marker = '► ';
+    markerColor = 'yellow';
+  } else if (isOnCooldown) {
+    marker = '❄ ';
+    markerColor = 'cyan';
+  }
+
+  // Color: yellow for current, cyan for cooldown, dim for invalid/zero
+  let color: string = 'white';
+  if (isCurrent) {
+    color = 'yellow';
+  } else if (isOnCooldown) {
     color = 'cyan';
-    suffix = ' ← CURRENT';
-  } else if (goal.isInvalid) {
+  } else if (isDimmed) {
     color = 'gray';
-    suffix = ' [INVALID]';
-  } else if (goal.isZero) {
-    color = 'gray';
-    suffix = ' [ZERO]';
   }
 
   return (
     <Box>
-      <Text color={color}>  {goal.name.padEnd(20)} {goal.utility.toFixed(1).padStart(6)}</Text>
-      <Text color="yellow">{suffix}</Text>
+      <Text color={markerColor}>{marker}</Text>
+      <Text color={color}>{goal.name.padEnd(20)} {goal.utility.toFixed(1).padStart(6)}</Text>
+    </Box>
+  );
+}
+
+function InventoryItemRow({ item }: { item: InventoryItem }) {
+  return (
+    <Box>
+      {item.isHeld ? (
+        <Text color="yellow">► </Text>
+      ) : (
+        <Text>  </Text>
+      )}
+      <Text color={item.isHeld ? 'yellow' : 'white'}>{item.name}</Text>
+      <Text dimColor> x{item.count}</Text>
+    </Box>
+  );
+}
+
+function WorldviewRow({ entries, compact = false }: { entries: WorldviewEntry[]; compact?: boolean }) {
+  return (
+    <Box flexWrap="wrap">
+      {entries.map((entry, i) => {
+        const valueStr = typeof entry.value === 'boolean'
+          ? (entry.value ? 'Y' : 'N')
+          : String(entry.value);
+        const color = entry.color as string | undefined;
+        return (
+          <Box key={i} marginRight={compact ? 1 : 2}>
+            <Text dimColor>{entry.label}:</Text>
+            <Text color={color}>{valueStr}</Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+function WorldviewSection({ worldview }: { worldview: Worldview }) {
+  return (
+    <Box flexDirection="column">
+      <Text bold underline>Worldview</Text>
+      <Box marginTop={1} flexDirection="column">
+        <Box>
+          <Text dimColor>Nearby  </Text>
+          <WorldviewRow entries={worldview.nearby} compact />
+        </Box>
+        <Box>
+          <Text dimColor>Inv     </Text>
+          <WorldviewRow entries={worldview.inventory} compact />
+        </Box>
+        <Box>
+          <Text dimColor>Pos     </Text>
+          <WorldviewRow entries={worldview.positions} compact />
+        </Box>
+        <Box>
+          <Text dimColor>Flags   </Text>
+          <WorldviewRow entries={worldview.flags} compact />
+        </Box>
+      </Box>
     </Box>
   );
 }
@@ -90,25 +147,28 @@ export function DetailScreen({ bot, sessionId }: DetailScreenProps) {
 
       {/* Content */}
       <Box flexDirection="row" flexGrow={1} paddingX={1} marginTop={1}>
-        {/* Left Column: Current State */}
+        {/* Left Column: Goals & Actions */}
         <Box flexDirection="column" width="50%" paddingRight={2}>
-          <Text bold underline>Current State</Text>
-
+          {/* Goal Utilities */}
+          <Text bold underline>Goals</Text>
           <Box marginTop={1} flexDirection="column">
-            <Box>
-              <Text bold>Goal: </Text>
-              {state?.currentGoal ? (
-                <>
-                  <Text color="green">{state.currentGoal}</Text>
-                  <Text dimColor> (utility: {state.currentGoalUtility.toFixed(1)})</Text>
-                </>
-              ) : (
-                <Text dimColor italic>idle</Text>
-              )}
-            </Box>
+            {state?.goalUtilities ? (
+              state.goalUtilities.map((goal, i) => (
+                <GoalItem
+                  key={i}
+                  goal={goal}
+                  isOnCooldown={state.goalsOnCooldown.includes(goal.name)}
+                />
+              ))
+            ) : (
+              <Text dimColor italic>No goal data</Text>
+            )}
+          </Box>
 
-            <Box>
-              <Text bold>Action: </Text>
+          {/* Current Action */}
+          <Box marginTop={2} flexDirection="column">
+            <Text bold underline>Action</Text>
+            <Box marginTop={1}>
               {state?.currentAction ? (
                 <>
                   <Text color="cyan">{state.currentAction}</Text>
@@ -117,83 +177,48 @@ export function DetailScreen({ bot, sessionId }: DetailScreenProps) {
                   )}
                 </>
               ) : (
-                <Text dimColor italic>none</Text>
+                <Text dimColor italic>idle</Text>
               )}
             </Box>
-
-            <Box marginTop={1}>
-              <Text bold>Plan Progress: </Text>
-              {state ? (
-                <ProgressBar progress={state.planProgress} width={20} />
-              ) : (
-                <Text dimColor>-</Text>
-              )}
-            </Box>
-          </Box>
-
-          {/* Stats */}
-          <Box marginTop={2} flexDirection="column">
-            <Text bold underline>Statistics</Text>
-            {state ? (
-              <Box marginTop={1} flexDirection="column">
-                <Text>
-                  Actions executed: <Text color="white">{state.stats.actionsExecuted}</Text>
-                </Text>
-                <Text>
-                  Actions succeeded: <Text color="green">{state.stats.actionsSucceeded}</Text>
-                </Text>
-                <Text>
-                  Actions failed: <Text color={state.stats.actionsFailed > 0 ? 'red' : 'gray'}>{state.stats.actionsFailed}</Text>
-                </Text>
-                <Text>
-                  Replans requested: <Text color={state.stats.replansRequested > 0 ? 'yellow' : 'gray'}>{state.stats.replansRequested}</Text>
-                </Text>
-                {state.stats.actionsExecuted > 0 && (
-                  <Text dimColor>
-                    Success rate: {((state.stats.actionsSucceeded / state.stats.actionsExecuted) * 100).toFixed(1)}%
-                  </Text>
-                )}
-              </Box>
-            ) : (
-              <Text dimColor italic>No statistics available</Text>
-            )}
-          </Box>
-
-          {/* Cooldowns */}
-          {state && state.goalsOnCooldown.length > 0 && (
-            <Box marginTop={2} flexDirection="column">
-              <Text bold underline>Goals on Cooldown</Text>
-              <Box marginTop={1}>
-                <Text color="yellow">{state.goalsOnCooldown.join(', ')}</Text>
-              </Box>
-            </Box>
-          )}
-        </Box>
-
-        {/* Right Column: Goals & History */}
-        <Box flexDirection="column" width="50%">
-          {/* Goal Utilities */}
-          <Text bold underline>Goal Utilities</Text>
-          <Box marginTop={1} flexDirection="column">
-            {state?.goalUtilities ? (
-              state.goalUtilities.map((goal, i) => (
-                <GoalItem key={i} goal={goal} />
-              ))
-            ) : (
-              <Text dimColor italic>No goal data available</Text>
-            )}
           </Box>
 
           {/* Action History */}
           <Box marginTop={2} flexDirection="column">
-            <Text bold underline>Recent Actions</Text>
+            <Text bold underline>History</Text>
             <Box marginTop={1} flexDirection="column">
               {state?.actionHistory && state.actionHistory.length > 0 ? (
-                state.actionHistory.slice(0, 10).map((entry, i) => (
+                state.actionHistory.slice(0, 8).map((entry, i) => (
                   <ActionHistoryItem key={i} entry={entry} />
                 ))
               ) : (
-                <Text dimColor italic>No action history</Text>
+                <Text dimColor italic>No history</Text>
+              )}
+            </Box>
+          </Box>
+        </Box>
+
+        {/* Right Column: Worldview & Inventory */}
+        <Box flexDirection="column" width="50%">
+          {/* Worldview */}
+          {state?.worldview ? (
+            <WorldviewSection worldview={state.worldview} />
+          ) : (
+            <>
+              <Text bold underline>Worldview</Text>
+              <Text dimColor italic>No worldview data</Text>
+            </>
+          )}
+
+          {/* Inventory */}
+          <Box marginTop={2} flexDirection="column">
+            <Text bold underline>Inventory</Text>
+            <Box marginTop={1} flexDirection="column">
+              {state?.inventory && state.inventory.length > 0 ? (
+                state.inventory.map((item, i) => (
+                  <InventoryItemRow key={i} item={item} />
+                ))
+              ) : (
+                <Text dimColor italic>Empty</Text>
               )}
             </Box>
           </Box>

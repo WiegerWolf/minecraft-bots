@@ -107,6 +107,8 @@ function parseStateMessage(line: string): BotState | null {
       actionHistory: data.actionHistory,
       stats: data.stats,
       goalsOnCooldown: data.goalsOnCooldown,
+      inventory: data.inventory || [],
+      worldview: data.worldview,
     };
   } catch {
     return null;

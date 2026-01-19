@@ -74,4 +74,41 @@ export class GOAPLumberjackRole extends GOAPRole {
     this.log?.info('Stopping GOAP lumberjack bot');
     super.stop(bot);
   }
+
+  protected override getWorldview() {
+    const bb = this.blackboard as LumberjackBlackboard;
+    if (!bb) return null;
+
+    const formatPos = (v: { x: number; y: number; z: number } | null) =>
+      v ? `${Math.floor(v.x)},${Math.floor(v.y)},${Math.floor(v.z)}` : '-';
+
+    return {
+      nearby: [
+        { label: 'trees', value: bb.nearbyTrees.length, color: bb.nearbyTrees.length > 0 ? 'green' : undefined },
+        { label: 'forest', value: bb.forestTrees.length },
+        { label: 'logs', value: bb.nearbyLogs.length },
+        { label: 'drops', value: bb.nearbyDrops.length, color: bb.nearbyDrops.length > 0 ? 'yellow' : undefined },
+        { label: 'chests', value: bb.nearbyChests.length },
+        { label: 'tables', value: bb.nearbyCraftingTables.length },
+      ],
+      inventory: [
+        { label: 'axe', value: bb.hasAxe ? 'yes' : 'no', color: bb.hasAxe ? 'green' : 'red' },
+        { label: 'logs', value: bb.logCount },
+        { label: 'planks', value: bb.plankCount },
+        { label: 'saplings', value: bb.saplingCount },
+        { label: 'slots', value: bb.emptySlots, color: bb.emptySlots < 5 ? 'yellow' : undefined },
+      ],
+      positions: [
+        { label: 'village', value: formatPos(bb.villageCenter) },
+        { label: 'chest', value: formatPos(bb.sharedChest) },
+        { label: 'table', value: formatPos(bb.sharedCraftingTable) },
+      ],
+      flags: [
+        { label: 'canChop', value: bb.canChop, color: bb.canChop ? 'green' : 'gray' },
+        { label: 'needsDeposit', value: bb.needsToDeposit, color: bb.needsToDeposit ? 'yellow' : 'gray' },
+        { label: 'hasRequests', value: bb.hasPendingRequests, color: bb.hasPendingRequests ? 'cyan' : 'gray' },
+        { label: 'invFull', value: bb.inventoryFull, color: bb.inventoryFull ? 'red' : 'gray' },
+      ],
+    };
+  }
 }
