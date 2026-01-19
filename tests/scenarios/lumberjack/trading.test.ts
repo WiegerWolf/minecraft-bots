@@ -90,6 +90,7 @@ describe('Lumberjack Trading', () => {
     test('SPEC: Can trade when truly idle', () => {
       const ws = lumberjackReadyToChopState();
       ws.set('nearby.reachableTrees', 0);
+      ws.set('nearby.forestTrees', 0);  // No forest trees either
       ws.set('inv.logs', 0);
       ws.set('inv.planks', 10);
       ws.set('state.consecutiveIdleTicks', 5);

@@ -171,6 +171,10 @@ export class DepositLogsGoal extends BaseGoal {
 /**
  * Goal: Chop down trees to gather wood.
  * Core lumberjack activity.
+ *
+ * IMPORTANT: Only chops trees that are part of actual forests,
+ * NOT isolated logs that might be part of village houses.
+ * Uses nearby.forestTrees instead of nearby.reachableTrees.
  */
 export class ChopTreeGoal extends BaseGoal {
   name = 'ChopTree';
@@ -185,18 +189,20 @@ export class ChopTreeGoal extends BaseGoal {
   ];
 
   getUtility(ws: WorldState): number {
-    // Use reachableTrees to only consider trees we can actually get to
-    const treeCount = ws.getNumber('nearby.reachableTrees');
+    // SAFETY: Only use forestTrees - trees verified to be in actual forests
+    // This prevents dismantling villager houses!
+    const forestTreeCount = ws.getNumber('nearby.forestTrees');
     const inventoryFull = ws.getBool('state.inventoryFull');
     const logCount = ws.getNumber('inv.logs');
 
     // Goal is satisfied when we have 16+ logs - no need to chop more
     if (logCount >= 16) return 0;
 
-    if (inventoryFull || treeCount === 0) return 0;
+    // No forest trees = cannot chop (even if reachableTrees > 0)
+    if (inventoryFull || forestTreeCount === 0) return 0;
 
-    // Scale with available trees, but reduce if already have lots of logs
-    const baseUtility = Math.min(70, 50 + treeCount * 2);
+    // Scale with available forest trees, but reduce if already have lots of logs
+    const baseUtility = Math.min(70, 50 + forestTreeCount * 2);
     const logPenalty = Math.min(20, logCount / 4);
     return Math.max(0, baseUtility - logPenalty);
   }
@@ -595,6 +601,75 @@ export class WithdrawSuppliesGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Find a forest area to work in.
+ * HIGH PRIORITY when bot doesn't know about any forest yet.
+ *
+ * A forest is an area with 3+ trees clustered together.
+ * Once found, the bot will mark it with a FOREST sign so future
+ * lumberjacks can go there directly without searching.
+ */
+export class FindForestGoal extends BaseGoal {
+  name = 'FindForest';
+  description = 'Find a forest area with multiple trees';
+
+  conditions = [
+    booleanGoalCondition('has.knownForest', true, 'knows about a forest'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const hasKnownForest = ws.getBool('has.knownForest');
+    if (hasKnownForest) return 0;
+
+    const hasStudiedSigns = ws.getBool('has.studiedSigns');
+    // Wait for sign study first - might learn about forest from signs
+    if (!hasStudiedSigns) return 0;
+
+    const hasAxe = ws.getBool('has.axe');
+
+    // Higher priority if we have an axe and are ready to work
+    if (hasAxe) return 75;
+
+    // Medium priority without axe - still need to find forest eventually
+    return 55;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const hasKnownForest = ws.getBool('has.knownForest');
+    const hasStudiedSigns = ws.getBool('has.studiedSigns');
+    return !hasKnownForest && hasStudiedSigns;
+  }
+}
+
+/**
+ * Goal: Write a FOREST sign near spawn after discovering a forest.
+ * HIGH PRIORITY - helps future lumberjacks find the forest immediately.
+ *
+ * This ensures knowledge persists across bot respawns and helps new
+ * lumberjacks skip the forest-finding phase entirely.
+ */
+export class WriteForestSignGoal extends BaseGoal {
+  name = 'WriteForestSign';
+  description = 'Write a FOREST sign near spawn';
+
+  conditions = [
+    booleanGoalCondition('pending.forestSignWrite', false, 'no pending forest sign'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const pendingWrite = ws.getBool('pending.forestSignWrite');
+    if (!pendingWrite) return 0;
+
+    // High priority - this helps future lumberjacks
+    // Should be higher than ChopTree (50-70) to prioritize knowledge sharing
+    return 80;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    return ws.getBool('pending.forestSignWrite');
+  }
+}
+
+/**
  * Goal: Read unknown signs spotted while exploring.
  * CURIOUS BOT behavior - when the bot sees a sign it hasn't read,
  * it will go investigate and potentially learn something useful.
@@ -634,11 +709,13 @@ export function createLumberjackGoals(): BaseGoal[] {
     new WithdrawSuppliesGoal(),   // Very high priority when no tools
     new CollectDropsGoal(),
     new RespondToTradeOfferGoal(),// Respond to trade offers
+    new WriteForestSignGoal(),    // High priority - helps future lumberjacks
     new FulfillRequestsGoal(),
+    new FindForestGoal(),         // High priority when no known forest
     new CompleteTreeHarvestGoal(),
     new ObtainAxeGoal(),
     new DepositLogsGoal(),
-    new ChopTreeGoal(),
+    new ChopTreeGoal(),           // Only chops trees in forests (not houses!)
     new PlantSaplingsGoal(),
     new WriteKnowledgeSignGoal(),
     new CraftInfrastructureGoal(),

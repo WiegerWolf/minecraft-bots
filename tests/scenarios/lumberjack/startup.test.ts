@@ -79,10 +79,11 @@ describe('Lumberjack Startup', () => {
     result = arbiter.selectGoal(ws);
     expect(result?.goal.name).toBe('WithdrawSupplies');
 
-    // Step 3: Normal work
+    // Step 3: Normal work - need to either find forest or get axe
     ws.set('has.checkedStorage', true);
     ws.set('has.axe', false);
     result = arbiter.selectGoal(ws);
-    expect(['ObtainAxe', 'PatrolForest'].includes(result?.goal.name ?? '')).toBe(true);
+    // FindForest is also valid - bot needs to find a forest before chopping
+    expect(['ObtainAxe', 'PatrolForest', 'FindForest'].includes(result?.goal.name ?? '')).toBe(true);
   });
 });

@@ -24,7 +24,8 @@ export interface PendingSignWrite {
 
 export interface LumberjackBlackboard {
     // Perception data (refreshed each tick)
-    nearbyTrees: Block[];       // Log blocks that could be tree bases
+    nearbyTrees: Block[];       // Log blocks that could be tree bases (reachable)
+    forestTrees: Block[];       // Trees in actual forests (safe to chop - not buildings!)
     nearbyLogs: Block[];        // All log blocks
     nearbyLeaves: Block[];      // Leaf blocks
     nearbyDrops: any[];         // Dropped items
@@ -48,6 +49,8 @@ export interface LumberjackBlackboard {
     // Multiple chests support
     knownChests: Vec3[];                   // All known chest positions (from signs, chat, discovery)
     knownForests: Vec3[];                  // Known good forest/tree areas (from signs)
+    hasKnownForest: boolean;               // Whether bot knows about a valid forest
+    pendingForestSignWrite: boolean;       // Whether bot needs to write FOREST sign
 
     // Village communication (set by role)
     villageChat: VillageChat | null;
@@ -103,6 +106,7 @@ export interface LumberjackBlackboard {
 export function createLumberjackBlackboard(): LumberjackBlackboard {
     return {
         nearbyTrees: [],
+        forestTrees: [],
         nearbyLogs: [],
         nearbyLeaves: [],
         nearbyDrops: [],
@@ -124,6 +128,8 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         // Multiple chests/landmarks
         knownChests: [],
         knownForests: [],
+        hasKnownForest: false,
+        pendingForestSignWrite: false,
 
         villageChat: null,
         log: null,
@@ -276,6 +282,27 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     // Debug logging for tree detection
     if (bb.nearbyLogs.length > 0 && bb.nearbyTrees.length === 0) {
         bb.log?.debug({ logCount: bb.nearbyLogs.length, botY: Math.floor(pos.y) }, 'Found logs but 0 reachable trees');
+    }
+
+    // ═══════════════════════════════════════════════
+    // FOREST DETECTION & STRUCTURE AVOIDANCE
+    // Only chop trees that are part of actual forests (3+ trees in cluster)
+    // Avoid logs near structures (village houses, etc.)
+    // ═══════════════════════════════════════════════
+    bb.forestTrees = filterForestTrees(bot, bb.nearbyTrees, bb.knownForests, bb.log);
+
+    // Update hasKnownForest based on whether we have knownForests or detected a forest cluster
+    bb.hasKnownForest = bb.knownForests.length > 0 || bb.forestTrees.length >= 3;
+
+    // If we discovered a new forest cluster and don't have a pending sign write, queue one
+    if (bb.forestTrees.length >= 5 && bb.knownForests.length === 0 && !bb.pendingForestSignWrite && bb.hasStudiedSigns) {
+        bb.pendingForestSignWrite = true;
+        // Store the forest center for sign writing
+        const forestCenter = getClusterCenter(bb.forestTrees.map(t => t.position));
+        if (forestCenter && !bb.knownForests.some(f => f.distanceTo(forestCenter) < 30)) {
+            bb.knownForests.push(forestCenter);
+            bb.log?.info({ pos: forestCenter.floored().toString(), treeCount: bb.forestTrees.length }, 'Discovered forest area!');
+        }
     }
 
     // Find leaves (for clearing)
@@ -437,4 +464,166 @@ export function getExplorationScore(bb: LumberjackBlackboard, pos: Vec3): number
     }
 
     return score;
+}
+
+// ═══════════════════════════════════════════════
+// FOREST DETECTION HELPERS
+// ═══════════════════════════════════════════════
+
+// Blocks that indicate a man-made structure (not a natural tree)
+const STRUCTURE_BLOCKS = [
+    // Wood building components
+    'oak_stairs', 'birch_stairs', 'spruce_stairs', 'jungle_stairs', 'acacia_stairs', 'dark_oak_stairs',
+    'oak_slab', 'birch_slab', 'spruce_slab', 'jungle_slab', 'acacia_slab', 'dark_oak_slab',
+    'oak_fence', 'birch_fence', 'spruce_fence', 'jungle_fence', 'acacia_fence', 'dark_oak_fence',
+    'oak_fence_gate', 'birch_fence_gate', 'spruce_fence_gate', 'jungle_fence_gate',
+    'oak_door', 'birch_door', 'spruce_door', 'jungle_door', 'acacia_door', 'dark_oak_door',
+    'oak_trapdoor', 'birch_trapdoor', 'spruce_trapdoor', 'jungle_trapdoor',
+    // Planks (floor/walls)
+    'oak_planks', 'birch_planks', 'spruce_planks', 'jungle_planks', 'acacia_planks', 'dark_oak_planks',
+    // Stone building components
+    'cobblestone', 'cobblestone_stairs', 'cobblestone_slab', 'cobblestone_wall',
+    'stone_bricks', 'stone_brick_stairs', 'stone_brick_slab', 'stone_brick_wall',
+    'smooth_stone', 'smooth_stone_slab',
+    // Other structure indicators
+    'glass', 'glass_pane', 'torch', 'wall_torch', 'lantern', 'bell',
+    'bed', 'white_bed', 'red_bed', 'blue_bed', 'green_bed', 'yellow_bed',
+    'crafting_table', 'furnace', 'blast_furnace', 'smoker', 'barrel', 'chest',
+    'lectern', 'composter', 'brewing_stand', 'cauldron', 'anvil',
+    'flower_pot', 'bookshelf', 'carpet',
+];
+
+// Minimum trees in cluster to be considered a forest
+const MIN_FOREST_CLUSTER_SIZE = 3;
+// Maximum distance between trees to be in same cluster
+const FOREST_CLUSTER_RADIUS = 16;
+// Search radius for structure blocks
+const STRUCTURE_CHECK_RADIUS = 4;
+
+/**
+ * Filter trees to only include those that are part of actual forests.
+ * Excludes:
+ * 1. Isolated trees (not part of a 3+ tree cluster)
+ * 2. Trees near structure blocks (likely part of a building)
+ * 3. Trees not near known forest centers (if any)
+ */
+function filterForestTrees(
+    bot: Bot,
+    reachableTrees: Block[],
+    knownForests: Vec3[],
+    log: Logger | null
+): Block[] {
+    if (reachableTrees.length === 0) return [];
+
+    // Step 1: Filter out trees near structures
+    const naturalTrees = reachableTrees.filter(tree => {
+        if (isNearStructure(bot, tree.position)) {
+            log?.debug({ pos: tree.position.floored().toString() }, 'Skipping tree near structure');
+            return false;
+        }
+        return true;
+    });
+
+    if (naturalTrees.length === 0) return [];
+
+    // Step 2: If we have known forests, prioritize trees near them
+    if (knownForests.length > 0) {
+        const treesNearKnownForest = naturalTrees.filter(tree =>
+            knownForests.some(forest => tree.position.distanceTo(forest) <= 50)
+        );
+        if (treesNearKnownForest.length > 0) {
+            return treesNearKnownForest;
+        }
+    }
+
+    // Step 3: Cluster detection - find trees that are part of groups of 3+
+    const clusters = clusterTrees(naturalTrees);
+    const forestClusters = clusters.filter(c => c.length >= MIN_FOREST_CLUSTER_SIZE);
+
+    if (forestClusters.length === 0) {
+        log?.debug({ treeCount: naturalTrees.length }, 'No forest clusters found (need 3+ trees within 16 blocks)');
+        return [];
+    }
+
+    // Return all trees from valid forest clusters
+    return forestClusters.flat();
+}
+
+/**
+ * Check if a position is near structure blocks (indicating a building).
+ */
+function isNearStructure(bot: Bot, pos: Vec3): boolean {
+    // Check blocks in a radius around the tree
+    for (let dx = -STRUCTURE_CHECK_RADIUS; dx <= STRUCTURE_CHECK_RADIUS; dx++) {
+        for (let dy = -2; dy <= 3; dy++) { // Check from 2 below to 3 above
+            for (let dz = -STRUCTURE_CHECK_RADIUS; dz <= STRUCTURE_CHECK_RADIUS; dz++) {
+                const checkPos = pos.offset(dx, dy, dz);
+                const block = bot.blockAt(checkPos);
+                if (block && STRUCTURE_BLOCKS.includes(block.name)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Cluster trees by proximity.
+ * Trees within FOREST_CLUSTER_RADIUS of each other are in the same cluster.
+ */
+function clusterTrees(trees: Block[]): Block[][] {
+    if (trees.length === 0) return [];
+
+    const visited = new Set<number>();
+    const clusters: Block[][] = [];
+
+    for (let i = 0; i < trees.length; i++) {
+        if (visited.has(i)) continue;
+
+        // Start a new cluster
+        const cluster: Block[] = [];
+        const queue = [i];
+
+        while (queue.length > 0) {
+            const idx = queue.shift()!;
+            if (visited.has(idx)) continue;
+            visited.add(idx);
+
+            const tree = trees[idx]!;
+            cluster.push(tree);
+
+            // Find all unvisited trees within radius
+            for (let j = 0; j < trees.length; j++) {
+                if (visited.has(j)) continue;
+                if (trees[j]!.position.distanceTo(tree.position) <= FOREST_CLUSTER_RADIUS) {
+                    queue.push(j);
+                }
+            }
+        }
+
+        clusters.push(cluster);
+    }
+
+    return clusters;
+}
+
+/**
+ * Get the center point of a cluster of positions.
+ */
+function getClusterCenter(positions: Vec3[]): Vec3 | null {
+    if (positions.length === 0) return null;
+
+    let sumX = 0, sumY = 0, sumZ = 0;
+    for (const pos of positions) {
+        sumX += pos.x;
+        sumY += pos.y;
+        sumZ += pos.z;
+    }
+
+    return new Vec3(
+        Math.floor(sumX / positions.length),
+        Math.floor(sumY / positions.length),
+        Math.floor(sumZ / positions.length)
+    );
 }

@@ -227,6 +227,8 @@ export class WorldStateBuilder {
     // Reachable trees = trees at or below bot level (already filtered in blackboard)
     // This distinguishes from trees we can see but are standing on top of
     ws.set('nearby.reachableTrees', bb.nearbyTrees.length);
+    // Forest trees = trees verified to be in actual forests (not buildings!)
+    ws.set('nearby.forestTrees', bb.forestTrees.length);
     ws.set('nearby.logs', bb.nearbyLogs.length);
     ws.set('nearby.leaves', bb.nearbyLeaves.length);
 
@@ -259,6 +261,10 @@ export class WorldStateBuilder {
     ws.set('nearby.unknownSigns', bb.unknownSigns.length);
     ws.set('known.chests', bb.knownChests.length);
     ws.set('known.forests', bb.knownForests.length);
+
+    // Forest safety - only chop in known forests
+    ws.set('has.knownForest', bb.hasKnownForest);
+    ws.set('pending.forestSignWrite', bb.pendingForestSignWrite);
   }
 
   /**

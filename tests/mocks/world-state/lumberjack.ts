@@ -16,6 +16,7 @@ export function freshSpawnLumberjackState(): WorldState {
     'has.sign': false,
 
     'nearby.reachableTrees': 0,
+    'nearby.forestTrees': 0,      // Trees in actual forests (not structures)
     'nearby.drops': 0,
     'nearby.chests': 0,
     'nearby.craftingTables': 0,
@@ -32,6 +33,9 @@ export function freshSpawnLumberjackState(): WorldState {
     'has.pendingRequests': false,
     'has.studiedSigns': false,
     'has.checkedStorage': false,
+    'has.knownForest': false,         // Knows about a forest location
+
+    'pending.forestSignWrite': false, // Needs to write FOREST sign
 
     'tree.active': false,
     'tree.phase': '',
@@ -51,7 +55,9 @@ export function lumberjackReadyToChopState(): WorldState {
   const ws = freshSpawnLumberjackState();
   ws.set('has.axe', true);
   ws.set('nearby.reachableTrees', 5);
+  ws.set('nearby.forestTrees', 5);    // Trees in actual forest
   ws.set('has.studiedSigns', true);
+  ws.set('has.knownForest', true);    // Knows about forest
   return ws;
 }
 

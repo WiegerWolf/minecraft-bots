@@ -9,6 +9,8 @@ export { ProcessWood } from './ProcessWood';
 export { PatrolForest, WaitForVillage } from './PatrolForest';
 export { PlantSaplings } from './PlantSaplings';
 export { WriteKnowledgeSign } from './WriteKnowledgeSign';
+export { WriteForestSign } from './WriteForestSign';
+export { FindForest } from './FindForest';
 export { StudySpawnSigns } from './StudySpawnSigns';
 export { WithdrawSupplies } from './WithdrawSupplies';
 export { ReadUnknownSign } from './ReadUnknownSign';

@@ -156,6 +156,8 @@ export class StudySpawnSigns implements BehaviorNode {
                     if (!forestExists) {
                         bb.knownForests.push(entry.pos);
                     }
+                    // Mark that we know about a forest - no need to search!
+                    bb.hasKnownForest = true;
                     break;
 
                 // Other landmarks noted but not acted on yet

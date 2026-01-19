@@ -32,15 +32,15 @@ describe('Lumberjack Core Work', () => {
       expect(result?.goal.name).toBe('ChopTree');
     });
 
-    test('SPEC: More trees = higher utility', () => {
+    test('SPEC: More forest trees = higher utility', () => {
       const chopGoal = goals.find((g) => g.name === 'ChopTree')!;
 
       const ws1 = lumberjackReadyToChopState();
-      ws1.set('nearby.reachableTrees', 2);
+      ws1.set('nearby.forestTrees', 2);
       ws1.set('inv.logs', 0);
 
       const ws2 = lumberjackReadyToChopState();
-      ws2.set('nearby.reachableTrees', 10);
+      ws2.set('nearby.forestTrees', 10);
       ws2.set('inv.logs', 0);
 
       expect(chopGoal.getUtility(ws2)).toBeGreaterThan(chopGoal.getUtility(ws1));
@@ -54,9 +54,9 @@ describe('Lumberjack Core Work', () => {
       expect(chopGoal.getUtility(ws)).toBe(0);
     });
 
-    test('SPEC: No trees = cannot chop', () => {
+    test('SPEC: No forest trees = cannot chop', () => {
       const ws = lumberjackReadyToChopState();
-      ws.set('nearby.reachableTrees', 0);
+      ws.set('nearby.forestTrees', 0);
 
       const chopGoal = goals.find((g) => g.name === 'ChopTree')!;
       expect(chopGoal.getUtility(ws)).toBe(0);
