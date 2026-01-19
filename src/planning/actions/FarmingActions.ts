@@ -414,6 +414,67 @@ export class ReadUnknownSignAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Get materials needed for sign crafting
+ *
+ * This action withdraws planks and sticks from the shared chest specifically
+ * for crafting signs. It enables the planner to chain:
+ * GetSignMaterials → WriteKnowledgeSign
+ *
+ * This is separate from CheckSharedChest (which is for tools) because:
+ * - Sign writing has CRITICAL priority for FARM signs
+ * - We need to get materials even if we already have a hoe
+ */
+export class GetSignMaterialsAction extends BaseGOAPAction {
+  name = 'GetSignMaterials';
+  private impl = new CheckSharedChest(); // Reuse existing chest logic
+
+  preconditions = [
+    numericPrecondition('pending.signWrites', v => v > 0, 'has pending sign writes'),
+    booleanPrecondition('has.sign', false, 'does not have sign'),
+    booleanPrecondition('derived.canCraftSign', false, 'cannot craft sign yet'),
+    booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
+  ];
+
+  effects = [
+    // After getting materials, we should be able to craft
+    incrementEffect('inv.planks', 6, 'withdrew planks for sign'),
+    incrementEffect('inv.sticks', 2, 'withdrew sticks for sign'),
+    setEffect('derived.canCraftSign', true, 'can now craft sign'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Low cost - getting materials is quick if chest has them
+    return 2.0;
+  }
+
+  override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
+    // Request sign materials from lumberjack if needed
+    if (bb.villageChat) {
+      const plankCount = bot.inventory.items()
+        .filter(i => i.name.endsWith('_planks'))
+        .reduce((sum, i) => sum + i.count, 0);
+      const stickCount = bot.inventory.items()
+        .filter(i => i.name === 'stick')
+        .reduce((sum, i) => sum + i.count, 0);
+
+      if (plankCount < 6) {
+        bb.log?.info('Requesting planks for sign from lumberjack');
+        bb.villageChat.requestResource('oak_planks', 6);
+      }
+      if (stickCount < 1) {
+        bb.log?.info('Requesting sticks for sign from lumberjack');
+        bb.villageChat.requestResource('stick', 2);
+      }
+    }
+
+    // Use CheckSharedChest to withdraw materials
+    const result = await this.impl.tick(bot, bb);
+    if (result === 'running') return ActionResult.RUNNING; // Waiting for materials
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * GOAP Action: Write knowledge signs at spawn
  * Writes FARM/WATER signs to share discoveries with other bots.
  */
@@ -593,6 +654,7 @@ export function createFarmingActions(): BaseGOAPAction[] {
     new RequestMaterialsAction(),
     new CraftHoeAction(),
     new FindFarmCenterAction(),
+    new GetSignMaterialsAction(),    // Get materials for sign crafting
     new WriteKnowledgeSignAction(),  // Write farm/water signs
     new ReadUnknownSignAction(),  // Curious bot - read unknown signs
     new ExploreAction(),

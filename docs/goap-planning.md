@@ -621,7 +621,20 @@ class WriteKnowledgeSignAction extends BaseGOAPAction {
 }
 ```
 
-**Why this works for chaining**: `ProcessWood` has effect `incrementEffect('inv.planks', 8)`. When the bot has 0 planks, the planner simulates:
+**Why this works for chaining**: When the bot needs to write a FARM sign but has no materials:
+
+For farmers, `GetSignMaterialsAction` enables the chain:
+1. Check `GetSignMaterials` preconditions → `pending.signWrites > 0` and no sign materials
+2. Apply `GetSignMaterials` → state has `inv.planks = 6, inv.sticks = 2, canCraftSign = true`
+3. Check `WriteKnowledgeSign` preconditions → passes (can craft)
+4. Plan: `[GetSignMaterials, WriteKnowledgeSign]`
+
+For lumberjacks, `ProcessWood` enables the chain:
 1. Apply `ProcessWood` → state has `inv.planks = 8`
 2. Check `WriteKnowledgeSign` preconditions → `8 >= 6` passes
 3. Plan: `[ProcessWood, WriteKnowledgeSign]`
+
+**FARM Sign Priority**: FARM signs have utility 200-250 (highest non-trade priority) because:
+- Landscapers cannot terraform without knowing farm locations
+- A farmer death without a FARM sign loses the farm location permanently
+- The sign should be written BEFORE gathering seeds, crafting hoe, or any farming work

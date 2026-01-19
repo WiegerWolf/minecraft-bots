@@ -195,9 +195,10 @@ Press Enter on a bot to see full details:
 | Sign types | VILLAGE, CRAFT, CHEST, FOREST, MINE, FARM, WATER | Infrastructure + landmarks |
 | WriteKnowledgeSign utility (FARM) | 200-250 | Critical priority - landscapers need farm location to terraform |
 | WriteKnowledgeSign utility (other) | 85-120 | High priority for other sign types |
+| GetSignMaterials action | Chains with WriteKnowledgeSign | Gets planks/sticks from chest when sign materials needed |
 | StudySpawnSigns utility | 200 | High priority on spawn, before other work (both bots) |
 | ReadUnknownSign utility | 45-60 | Low priority curiosity behavior (both bots) |
-| Sign crafting materials | 6 planks + 1 stick | ProcessWood can chain to satisfy this |
+| Sign crafting materials | 6 planks + 1 stick | GetSignMaterials can chain to satisfy this |
 | Lumberjack tree search | 50/32 blocks | With/without village center (must match blackboard) |
 | Full chest memory | 5 minutes | Time before retrying a full chest |
 | Trade offer threshold | 4+ items | Minimum unwanted items before offering trade |
