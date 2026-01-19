@@ -1,5 +1,7 @@
 # Minecraft Bots
 
+![Minecraft Base Timelapse](media/minecraft-timelapse.gif)
+
 Autonomous Minecraft bots built with mineflayer and Bun. Features GOAP (Goal-Oriented Action Planning) for intelligent decision-making and multi-bot coordination.
 
 ## Quick Start
