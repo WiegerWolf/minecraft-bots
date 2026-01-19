@@ -506,9 +506,18 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
             case 'traveling': {
                 // Travel to meeting point
                 if (!trade.meetingPoint) {
-                    bb.log?.warn(`[${this.config.roleLabel}] No meeting point for trade`);
-                    bb.villageChat.cancelTrade();
-                    return 'failure';
+                    // Receiver is waiting for [TRADE_AT] message from giver - this is normal
+                    // The giver sends [TRADE_ACCEPT] then [TRADE_AT], so there's a brief window
+                    // where the receiver is in 'accepted' status without a meeting point yet
+                    const elapsed = Date.now() - trade.offerTimestamp;
+                    if (elapsed > TRADE_TIMEOUT) {
+                        bb.log?.warn(`[${this.config.roleLabel}] Timed out waiting for meeting point`);
+                        bb.villageChat.cancelTrade();
+                        return 'failure';
+                    }
+                    bb.lastAction = 'trade_waiting_for_meetingpoint';
+                    bb.log?.debug(`[${this.config.roleLabel}] Waiting for meeting point from trade partner...`);
+                    return 'running';
                 }
 
                 const dist = bot.entity.position.distanceTo(trade.meetingPoint);
