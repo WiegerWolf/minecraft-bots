@@ -258,11 +258,20 @@ export abstract class BaseRespondToNeed<TBlackboard extends RespondToNeedBlackbo
     }
 
     /**
-     * Check if this category is in our provide list.
+     * Check if we can help with this need category.
+     * Uses recipe service to check if our materials could be used to craft the needed item.
+     *
+     * Example: If we provide ['log', 'planks', 'stick'] and need is 'hoe',
+     * returns true because planks + sticks are used to craft wooden_hoe.
      */
     private canProvideForCategory(category: string): boolean {
-        return this.config.canProvideCategories.some(
-            c => c === category || category.includes(c) || c.includes(category)
+        // Direct category match
+        if (this.config.canProvideCategories.includes(category)) return true;
+
+        // Check if our materials can help craft items in this category
+        return this.recipeService.canMaterialsHelpWith(
+            category,
+            this.config.canProvideCategories
         );
     }
 

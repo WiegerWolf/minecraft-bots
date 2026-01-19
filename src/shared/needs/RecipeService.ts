@@ -7,7 +7,7 @@
 
 import minecraftData from 'minecraft-data';
 import type { ItemStack, MaterialPath, SatisfactionResult, NeedOffer } from './types.js';
-import { getItemsInCategory, inventoryHasCategory } from './ItemCategoryMap.js';
+import { getItemsInCategory, inventoryHasCategory, getCategoryForItem } from './ItemCategoryMap.js';
 
 interface MinecraftDataInstance {
     items: Record<number, { id: number; name: string }>;
@@ -520,5 +520,52 @@ export class RecipeService {
      */
     clearCache(): void {
         this.recipeCache.clear();
+    }
+
+    /**
+     * Check if any item from provideCategories could help satisfy a needCategory.
+     * This allows responders to know if their materials are useful for the need
+     * even if they don't have the final item.
+     *
+     * Example: canMaterialsHelpWith('hoe', ['log', 'planks', 'stick']) => true
+     * because planks + sticks are used to craft wooden_hoe
+     *
+     * @param needCategory - The category being requested (e.g., 'hoe')
+     * @param provideCategories - Categories the responder can provide (e.g., ['log', 'planks', 'stick'])
+     * @returns true if any provide material appears in any recipe path for the need
+     */
+    canMaterialsHelpWith(needCategory: string, provideCategories: string[]): boolean {
+        // Direct category match
+        if (provideCategories.includes(needCategory)) return true;
+
+        // Get all items in the need category
+        const targetItems = getItemsInCategory(needCategory);
+
+        // Get all items we can provide
+        const provideItems = new Set<string>();
+        for (const cat of provideCategories) {
+            for (const item of getItemsInCategory(cat)) {
+                provideItems.add(item);
+            }
+        }
+
+        // Check if any of our items appear in recipe paths for target items
+        for (const targetItem of targetItems) {
+            const paths = this.getMaterialPaths(targetItem);
+            for (const path of paths) {
+                if (path.craftingSteps === 0) continue; // Skip "item itself"
+                for (const ingredient of path.items) {
+                    // Check both exact name and category membership
+                    if (provideItems.has(ingredient.name)) return true;
+                    // Also check if ingredient is in a provide category
+                    const ingredientCategory = getCategoryForItem(ingredient.name);
+                    if (ingredientCategory && provideCategories.includes(ingredientCategory)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 }
