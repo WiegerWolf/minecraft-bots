@@ -5,5 +5,5 @@
 export * from './Vec3Mock';
 export * from './BotMock';
 export * from './BlackboardMock';
-export * from './WorldStateMock';
+export * from './world-state';
 export * from './ActionMock';
