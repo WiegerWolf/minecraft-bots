@@ -307,6 +307,206 @@ export function mockProcessWoodAction(result = ActionResult.SUCCESS): GOAPAction
   });
 }
 
+/**
+ * Mock FinishTreeHarvest action.
+ */
+export function mockFinishTreeHarvestAction(result = ActionResult.SUCCESS): GOAPAction {
+  return createMockAction({
+    name: 'FinishTreeHarvest',
+    preconditions: [booleanPrecondition('tree.active', true, 'tree harvest in progress')],
+    effects: [setEffect('tree.active', false, 'tree harvest complete')],
+    cost: 2.0,
+    executeResult: result,
+  });
+}
+
+/**
+ * Mock PlantSaplings action.
+ */
+export function mockPlantSaplingsAction(result = ActionResult.SUCCESS): GOAPAction {
+  return createMockAction({
+    name: 'PlantSaplings',
+    preconditions: [
+      numericPrecondition('inv.saplings', (v) => v > 0, 'has saplings'),
+      booleanPrecondition('tree.active', false, 'not actively harvesting'),
+    ],
+    effects: [incrementEffect('inv.saplings', -1, 'planted sapling')],
+    cost: 1.5,
+    executeResult: result,
+  });
+}
+
+/**
+ * Mock WithdrawSupplies action.
+ */
+export function mockWithdrawSuppliesAction(result = ActionResult.SUCCESS): GOAPAction {
+  return createMockAction({
+    name: 'WithdrawSupplies',
+    preconditions: [
+      booleanPrecondition('has.checkedStorage', false, 'has not checked storage'),
+      booleanPrecondition('derived.hasStorageAccess', true, 'has storage access'),
+    ],
+    effects: [
+      setEffect('has.checkedStorage', true, 'checked storage'),
+      setEffect('has.axe', true, 'may have found axe'),
+    ],
+    cost: 1.5,
+    executeResult: result,
+  });
+}
+
+/**
+ * Mock FulfillRequests action.
+ */
+export function mockFulfillRequestsAction(result = ActionResult.SUCCESS): GOAPAction {
+  return createMockAction({
+    name: 'FulfillRequests',
+    preconditions: [
+      booleanPrecondition('has.pendingRequests', true, 'pending requests exist'),
+      booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
+      numericPrecondition('inv.logs', (v) => v >= 2, 'has logs to provide'),
+    ],
+    effects: [setEffect('has.pendingRequests', false, 'requests fulfilled')],
+    cost: 2.0,
+    executeResult: result,
+  });
+}
+
+/**
+ * Mock CraftAndPlaceCraftingTable action.
+ */
+export function mockCraftCraftingTableAction(result = ActionResult.SUCCESS): GOAPAction {
+  return createMockAction({
+    name: 'CraftAndPlaceCraftingTable',
+    preconditions: [
+      booleanPrecondition('derived.needsCraftingTable', true, 'needs crafting table'),
+      numericPrecondition('inv.planks', (v) => v >= 4, 'has planks'),
+    ],
+    effects: [
+      setEffect('derived.needsCraftingTable', false, 'has crafting table now'),
+      setEffect('has.craftingTable', true, 'crafting table available'),
+      incrementEffect('inv.planks', -4, 'used planks'),
+    ],
+    cost: 2.5,
+    executeResult: result,
+  });
+}
+
+/**
+ * Mock CraftChest action.
+ */
+export function mockCraftChestAction(result = ActionResult.SUCCESS): GOAPAction {
+  return createMockAction({
+    name: 'CraftChest',
+    preconditions: [
+      booleanPrecondition('derived.needsChest', true, 'needs chest'),
+      numericPrecondition('inv.planks', (v) => v >= 8, 'has planks for chest'),
+    ],
+    effects: [
+      setEffect('derived.needsChest', false, 'has chest now'),
+      setEffect('derived.hasStorageAccess', true, 'has storage access'),
+      incrementEffect('inv.planks', -8, 'used planks'),
+    ],
+    cost: 3.0,
+    executeResult: result,
+  });
+}
+
+/**
+ * Mock WriteKnowledgeSign action.
+ */
+export function mockWriteKnowledgeSignAction(result = ActionResult.SUCCESS): GOAPAction {
+  return createMockAction({
+    name: 'WriteKnowledgeSign',
+    preconditions: [numericPrecondition('pending.signWrites', (v) => v > 0, 'has pending sign writes')],
+    effects: [incrementEffect('pending.signWrites', -1, 'wrote sign')],
+    cost: 4.0,
+    executeResult: result,
+  });
+}
+
+/**
+ * Mock PatrolForest action.
+ */
+export function mockPatrolForestAction(result = ActionResult.SUCCESS): GOAPAction {
+  return createMockAction({
+    name: 'PatrolForest',
+    preconditions: [],
+    effects: [
+      setEffect('nearby.reachableTrees', 1, 'may find trees'),
+      setEffect('state.consecutiveIdleTicks', 0, 'explored'),
+    ],
+    cost: 10.0,
+    executeResult: result,
+  });
+}
+
+/**
+ * Mock BroadcastTradeOffer action.
+ */
+export function mockBroadcastTradeOfferAction(result = ActionResult.SUCCESS): GOAPAction {
+  return createMockAction({
+    name: 'BroadcastTradeOffer',
+    preconditions: [
+      numericPrecondition('trade.tradeableCount', (v) => v >= 4, 'has tradeable items'),
+      booleanPrecondition('trade.inTrade', false, 'not in trade'),
+      booleanPrecondition('trade.onCooldown', false, 'not on cooldown'),
+    ],
+    effects: [setEffect('trade.status', 'accepted', 'trade accepted')],
+    cost: 1.0,
+    executeResult: result,
+  });
+}
+
+/**
+ * Mock RespondToTradeOffer action.
+ */
+export function mockRespondToTradeOfferAction(result = ActionResult.SUCCESS): GOAPAction {
+  return createMockAction({
+    name: 'RespondToTradeOffer',
+    preconditions: [
+      numericPrecondition('trade.pendingOffers', (v) => v > 0, 'has pending offers'),
+      booleanPrecondition('trade.inTrade', false, 'not in trade'),
+    ],
+    effects: [setEffect('trade.status', 'wanting', 'responded to offer')],
+    cost: 0.5,
+    executeResult: result,
+  });
+}
+
+/**
+ * Mock CompleteTrade action.
+ */
+export function mockCompleteTradeAction(result = ActionResult.SUCCESS): GOAPAction {
+  return createMockAction({
+    name: 'CompleteTrade',
+    preconditions: [
+      // Custom check would handle multiple active statuses
+      // For mock, we'll use a simpler approach
+      booleanPrecondition('trade.inTrade', true, 'has active trade'),
+    ],
+    effects: [
+      setEffect('trade.status', 'done', 'trade completed'),
+      setEffect('trade.inTrade', false, 'no longer in trade'),
+    ],
+    cost: 0.5,
+    executeResult: result,
+  });
+}
+
+/**
+ * Mock ReadUnknownSign action.
+ */
+export function mockReadUnknownSignAction(result = ActionResult.SUCCESS): GOAPAction {
+  return createMockAction({
+    name: 'ReadUnknownSign',
+    preconditions: [numericPrecondition('nearby.unknownSigns', (v) => v > 0, 'unknown signs nearby')],
+    effects: [incrementEffect('nearby.unknownSigns', -1, 'read a sign')],
+    cost: 2.0,
+    executeResult: result,
+  });
+}
+
 // ============================================================================
 // Landscaper mock actions
 // ============================================================================
@@ -395,12 +595,33 @@ export function createFarmingActionSet(): GOAPAction[] {
 
 export function createLumberjackActionSet(): GOAPAction[] {
   return [
+    // Trade actions (high priority when applicable)
+    mockCompleteTradeAction(),
+    mockRespondToTradeOfferAction(),
+    mockBroadcastTradeOfferAction(),
+
+    // Startup actions
+    mockStudySpawnSignsAction(),
+    mockWithdrawSuppliesAction(),
+
+    // Core lumberjack actions
     mockPickupItemsAction(),
     mockChopTreeAction(),
-    mockCraftAxeAction(),
+    mockFinishTreeHarvestAction(),
+    mockPlantSaplingsAction(),
     mockDepositLogsAction(),
+    mockCraftAxeAction(),
+    mockFulfillRequestsAction(),
     mockProcessWoodAction(),
-    mockStudySpawnSignsAction(),
+
+    // Infrastructure actions
+    mockCraftCraftingTableAction(),
+    mockCraftChestAction(),
+    mockWriteKnowledgeSignAction(),
+    mockReadUnknownSignAction(),
+
+    // Fallback
+    mockPatrolForestAction(),
     mockExploreAction(),
   ];
 }
