@@ -134,6 +134,7 @@ export interface BotStateMessage {
   goalsOnCooldown: string[];
   inventory: InventoryItem[];
   worldview?: Worldview;
+  position?: { x: number; y: number; z: number };
 }
 
 export interface BotState {
@@ -154,4 +155,5 @@ export interface BotState {
   goalsOnCooldown: string[];
   inventory: InventoryItem[];
   worldview?: Worldview;
+  position?: { x: number; y: number; z: number };
 }

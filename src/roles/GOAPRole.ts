@@ -357,13 +357,14 @@ export abstract class GOAPRole implements Role {
     const stats = this.executor.getStats();
 
     // Build goal utilities list
+    const currentGoalName = currentGoal?.name ?? null;
     const goalUtilities = this.getGoals().map(goal => {
       const isValid = goal.isValid ? goal.isValid(this.currentWorldState!) : true;
       const utility = isValid ? goal.getUtility(this.currentWorldState!) : 0;
       return {
         name: goal.name,
         utility,
-        isCurrent: goal === currentGoal,
+        isCurrent: goal.name === currentGoalName,
         isInvalid: !isValid,
         isZero: utility <= 0,
       };
@@ -392,6 +393,10 @@ export abstract class GOAPRole implements Role {
       isHeld: item.slot === heldItemSlot + 36, // Hotbar slots are 36-44
     })) ?? [];
 
+    // Get bot position
+    const pos = this.bot?.entity?.position;
+    const position = pos ? { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) } : undefined;
+
     const stateMessage = {
       type: 'bot_state',
       botName: this.botName,
@@ -407,6 +412,7 @@ export abstract class GOAPRole implements Role {
       goalsOnCooldown: Array.from(this.failedGoalCooldowns.keys()),
       inventory,
       worldview: this.getWorldview(),
+      position,
     };
 
     // Write to stdout as JSON (will be parsed by manager)

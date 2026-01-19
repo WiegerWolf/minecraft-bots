@@ -60,11 +60,11 @@ function BotCard({ bot, selected }: { bot: ManagedBot; selected: boolean }) {
         )}
       </Box>
 
-      {/* Action */}
+      {/* Position */}
       <Box>
-        <Text dimColor>Act: </Text>
-        {state?.currentAction ? (
-          <Text color="cyan">{state.currentAction.slice(0, 19)}</Text>
+        <Text dimColor>Pos: </Text>
+        {state?.position ? (
+          <Text>{state.position.x}, {state.position.y}, {state.position.z}</Text>
         ) : (
           <Text dimColor italic>-</Text>
         )}

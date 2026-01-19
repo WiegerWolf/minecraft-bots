@@ -29,14 +29,14 @@ function GoalItem({ goal, isOnCooldown }: { goal: GoalUtility; isOnCooldown?: bo
   const isCurrent = goal.isCurrent;
   const isDimmed = goal.isInvalid || goal.isZero;
 
-  // Marker: ► for current (like equipped item), ❄ for cooldown, space otherwise
-  let marker = '  ';
-  let markerColor: string | undefined;
+  // Marker: ► for current, * for cooldown, · for others (all single-width)
+  let marker = '·';
+  let markerColor: string = 'gray';
   if (isCurrent) {
-    marker = '► ';
+    marker = '►';
     markerColor = 'yellow';
   } else if (isOnCooldown) {
-    marker = '❄ ';
+    marker = '*';
     markerColor = 'cyan';
   }
 
@@ -52,7 +52,7 @@ function GoalItem({ goal, isOnCooldown }: { goal: GoalUtility; isOnCooldown?: bo
 
   return (
     <Box>
-      <Text color={markerColor}>{marker}</Text>
+      <Text color={markerColor}>{marker} </Text>
       <Text color={color}>{goal.name.padEnd(20)} {goal.utility.toFixed(1).padStart(6)}</Text>
     </Box>
   );
