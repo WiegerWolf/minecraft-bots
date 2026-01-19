@@ -371,13 +371,16 @@ export class FollowLumberjackGoal extends BaseGoal {
   name = 'FollowLumberjack';
   description = 'Stay near lumberjack during exploration phase';
 
+  // Goal is satisfied when close to lumberjack (within 30 blocks)
+  // Note: The utility function returns 0 when village is established,
+  // so the goal won't be selected after that point anyway.
+  // The condition must be achievable by the FollowLumberjackAction.
   conditions = [
-    // Goal satisfied when village exists OR close to lumberjack
-    {
-      key: 'derived.hasVillage',
-      check: (value: any) => value === true,
-      description: 'village center established',
-    },
+    numericGoalCondition('nearby.lumberjackDistance', v => v <= 30, 'near lumberjack', {
+      value: 30,
+      comparison: 'lte',
+      estimatedDelta: -20, // FollowLumberjack moves ~20 blocks closer
+    }),
   ];
 
   getUtility(ws: WorldState): number {

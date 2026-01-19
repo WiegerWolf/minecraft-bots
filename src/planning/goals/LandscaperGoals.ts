@@ -456,10 +456,12 @@ export class ReadUnknownSignGoal extends BaseGoal {
 
 /**
  * Goal: Wait at spawn for terraform requests.
- * The landscaper should idle until called by other bots or until
+ * The landscaper should mostly idle until called by other bots or until
  * materials are available in the shared chest.
  *
- * Returns 0 utility - landscaper just waits rather than exploring.
+ * Returns LOW utility as an absolute fallback - ensures there's always
+ * a valid goal even when no farms are known and no requests pending.
+ * This prevents "No valid goals, idling" spam in logs.
  */
 export class ExploreGoal extends BaseGoal {
   name = 'Explore';
@@ -474,11 +476,22 @@ export class ExploreGoal extends BaseGoal {
   ];
 
   getUtility(ws: WorldState): number {
-    // Landscaper should just wait at spawn - don't explore
-    // It will become active when:
+    // Landscaper should mostly wait at spawn - but return a small utility
+    // as fallback to avoid "No valid goals, idling" when:
+    // - No farms are known (farmer hasn't written FARM signs yet)
+    // - No terraform requests pending
+    // - No maintenance needed
+    //
+    // This ensures there's always a goal to select, preventing idle spam.
+    // The bot will become more active when:
     // 1. FulfillTerraformRequest goal activates (pending request)
     // 2. ObtainTools goal activates (materials in chest)
-    return 0;
+    // 3. CheckKnownFarms activates (after FARM signs are written)
+    const idleTicks = ws.getNumber('state.consecutiveIdleTicks');
+
+    // Very low base utility - any real work beats this
+    // Increases slightly if idle for a while to trigger movement
+    return 5 + Math.min(10, idleTicks / 2);
   }
 
   override isValid(ws: WorldState): boolean {

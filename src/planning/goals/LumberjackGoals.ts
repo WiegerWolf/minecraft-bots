@@ -49,8 +49,12 @@ export class FulfillNeedsGoal extends BaseGoal {
     const canSpare = ws.getBool('can.spareForNeeds');
 
     // VERY high utility if we can spare materials - other bots are waiting!
-    // Lower utility if we have the need but can't spare (might need to gather first)
-    return canSpare ? 120 : 85;
+    // Return 0 if we can't spare - let ChopTree/ProcessWood gather materials first.
+    // This prevents planning failures where the goal is selected but the action
+    // precondition (can.spareForNeeds = true) can't be satisfied.
+    if (!canSpare) return 0;
+
+    return 120;
   }
 }
 

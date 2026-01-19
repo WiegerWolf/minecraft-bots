@@ -1,4 +1,5 @@
 import type { Bot } from 'mineflayer';
+import type { Block } from 'prismarine-block';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
@@ -6,13 +7,31 @@ import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils'
 
 const { GoalNear } = goals;
 
+// Cooldown for unreachable grass - 2 minutes
+const UNREACHABLE_GRASS_COOLDOWN = 2 * 60 * 1000;
+
 export class GatherSeeds implements BehaviorNode {
     name = 'GatherSeeds';
     private lastMaterialRequestTime = 0;
     private MATERIAL_REQUEST_COOLDOWN = 30000; // 30 seconds
 
+    // Track unreachable grass positions (position key -> expiry timestamp)
+    private unreachableGrass: Map<string, number> = new Map();
+
+    private posKey(pos: { x: number; y: number; z: number }): string {
+        return `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
+    }
+
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
         if (!bb.needsSeeds) return 'failure';
+
+        // Clean up expired unreachable entries
+        const now = Date.now();
+        for (const [key, expiry] of this.unreachableGrass) {
+            if (now >= expiry) {
+                this.unreachableGrass.delete(key);
+            }
+        }
 
         // While gathering seeds, also broadcast need for hoe if we need tools
         // Use intent-based system: broadcast 'hoe' so lumberjack can respond with
@@ -23,7 +42,6 @@ export class GatherSeeds implements BehaviorNode {
                 bb.logCount >= 2
             );
             if (!hasEnoughForHoe) {
-                const now = Date.now();
                 if (now - this.lastMaterialRequestTime > this.MATERIAL_REQUEST_COOLDOWN) {
                     if (!bb.villageChat.hasPendingNeedFor('hoe')) {
                         bb.log?.debug('[Farmer] Broadcasting need for hoe');
@@ -34,10 +52,13 @@ export class GatherSeeds implements BehaviorNode {
             }
         }
 
-        // If no grass in blackboard, try to find some directly
-        let grass = bb.nearbyGrass[0];
+        // Get candidate grass blocks from blackboard, filtering out unreachable ones
+        let grassCandidates: Block[] = bb.nearbyGrass.filter(g =>
+            !this.unreachableGrass.has(this.posKey(g.position))
+        );
 
-        if (!grass) {
+        // If no grass from blackboard, try to find some directly
+        if (grassCandidates.length === 0) {
             // Try finding grass with expanded block names for different MC versions
             // Note: seagrass and tall_seagrass are excluded because they don't drop seeds
             const grassNames = [
@@ -46,46 +67,62 @@ export class GatherSeeds implements BehaviorNode {
 
             const grassBlocks = bot.findBlocks({
                 point: bot.entity.position,
-                maxDistance: 64, // Increased range for navigation
-                count: 1,
+                maxDistance: 64,
+                count: 10, // Get multiple candidates
                 matching: b => {
                     if (!b || !b.name) return false;
                     return grassNames.includes(b.name);
                 }
             });
 
-            if (grassBlocks.length > 0) {
-                const pos = grassBlocks[0];
-                if (pos) {
-                    grass = bot.blockAt(pos) ?? undefined;
+            grassCandidates = grassBlocks
+                .filter(p => !this.unreachableGrass.has(this.posKey(p)))
+                .map(p => bot.blockAt(p))
+                .filter((b): b is Block => b !== null);
+        }
+
+        if (grassCandidates.length === 0) {
+            bb.log?.debug(`[BT] No reachable grass found nearby for seeds`);
+            return 'failure';
+        }
+
+        // Try each grass candidate in order (closest first, since findBlocks sorts by distance)
+        for (const grass of grassCandidates) {
+            const dist = bot.entity.position.distanceTo(grass.position);
+            bb.log?.debug(`[BT] Trying to reach ${grass.name} for seeds at ${grass.position.floored()} (dist: ${dist.toFixed(1)})`);
+            bb.lastAction = 'gather_seeds';
+
+            try {
+                // Scale timeout with distance - 10s base + 0.2s per block
+                const timeout = Math.min(20000, 10000 + dist * 200);
+
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(grass.position.x, grass.position.y, grass.position.z, 2),
+                    { timeoutMs: timeout }
+                );
+
+                if (!result.success) {
+                    bb.log?.debug(`[BT] Failed to reach grass at ${grass.position.floored()}: ${result.failureReason}`);
+                    // Mark as unreachable and try next candidate
+                    this.unreachableGrass.set(this.posKey(grass.position), now + UNREACHABLE_GRASS_COOLDOWN);
+                    continue;
                 }
+
+                // Successfully reached, try to dig
+                await bot.dig(grass);
+                await sleep(300);
+                return 'success';
+            } catch (err) {
+                bb.log?.debug(`[BT] Error reaching grass at ${grass.position.floored()}: ${err}`);
+                // Mark as unreachable and try next candidate
+                this.unreachableGrass.set(this.posKey(grass.position), now + UNREACHABLE_GRASS_COOLDOWN);
+                continue;
             }
         }
 
-        if (!grass) {
-            bb.log?.debug(`[BT] No grass found nearby for seeds`);
-            return 'failure';
-        }
-
-        bb.log?.debug(`[BT] Breaking ${grass.name} for seeds at ${grass.position}`);
-        bb.lastAction = 'gather_seeds';
-
-        try {
-            const result = await smartPathfinderGoto(
-                bot,
-                new GoalNear(grass.position.x, grass.position.y, grass.position.z, 2),
-                { timeoutMs: 15000 }
-            );
-            if (!result.success) {
-                bb.log?.debug(`[BT] Failed to reach grass: ${result.failureReason}`);
-                return 'failure';
-            }
-            await bot.dig(grass);
-            await sleep(300);
-            return 'success';
-        } catch (err) {
-            bb.log?.debug(`[BT] Failed to gather seeds: ${err}`);
-            return 'failure';
-        }
+        // All candidates failed
+        bb.log?.debug(`[BT] All ${grassCandidates.length} grass candidates were unreachable`);
+        return 'failure';
     }
 }

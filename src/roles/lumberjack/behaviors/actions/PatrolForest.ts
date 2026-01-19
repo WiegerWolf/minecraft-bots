@@ -55,12 +55,25 @@ export class PatrolForest implements BehaviorNode {
             candidates.push({ pos, score });
         }
 
-        // Sort by score (higher is better)
-        candidates.sort((a, b) => b.score - a.score);
+        // Add distance from bot to each candidate (for timeout scaling)
+        const botPos = bot.entity.position;
+        const candidatesWithDist = candidates.map(c => ({
+            ...c,
+            dist: botPos.xzDistanceTo(c.pos)
+        }));
 
-        // Try the best candidate
-        const target = candidates[0];
-        if (!target || target.score < 20) {
+        // Sort by score (higher is better), but apply a small distance penalty
+        // to avoid always choosing distant targets
+        candidatesWithDist.sort((a, b) => {
+            const aAdjusted = a.score - a.dist * 0.3; // Small distance penalty
+            const bAdjusted = b.score - b.dist * 0.3;
+            return bAdjusted - aAdjusted;
+        });
+
+        // Filter to candidates with decent scores
+        const viableCandidates = candidatesWithDist.filter(c => c.score >= 20);
+
+        if (viableCandidates.length === 0) {
             // All areas well-explored, wait
             bb.consecutiveIdleTicks++;
             if (bb.consecutiveIdleTicks > 10) {
@@ -73,52 +86,61 @@ export class PatrolForest implements BehaviorNode {
 
         bb.consecutiveIdleTicks = 0;
 
-        // Move to target
-        bb.log?.debug(`[Lumberjack] Patrolling to ${target.pos.floored()} (score: ${target.score})`);
+        // Try up to 3 candidates before giving up
+        for (let i = 0; i < Math.min(3, viableCandidates.length); i++) {
+            const target = viableCandidates[i]!;
+            bb.log?.debug(`[Lumberjack] Patrolling to ${target.pos.floored()} (score: ${target.score}, dist: ${target.dist.toFixed(0)})`);
 
-        try {
-            // Find a safe Y level - search from target Y downward to find ground
-            // This handles cases where bot is on tree canopy and needs to get down
-            let targetY = target.pos.y;
-            const searchStart = Math.max(target.pos.y, bot.entity.position.y);
+            try {
+                // Find a safe Y level - search from target Y downward to find ground
+                // This handles cases where bot is on tree canopy and needs to get down
+                let targetY = target.pos.y;
+                const searchStart = Math.max(target.pos.y, botPos.y);
 
-            // Search downward from higher of target/bot position to find walkable ground
-            for (let y = searchStart; y >= searchStart - 20; y--) {
-                const checkPos = new Vec3(target.pos.x, y, target.pos.z);
-                const block = bot.blockAt(checkPos);
-                const above = bot.blockAt(checkPos.offset(0, 1, 0));
-                const below = bot.blockAt(checkPos.offset(0, -1, 0));
+                // Search downward from higher of target/bot position to find walkable ground
+                for (let y = searchStart; y >= searchStart - 20; y--) {
+                    const checkPos = new Vec3(target.pos.x, y, target.pos.z);
+                    const block = bot.blockAt(checkPos);
+                    const above = bot.blockAt(checkPos.offset(0, 1, 0));
+                    const below = bot.blockAt(checkPos.offset(0, -1, 0));
 
-                // Need: solid ground below, air at feet and head level
-                if (below && below.boundingBox === 'block' &&
-                    block && block.name === 'air' &&
-                    above && (above.name === 'air' || above.name.includes('leaves'))) {
-                    targetY = y;
-                    break;
+                    // Need: solid ground below, air at feet and head level
+                    if (below && below.boundingBox === 'block' &&
+                        block && block.name === 'air' &&
+                        above && (above.name === 'air' || above.name.includes('leaves'))) {
+                        targetY = y;
+                        break;
+                    }
                 }
-            }
 
-            const result = await smartPathfinderGoto(
-                bot,
-                new GoalNear(target.pos.x, targetY, target.pos.z, 3),
-                { timeoutMs: 30000 }  // Longer timeout for patrol
-            );
+                // Scale timeout with distance: 10s base + 0.4s per block, max 30s
+                const timeout = Math.min(30000, 10000 + target.dist * 400);
 
-            if (result.success) {
-                recordExploredPosition(bb, bot.entity.position);
-                return 'success';
-            } else {
-                // Path failed, record as explored anyway
-                bb.log?.debug(`[Lumberjack] Patrol path failed: ${result.failureReason}`);
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(target.pos.x, targetY, target.pos.z, 3),
+                    { timeoutMs: timeout }
+                );
+
+                if (result.success) {
+                    recordExploredPosition(bb, bot.entity.position);
+                    return 'success';
+                } else {
+                    // Path failed, record as explored and try next candidate
+                    bb.log?.debug(`[Lumberjack] Patrol path failed: ${result.failureReason}`);
+                    recordExploredPosition(bb, target.pos, 'unreachable');
+                    continue;
+                }
+            } catch (error) {
+                // Unexpected error, try next candidate
+                bb.log?.debug(`[Lumberjack] Patrol error: ${error instanceof Error ? error.message : 'unknown'}`);
                 recordExploredPosition(bb, target.pos, 'unreachable');
-                return 'failure';
+                continue;
             }
-        } catch (error) {
-            // Unexpected error
-            bb.log?.debug(`[Lumberjack] Patrol error: ${error instanceof Error ? error.message : 'unknown'}`);
-            recordExploredPosition(bb, target.pos, 'unreachable');
-            return 'failure';
         }
+
+        // All candidates failed
+        return 'failure';
     }
 }
 
