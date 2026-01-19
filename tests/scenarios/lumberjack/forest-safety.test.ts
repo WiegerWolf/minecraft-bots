@@ -170,6 +170,33 @@ describe('Lumberjack Forest Safety', () => {
       // So future lumberjacks can find the forest immediately
       expect(writeSignGoal.getUtility(ws)).toBeGreaterThan(chopGoal.getUtility(ws));
     });
+
+    test('SPEC: ChopTree blocked while FOREST sign pending', () => {
+      const chopGoal = goals.find((g) => g.name === 'ChopTree')!;
+
+      const ws = lumberjackReadyToChopState();
+      ws.set('pending.signWrites', 1);
+      ws.set('pending.hasForestSign', true);
+      ws.set('nearby.forestTrees', 10);
+      ws.set('inv.logs', 4);
+
+      // ChopTree returns 0 when FOREST sign pending - prevents starting new trees
+      // This ensures the bot writes the sign before getting distracted
+      expect(chopGoal.getUtility(ws)).toBe(0);
+    });
+
+    test('SPEC: CompleteTreeHarvest still finishes in-progress tree', () => {
+      const completeGoal = goals.find((g) => g.name === 'CompleteTreeHarvest')!;
+      const writeSignGoal = goals.find((g) => g.name === 'WriteKnowledgeSign')!;
+
+      const ws = lumberjackReadyToChopState();
+      ws.set('pending.signWrites', 1);
+      ws.set('pending.hasForestSign', true);
+      ws.set('tree.active', true);
+
+      // CompleteTreeHarvest (85) > FOREST sign (80) - finish what we started
+      expect(completeGoal.getUtility(ws)).toBeGreaterThan(writeSignGoal.getUtility(ws));
+    });
   });
 
   describe('Forest Knowledge from Signs', () => {

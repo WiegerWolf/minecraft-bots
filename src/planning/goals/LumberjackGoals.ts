@@ -201,6 +201,12 @@ export class ChopTreeGoal extends BaseGoal {
     // No forest trees = cannot chop (even if reachableTrees > 0)
     if (inventoryFull || forestTreeCount === 0) return 0;
 
+    // Don't start new trees when FOREST sign is pending - write it first!
+    // This ensures knowledge persists before we get distracted by more chopping.
+    // Note: CompleteTreeHarvest (85) still finishes in-progress trees.
+    const hasForestSign = ws.getBool('pending.hasForestSign');
+    if (hasForestSign) return 0;
+
     // Scale with available forest trees, but reduce if already have lots of logs
     const baseUtility = Math.min(70, 50 + forestTreeCount * 2);
     const logPenalty = Math.min(20, logCount / 4);
