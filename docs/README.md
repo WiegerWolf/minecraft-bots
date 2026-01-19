@@ -48,6 +48,14 @@ How the system handles failures at every level:
 - Pathfinding timeouts and blacklisting
 - Zombie detection and graceful shutdown
 
+### [Testing Infrastructure](./testing.md)
+How to test bot behavior without a Minecraft server:
+- MockWorld: deterministic 3D block grid
+- Tree builders and preset worlds
+- Visualization with prismarine-viewer
+- WorldState presets for planning tests
+- Best practices for behavioral specs
+
 ### TUI Dashboard (below)
 Interactive terminal interface for bot management:
 - Keyboard-driven bot lifecycle control
@@ -236,6 +244,9 @@ Press Enter on a bot to see full details:
 | Logger | `src/shared/logger.ts` |
 | TUI Manager | `src/manager/index.tsx` |
 | Old Process Manager | `src/index.ts` |
+| MockWorld | `tests/mocks/MockWorld.ts` |
+| BotMock | `tests/mocks/BotMock.ts` |
+| World Visualizer | `tests/mocks/visualize-world.ts` |
 
 ### Debug Commands
 
@@ -266,6 +277,15 @@ cat logs/latest/*.log | jq 'select(.level >= 50)'
 
 # Find across all sessions
 grep -r "Goal selected" logs/
+```
+
+Visualize test worlds:
+```bash
+# See MockWorld presets in browser (http://localhost:3000)
+bun run visualize forest       # 5 oak trees
+bun run visualize stump-field  # Only stumps
+bun run visualize mixed        # Stumps nearby, forest far
+bun run visualize structure    # Wooden building + tree
 ```
 
 ## Contributing to Docs

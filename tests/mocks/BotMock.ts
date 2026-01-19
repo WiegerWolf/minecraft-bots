@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { Vec3Mock, vec3 } from './Vec3Mock';
+import { MockWorld, MockBlock } from './MockWorld';
 
 /**
  * Minimal Bot mock for testing GOAP planning.
@@ -16,11 +17,13 @@ export interface BotMockConfig {
   inventory?: MockInventoryItem[];
   health?: number;
   food?: number;
+  world?: MockWorld;
 }
 
 export function createBotMock(config: BotMockConfig = {}): Bot {
   const position = config.position ?? vec3(0, 64, 0);
   const inventory = config.inventory ?? [];
+  const world = config.world ?? null;
 
   const mockBot = {
     entity: {
@@ -28,6 +31,7 @@ export function createBotMock(config: BotMockConfig = {}): Bot {
       velocity: vec3(0, 0, 0),
       onGround: true,
     },
+    entities: {} as Record<string, any>, // Empty entities for drops
     health: config.health ?? 20,
     food: config.food ?? 20,
     inventory: {
@@ -61,9 +65,35 @@ export function createBotMock(config: BotMockConfig = {}): Bot {
     // Movement stubs
     setControlState: () => {},
     clearControlStates: () => {},
-    // World stubs (minimal)
-    blockAt: () => null,
-    findBlocks: () => [],
+    // World access - uses MockWorld if provided
+    blockAt: (pos: Vec3Mock) => {
+      if (!world) return null;
+      const block = world.blockAt(pos);
+      if (!block) return null;
+      // Return a mock Block object matching mineflayer's interface
+      return {
+        name: block.name,
+        position: block.position,
+        type: block.type ?? 0,
+        metadata: block.metadata ?? 0,
+        signText: block.signText,
+      };
+    },
+    findBlocks: (options: {
+      point?: Vec3Mock;
+      maxDistance: number;
+      count: number;
+      matching: (block: any) => boolean;
+    }) => {
+      if (!world) return [];
+      const point = options.point ?? position;
+      return world.findBlocks({
+        point,
+        maxDistance: options.maxDistance,
+        count: options.count,
+        matching: options.matching,
+      });
+    },
     nearestEntity: () => null,
     // Username for chat filtering
     username: 'TestBot',

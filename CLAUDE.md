@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [`docs/state-management.md`](docs/state-management.md) - Blackboard vs WorldState, memory systems
 - [`docs/multi-bot-coordination.md`](docs/multi-bot-coordination.md) - Village chat protocol, role specialization
 - [`docs/failure-handling.md`](docs/failure-handling.md) - Recovery strategies at every level
+- [`docs/testing.md`](docs/testing.md) - MockWorld, visualization, test infrastructure
 
 **When modifying code:**
 1. Check relevant docs to understand *why* things work the way they do
@@ -27,6 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Type check**: `bunx tsc --noEmit`
 - **Run tests**: `bun test`
 - **Run specific test**: `bun test tests/scenarios/farmer/`
+- **Visualize test worlds**: `bun run visualize forest` (open http://localhost:3000)
 
 ## Bot Management
 
@@ -261,11 +263,35 @@ tests/
       farmer.ts            # freshSpawnFarmerState, etc.
       lumberjack.ts
       landscaper.ts
+    MockWorld.ts       # 3D block grid for world simulation
+    BotMock.ts         # Bot mock (integrates with MockWorld)
+    visualize-world.ts # Browser visualization (prismarine-viewer)
     Vec3Mock.ts
-    BotMock.ts
     BlackboardMock.ts
     ActionMock.ts
 ```
+
+### MockWorld
+
+For tests that need world interaction (blockAt, findBlocks, tree detection), use MockWorld:
+
+```typescript
+import { MockWorld, createOakTree, createForestWorld } from '../../mocks/MockWorld';
+import { createBotMock } from '../../mocks/BotMock';
+
+// Use a preset world
+const world = createForestWorld();
+const bot = createBotMock({ world, position: new Vec3(0, 64, 0) });
+
+// Or build custom scenarios
+const world = new MockWorld();
+world.fill(new Vec3(-10, 63, -10), new Vec3(10, 63, 10), 'grass_block');
+createOakTree(world, new Vec3(0, 64, 0), 5);
+```
+
+Preset worlds: `createForestWorld()`, `createStumpFieldWorld()`, `createMixedWorld()`, `createStructureWorld()`
+
+Visualize with: `bun run visualize forest` → http://localhost:3000
 
 ### Test Philosophy
 

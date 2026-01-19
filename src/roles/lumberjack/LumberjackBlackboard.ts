@@ -219,11 +219,11 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     // Otherwise planner thinks trees exist but action can't find them
     const SEARCH_RADIUS = bb.villageCenter ? 50 : 32;
 
-    // Find logs
+    // Find logs - increased count to find trees beyond nearby stumps
     bb.nearbyLogs = bot.findBlocks({
         point: searchCenter,
         maxDistance: SEARCH_RADIUS,
-        count: 20,
+        count: 50,
         matching: b => {
             if (!b || !b.name) return false;
             return LOG_NAMES.includes(b.name);
@@ -248,18 +248,33 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     };
 
     bb.nearbyTrees = bb.nearbyLogs.filter(log => {
+        const logPos = log.position;
+        const botY = bot.entity.position.y;
+
         // Skip logs more than 5 blocks above bot (unreachable canopy)
-        if (log.position.y > bot.entity.position.y + 5) return false;
+        if (logPos.y > botY + 5) {
+            bb.log?.trace?.({ pos: logPos.floored().toString(), botY: Math.floor(botY), reason: 'too_high' }, 'Skipping log');
+            return false;
+        }
 
         // Skip logs more than 10 blocks below bot (likely stuck on canopy, can't path down)
-        if (log.position.y < bot.entity.position.y - 10) return false;
+        if (logPos.y < botY - 10) {
+            bb.log?.trace?.({ pos: logPos.floored().toString(), botY: Math.floor(botY), reason: 'too_low' }, 'Skipping log');
+            return false;
+        }
 
-        const below = bot.blockAt(log.position.offset(0, -1, 0));
-        if (!below) return false;
+        const below = bot.blockAt(logPos.offset(0, -1, 0));
+        if (!below) {
+            bb.log?.trace?.({ pos: logPos.floored().toString(), reason: 'no_block_below' }, 'Skipping log');
+            return false;
+        }
 
         // Must be a valid tree base (on ground or another log)
         const isValidBase = VALID_TREE_BASE.includes(below.name) || LOG_NAMES.includes(below.name);
-        if (!isValidBase) return false;
+        if (!isValidBase) {
+            bb.log?.trace?.({ pos: logPos.floored().toString(), below: below.name, reason: 'invalid_base' }, 'Skipping log');
+            return false;
+        }
 
         // Critical: Check if there's walkable ground adjacent to the tree base
         // This ensures the bot can actually stand next to the tree to chop it
@@ -530,7 +545,8 @@ function hasLeavesAttached(
     bot: Bot,
     logBlock: Block,
     searchRadius: number = 5,
-    minLeaves: number = 3
+    minLeaves: number = 3,
+    log?: Logger | null
 ): boolean {
     const logName = logBlock.name;
     const validLeaves = LOG_TO_LEAF_MAP[logName];
@@ -538,6 +554,7 @@ function hasLeavesAttached(
 
     const logPos = logBlock.position;
     let leafCount = 0;
+    let nullCount = 0;
 
     // Search above and around the log for matching leaves
     // Trees have leaves mostly above the trunk, so search higher up
@@ -551,7 +568,12 @@ function hasLeavesAttached(
                 const checkPos = logPos.offset(dx, dy, dz);
                 const block = bot.blockAt(checkPos);
 
-                if (block && validLeaves.includes(block.name)) {
+                if (!block) {
+                    nullCount++;
+                    continue;
+                }
+
+                if (validLeaves.includes(block.name)) {
                     leafCount++;
                     if (leafCount >= minLeaves) {
                         return true; // Found enough matching leaves
@@ -559,6 +581,17 @@ function hasLeavesAttached(
                 }
             }
         }
+    }
+
+    // Log details when leaf check fails
+    if (log && leafCount < minLeaves) {
+        log.debug({
+            pos: logPos.floored().toString(),
+            logType: logName,
+            leafCount,
+            nullBlocks: nullCount,
+            needed: minLeaves
+        }, 'Leaf check failed');
     }
 
     return false; // Not enough matching leaves found
@@ -582,7 +615,7 @@ function filterForestTrees(
 
     // Step 1: Filter out logs without leaves attached (not real trees)
     const realTrees = reachableTrees.filter(tree => {
-        if (!hasLeavesAttached(bot, tree)) {
+        if (!hasLeavesAttached(bot, tree, 5, 3, log)) {
             log?.debug({ pos: tree.position.floored().toString(), type: tree.name }, 'Skipping log without leaves (not a real tree)');
             return false;
         }
