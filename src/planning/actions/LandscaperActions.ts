@@ -16,6 +16,7 @@ import {
   GatherDirt,
   CraftSlabs,
   MaintainFarm,
+  ReadUnknownSign,
   BroadcastOffer,
   RespondToOffer,
   CompleteTrade,
@@ -591,6 +592,32 @@ export class MaintainFarmsAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Read unknown signs spotted while exploring/working.
+ * Curious bot behavior - investigate signs to potentially learn useful info.
+ */
+export class ReadUnknownSignAction extends BaseGOAPAction {
+  name = 'ReadUnknownSign';
+  private impl = new ReadUnknownSign();
+
+  preconditions = [
+    numericPrecondition('nearby.unknownSigns', v => v > 0, 'unknown signs nearby'),
+  ];
+
+  effects = [
+    incrementEffect('nearby.unknownSigns', -1, 'read one sign'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    return 3.0;
+  }
+
+  override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * Create all landscaper actions for the planner.
  */
 export function createLandscaperActions(): BaseGOAPAction[] {
@@ -614,6 +641,7 @@ export function createLandscaperActions(): BaseGOAPAction[] {
     new CheckSharedChestAction(),
     new GatherDirtAction(),
     new CraftSlabsAction(),
+    new ReadUnknownSignAction(),  // Curious bot - read unknown signs
     new ExploreAction(),
   ];
 }

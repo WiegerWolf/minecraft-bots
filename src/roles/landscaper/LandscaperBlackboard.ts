@@ -98,6 +98,10 @@ export interface LandscaperBlackboard {
     farmIssuesCache: Map<string, FarmScanResult>; // Farm pos key -> scan result
     farmsWithIssues: Vec3[];                      // Farms that currently have detected issues
 
+    // Curiosity - wild sign reading
+    unknownSigns: Vec3[];                 // Signs spotted but not yet read
+    readSignPositions: Set<string>;       // Sign positions we've read (stringified: "x,y,z")
+
     // ═══════════════════════════════════════════════════════════════
     // TRADE STATE
     // ═══════════════════════════════════════════════════════════════
@@ -156,6 +160,10 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
         // Issue-based farm maintenance
         farmIssuesCache: new Map(),
         farmsWithIssues: [],
+
+        // Curiosity - wild sign reading
+        unknownSigns: [],
+        readSignPositions: new Set(),
 
         // Trade state
         tradeableItems: [],
@@ -258,6 +266,22 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
             return b.name === 'crafting_table';
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
+
+    // ═══════════════════════════════════════════════
+    // SIGN DETECTION (curious bot)
+    // ═══════════════════════════════════════════════
+    const nearbySigns = bot.findBlocks({
+        point: pos,
+        maxDistance: SIGN_SEARCH_RADIUS,
+        count: 20,
+        matching: b => b?.name?.includes('_sign') ?? false
+    });
+
+    // Find signs we haven't read yet
+    const posToKey = (p: Vec3) => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
+    bb.unknownSigns = nearbySigns
+        .filter(signPos => !bb.readSignPositions.has(posToKey(signPos)))
+        .map(p => new Vec3(p.x, p.y, p.z));
 
     // ═══════════════════════════════════════════════
     // SPAWN POSITION (set once on first update)

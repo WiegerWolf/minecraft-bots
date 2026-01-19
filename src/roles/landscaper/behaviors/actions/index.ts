@@ -11,6 +11,7 @@ export { CheckFarmForTerraformNeeds } from './CheckFarmForTerraformNeeds';
 export { GatherDirt } from './GatherDirt';
 export { CraftSlabs } from './CraftSlabs';
 export { MaintainFarm } from './MaintainFarm';
+export { ReadUnknownSign } from './ReadUnknownSign';
 
 // Trade behaviors
 export { BroadcastOffer, RespondToOffer, CompleteTrade } from './TradeActions';

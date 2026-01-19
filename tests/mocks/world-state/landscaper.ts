@@ -21,6 +21,7 @@ export function freshSpawnLandscaperState(): WorldState {
     'nearby.water': 0,
     'nearby.chests': 0,
     'nearby.craftingTables': 0,
+    'nearby.unknownSigns': 0,
 
     'state.inventoryFull': false,
     'state.consecutiveIdleTicks': 0,

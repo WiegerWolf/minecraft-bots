@@ -413,6 +413,48 @@ export class GatherDirtGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Read unknown signs spotted while exploring/working.
+ * CURIOUS BOT behavior - when the bot sees a sign it hasn't read,
+ * it will go investigate and potentially learn something useful.
+ *
+ * For landscapers, this is especially valuable because:
+ * - They can discover new farms to check/maintain
+ * - They can learn about water sources for terraforming decisions
+ * - Signs placed by other bots contain useful coordinate info
+ *
+ * Lower priority than terraform work, but higher than idle.
+ */
+export class ReadUnknownSignGoal extends BaseGoal {
+  name = 'ReadUnknownSign';
+  description = 'Investigate and read an unknown sign';
+
+  conditions = [
+    numericGoalCondition('nearby.unknownSigns', v => v === 0, 'no unknown signs'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const unknownCount = ws.getNumber('nearby.unknownSigns');
+    if (unknownCount === 0) return 0;
+
+    // Don't get distracted if actively terraforming
+    const terraformActive = ws.getBool('terraform.active');
+    if (terraformActive) return 0;
+
+    // Don't get distracted if pending terraform request
+    const hasPendingRequest = ws.getBool('has.pendingTerraformRequest');
+    if (hasPendingRequest) return 20; // Very low priority - finish terraform first
+
+    // Base utility of 45 - higher than explore (0) but lower than most work
+    // Increases slightly with more signs to encourage batch reading
+    return 45 + Math.min(unknownCount * 5, 15);
+  }
+
+  override isValid(ws: WorldState): boolean {
+    return ws.getNumber('nearby.unknownSigns') > 0;
+  }
+}
+
+/**
  * Goal: Wait at spawn for terraform requests.
  * The landscaper should idle until called by other bots or until
  * materials are available in the shared chest.
@@ -598,6 +640,7 @@ export function createLandscaperGoals(): BaseGoal[] {
     new GatherDirtGoal(),         // Proactive dirt gathering when idle
     new CraftSlabsGoal(),         // Craft slabs for navigation scaffolding
     new BroadcastTradeOfferGoal(),// Offer unwanted items when idle
+    new ReadUnknownSignGoal(),    // Curious bot - read unknown signs
     new ExploreGoal(),            // Always last - lowest priority fallback
   ];
 }
