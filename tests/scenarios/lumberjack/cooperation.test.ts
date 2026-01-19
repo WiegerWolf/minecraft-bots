@@ -34,6 +34,7 @@ describe('Lumberjack Cooperation', () => {
       const ws = lumberjackWithFarmerRequestState();
       ws.set('inv.logs', 8);
       ws.set('inv.planks', 4);
+      ws.set('can.spareForNeeds', true);  // Has enough to spare
 
       const fulfillGoal = goals.find((g) => g.name === 'FulfillNeeds')!;
       expect(fulfillGoal.getUtility(ws)).toBe(120);
@@ -43,10 +44,12 @@ describe('Lumberjack Cooperation', () => {
       const wsWithMaterials = lumberjackWithFarmerRequestState();
       wsWithMaterials.set('inv.logs', 8);
       wsWithMaterials.set('inv.planks', 4);
+      wsWithMaterials.set('can.spareForNeeds', true);  // Has enough to spare
 
       const wsWithoutMaterials = lumberjackWithFarmerRequestState();
       wsWithoutMaterials.set('inv.logs', 0);
       wsWithoutMaterials.set('inv.planks', 0);
+      wsWithoutMaterials.set('can.spareForNeeds', false);  // Nothing to spare
 
       const fulfillGoal = goals.find((g) => g.name === 'FulfillNeeds')!;
       const utilityWith = fulfillGoal.getUtility(wsWithMaterials);
@@ -67,6 +70,7 @@ describe('Lumberjack Cooperation', () => {
       const ws = lumberjackReadyToChopState();
       ws.set('has.incomingNeeds', true);
       ws.set('inv.logs', 8);
+      ws.set('can.spareForNeeds', true);  // Has enough to spare
       ws.set('derived.hasStorageAccess', true);
       ws.set('nearby.reachableTrees', 10);
 

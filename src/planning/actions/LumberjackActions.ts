@@ -208,8 +208,8 @@ export class RespondToNeedAction extends BaseGOAPAction {
 
   preconditions = [
     booleanPrecondition('has.incomingNeeds', true, 'incoming needs exist'),
-    // Need logs to provide wood products
-    numericPrecondition('inv.logs', v => v >= 2, 'has logs to provide'),
+    // Use computed blackboard value (matches RespondToNeed.canSpareItems thresholds)
+    booleanPrecondition('can.spareForNeeds', true, 'has materials to spare'),
   ];
 
   effects = [

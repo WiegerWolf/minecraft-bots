@@ -33,6 +33,7 @@ export function freshSpawnLumberjackState(): WorldState {
     'derived.needsChest': true,            // Fresh spawn needs storage
 
     'has.incomingNeeds': false,
+    'can.spareForNeeds': false,  // No materials to spare at fresh spawn
     'has.studiedSigns': false,
     'has.checkedStorage': false,
     'has.knownForest': false,         // Knows about a forest location
@@ -156,6 +157,7 @@ export function lumberjackWithFarmerRequestState(): WorldState {
   const ws = lumberjackReadyToChopState();
   ws.set('has.incomingNeeds', true);
   ws.set('inv.logs', 8);
+  ws.set('can.spareForNeeds', true);  // 8 logs >= 3 threshold
   ws.set('derived.hasStorageAccess', true);
   return ws;
 }

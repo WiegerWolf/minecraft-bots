@@ -250,6 +250,7 @@ export class WorldStateBuilder {
     ws.set('can.chop', bb.canChop);
     ws.set('needs.toDeposit', bb.needsToDeposit);
     ws.set('has.incomingNeeds', bb.hasIncomingNeeds);
+    ws.set('can.spareForNeeds', bb.canSpareForNeeds);
 
     // Derived facts
     ws.set('derived.canCraftAxe', this.canCraftAxe(bb));

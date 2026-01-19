@@ -43,14 +43,14 @@ export class FulfillNeedsGoal extends BaseGoal {
 
   getUtility(ws: WorldState): number {
     const hasNeeds = ws.getBool('has.incomingNeeds');
-    const logCount = ws.getNumber('inv.logs');
-    const plankCount = ws.getNumber('inv.planks');
-
     if (!hasNeeds) return 0;
 
-    // VERY high utility if we have materials - other bots are waiting!
-    const hasMaterials = logCount > 0 || plankCount > 0;
-    return hasMaterials ? 120 : 85;  // Boosted: 110->120, 80->85
+    // Use computed blackboard value (matches RespondToNeed.canSpareItems thresholds)
+    const canSpare = ws.getBool('can.spareForNeeds');
+
+    // VERY high utility if we can spare materials - other bots are waiting!
+    // Lower utility if we have the need but can't spare (might need to gather first)
+    return canSpare ? 120 : 85;
   }
 }
 

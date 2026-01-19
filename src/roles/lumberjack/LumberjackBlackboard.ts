@@ -68,6 +68,7 @@ export interface LumberjackBlackboard {
     canChop: boolean;
     needsToDeposit: boolean;
     hasIncomingNeeds: boolean;  // Other bots need materials we can provide
+    canSpareForNeeds: boolean;  // We have enough materials to spare (matching RespondToNeed.canSpareItems thresholds)
 
     // Action tracking
     lastAction: string;
@@ -145,6 +146,7 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         canChop: true,
         needsToDeposit: false,
         hasIncomingNeeds: false,
+        canSpareForNeeds: false,
 
         lastAction: 'none',
         consecutiveIdleTicks: 0,
@@ -209,6 +211,10 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
         // Check for incoming needs from other bots that we can fulfill
         const incomingNeeds = bb.villageChat.getIncomingBroadcastingNeeds();
         bb.hasIncomingNeeds = incomingNeeds.length > 0;
+
+        // Check if we can spare materials for needs (matching RespondToNeed.canSpareItems thresholds)
+        // Keep: 2 logs, 4 planks, 2 sticks - so need 3+, 5+, 3+ to spare
+        bb.canSpareForNeeds = bb.logCount >= 3 || bb.plankCount >= 5 || bb.stickCount >= 3;
     }
 
     // ═══════════════════════════════════════════════
