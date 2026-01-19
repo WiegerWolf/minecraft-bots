@@ -119,6 +119,24 @@ export interface GoalCooldown {
   expiresAt: number;
 }
 
+// Trade state for display
+export interface TradeState {
+  status: 'idle' | 'offering' | 'wanting' | 'accepted' | 'traveling' | 'ready' | 'dropping' | 'picking_up' | 'done' | 'cancelled';
+  role: 'giver' | 'receiver' | null;
+  partner: string | null;
+  item: string | null;
+  quantity: number;
+  meetingPoint: { x: number; y: number; z: number } | null;
+  offeredItems: string[];  // Items we're offering to trade (for giver)
+  wantedItems: string[];   // Items we want from offers (for receiver)
+}
+
+// Need state for display
+export interface NeedState {
+  activeNeeds: { id: string; category: string; status: string; offersCount: number }[];
+  incomingNeeds: { id: string; from: string; category: string; status: string }[];
+}
+
 export interface BotStateMessage {
   type: 'bot_state';
   botName: string;
@@ -140,6 +158,8 @@ export interface BotStateMessage {
   inventory: InventoryItem[];
   worldview?: Worldview;
   position?: { x: number; y: number; z: number };
+  trade?: TradeState;
+  needs?: NeedState;
 }
 
 export interface BotState {
@@ -161,4 +181,6 @@ export interface BotState {
   inventory: InventoryItem[];
   worldview?: Worldview;
   position?: { x: number; y: number; z: number };
+  trade?: TradeState;
+  needs?: NeedState;
 }

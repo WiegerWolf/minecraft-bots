@@ -110,6 +110,8 @@ function parseStateMessage(line: string): BotState | null {
       inventory: data.inventory || [],
       worldview: data.worldview,
       position: data.position,
+      trade: data.trade,
+      needs: data.needs,
     };
   } catch {
     return null;

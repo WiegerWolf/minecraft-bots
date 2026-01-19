@@ -120,6 +120,91 @@ export abstract class GOAPRole implements Role {
     return null;
   }
 
+  /**
+   * Extract trade state from blackboard for TUI display.
+   */
+  protected getTradeState(): {
+    status: string;
+    role: 'giver' | 'receiver' | null;
+    partner: string | null;
+    item: string | null;
+    quantity: number;
+    meetingPoint: { x: number; y: number; z: number } | null;
+    offeredItems: string[];
+    wantedItems: string[];
+  } | null {
+    const bb = this.blackboard;
+    if (!bb?.villageChat) return null;
+
+    const activeTrade = bb.activeTrade ?? bb.villageChat.getActiveTrade?.();
+    const pendingOffers = bb.pendingTradeOffers ?? bb.villageChat.getActiveOffers?.() ?? [];
+    const tradeableItems = bb.tradeableItems ?? [];
+
+    // Build offered items list (items this bot would offer for trade)
+    const offeredItems = tradeableItems
+      .filter((item: any) => item.count > 0)
+      .map((item: any) => `${item.name} x${item.count}`);
+
+    // Build wanted items list (items available from other bots)
+    const wantedItems = pendingOffers.map((offer: any) =>
+      `${offer.item} x${offer.quantity} from ${offer.from}`
+    );
+
+    if (!activeTrade) {
+      return {
+        status: 'idle',
+        role: null,
+        partner: null,
+        item: null,
+        quantity: 0,
+        meetingPoint: null,
+        offeredItems,
+        wantedItems,
+      };
+    }
+
+    const mp = activeTrade.meetingPoint;
+    return {
+      status: activeTrade.status,
+      role: activeTrade.role,
+      partner: activeTrade.partner || null,
+      item: activeTrade.item || null,
+      quantity: activeTrade.quantity || 0,
+      meetingPoint: mp ? { x: Math.floor(mp.x), y: Math.floor(mp.y), z: Math.floor(mp.z) } : null,
+      offeredItems,
+      wantedItems,
+    };
+  }
+
+  /**
+   * Extract needs state from blackboard for TUI display.
+   */
+  protected getNeedsState(): {
+    activeNeeds: { id: string; category: string; status: string; offersCount: number }[];
+    incomingNeeds: { id: string; from: string; category: string; status: string }[];
+  } | null {
+    const bb = this.blackboard;
+    if (!bb?.villageChat) return null;
+
+    const activeNeeds = bb.villageChat.getActiveNeeds?.() ?? [];
+    const incomingNeeds = bb.villageChat.getIncomingNeeds?.() ?? [];
+
+    return {
+      activeNeeds: activeNeeds.map((need: any) => ({
+        id: need.id,
+        category: need.category,
+        status: need.status,
+        offersCount: need.offers?.length ?? 0,
+      })),
+      incomingNeeds: incomingNeeds.map((need: any) => ({
+        id: need.id,
+        from: need.from,
+        category: need.category,
+        status: need.status,
+      })),
+    };
+  }
+
   constructor(config?: GOAPRoleConfig) {
     this.config = {
       debug: config?.debug ?? false,
@@ -397,6 +482,10 @@ export abstract class GOAPRole implements Role {
     const pos = this.bot?.entity?.position;
     const position = pos ? { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) } : undefined;
 
+    // Build trade state if available
+    const trade = this.getTradeState();
+    const needs = this.getNeedsState();
+
     const stateMessage = {
       type: 'bot_state',
       botName: this.botName,
@@ -413,6 +502,8 @@ export abstract class GOAPRole implements Role {
       inventory,
       worldview: this.getWorldview(),
       position,
+      trade,
+      needs,
     };
 
     // Write to stdout as JSON (will be parsed by manager)

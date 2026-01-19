@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { ManagedBot, GoalUtility, ActionHistoryEntry, InventoryItem, WorldviewEntry, Worldview, GoalCooldown } from '../types';
+import type { ManagedBot, GoalUtility, ActionHistoryEntry, InventoryItem, WorldviewEntry, Worldview, GoalCooldown, TradeState, NeedState } from '../types';
 import { getBotColor } from '../types';
 import { StatusIndicator } from './StatusIndicator';
 
@@ -68,16 +68,145 @@ function GoalItem({ goal, cooldown }: { goal: GoalUtility; cooldown?: GoalCooldo
   );
 }
 
-function InventoryItemRow({ item }: { item: InventoryItem }) {
+function InventoryItemRow({ item, isOffered }: { item: InventoryItem; isOffered?: boolean }) {
   return (
     <Box>
       {item.isHeld ? (
         <Text color="yellow">► </Text>
+      ) : isOffered ? (
+        <Text color="cyan">$ </Text>
       ) : (
         <Text>  </Text>
       )}
-      <Text color={item.isHeld ? 'yellow' : 'white'}>{item.name}</Text>
+      <Text color={item.isHeld ? 'yellow' : isOffered ? 'cyan' : 'white'}>{item.name}</Text>
       <Text dimColor> x{item.count}</Text>
+      {isOffered && <Text color="cyan" dimColor> (for trade)</Text>}
+    </Box>
+  );
+}
+
+function TradeSection({ trade, needs }: { trade?: TradeState; needs?: NeedState }) {
+  const hasActiveTrade = trade && trade.status !== 'idle';
+  const hasOffers = trade && trade.wantedItems.length > 0;
+  const hasOfferedItems = trade && trade.offeredItems.length > 0;
+  const hasActiveNeeds = needs && needs.activeNeeds.length > 0;
+  const hasIncomingNeeds = needs && needs.incomingNeeds.length > 0;
+
+  const hasAnyTradeActivity = hasActiveTrade || hasOffers || hasOfferedItems || hasActiveNeeds || hasIncomingNeeds;
+
+  if (!hasAnyTradeActivity) {
+    return (
+      <Box flexDirection="column">
+        <Text bold underline>Trade & Needs</Text>
+        <Text dimColor italic>No trade activity</Text>
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="column">
+      <Text bold underline>Trade & Needs</Text>
+      <Box marginTop={1} flexDirection="column">
+        {/* Active Trade */}
+        {hasActiveTrade && trade && (
+          <Box flexDirection="column" marginBottom={1}>
+            <Box>
+              <Text color="yellow">Active: </Text>
+              <Text color="cyan">{trade.status}</Text>
+              <Text dimColor> as </Text>
+              <Text color={trade.role === 'giver' ? 'green' : 'magenta'}>{trade.role}</Text>
+            </Box>
+            {trade.partner && (
+              <Box>
+                <Text dimColor>  Partner: </Text>
+                <Text>{trade.partner}</Text>
+              </Box>
+            )}
+            {trade.item && (
+              <Box>
+                <Text dimColor>  Item: </Text>
+                <Text>{trade.item} x{trade.quantity}</Text>
+              </Box>
+            )}
+            {trade.meetingPoint && (
+              <Box>
+                <Text dimColor>  Meet: </Text>
+                <Text>{trade.meetingPoint.x}, {trade.meetingPoint.y}, {trade.meetingPoint.z}</Text>
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {/* Offered Items (what we can trade away) */}
+        {hasOfferedItems && trade && (
+          <Box flexDirection="column" marginBottom={1}>
+            <Text color="green">Offering:</Text>
+            {trade.offeredItems.slice(0, 3).map((item, i) => (
+              <Box key={i}>
+                <Text dimColor>  </Text>
+                <Text color="green">$ </Text>
+                <Text>{item}</Text>
+              </Box>
+            ))}
+            {trade.offeredItems.length > 3 && (
+              <Text dimColor>  +{trade.offeredItems.length - 3} more</Text>
+            )}
+          </Box>
+        )}
+
+        {/* Available Offers (from other bots) */}
+        {hasOffers && trade && (
+          <Box flexDirection="column" marginBottom={1}>
+            <Text color="magenta">Available:</Text>
+            {trade.wantedItems.slice(0, 3).map((item, i) => (
+              <Box key={i}>
+                <Text dimColor>  </Text>
+                <Text color="magenta">◄ </Text>
+                <Text>{item}</Text>
+              </Box>
+            ))}
+            {trade.wantedItems.length > 3 && (
+              <Text dimColor>  +{trade.wantedItems.length - 3} more</Text>
+            )}
+          </Box>
+        )}
+
+        {/* Active Needs (requests we've made) */}
+        {hasActiveNeeds && needs && (
+          <Box flexDirection="column" marginBottom={1}>
+            <Text color="yellow">Our Needs:</Text>
+            {needs.activeNeeds.slice(0, 3).map((need, i) => (
+              <Box key={i}>
+                <Text dimColor>  </Text>
+                <Text color="yellow">? </Text>
+                <Text>{need.category}</Text>
+                <Text dimColor> ({need.status})</Text>
+                {need.offersCount > 0 && (
+                  <Text color="green"> [{need.offersCount} offers]</Text>
+                )}
+              </Box>
+            ))}
+          </Box>
+        )}
+
+        {/* Incoming Needs (requests from other bots) */}
+        {hasIncomingNeeds && needs && (
+          <Box flexDirection="column">
+            <Text color="cyan">Incoming:</Text>
+            {needs.incomingNeeds.slice(0, 3).map((need, i) => (
+              <Box key={i}>
+                <Text dimColor>  </Text>
+                <Text color="cyan">! </Text>
+                <Text>{need.from} needs {need.category}</Text>
+                <Text dimColor> ({need.status})</Text>
+              </Box>
+            ))}
+            {needs.incomingNeeds.length > 3 && (
+              <Text dimColor>  +{needs.incomingNeeds.length - 3} more</Text>
+            )}
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 }
@@ -207,7 +336,7 @@ export function DetailScreen({ bot, sessionId }: DetailScreenProps) {
           </Box>
         </Box>
 
-        {/* Right Column: Worldview & Inventory */}
+        {/* Right Column: Worldview, Trade & Inventory */}
         <Box flexDirection="column" width="50%">
           {/* Worldview */}
           {state?.worldview ? (
@@ -219,14 +348,29 @@ export function DetailScreen({ bot, sessionId }: DetailScreenProps) {
             </>
           )}
 
+          {/* Trade & Needs */}
+          <Box marginTop={2}>
+            <TradeSection trade={state?.trade} needs={state?.needs} />
+          </Box>
+
           {/* Inventory */}
           <Box marginTop={2} flexDirection="column">
             <Text bold underline>Inventory</Text>
             <Box marginTop={1} flexDirection="column">
               {state?.inventory && state.inventory.length > 0 ? (
-                state.inventory.map((item, i) => (
-                  <InventoryItemRow key={i} item={item} />
-                ))
+                (() => {
+                  // Get list of offered item names for highlighting
+                  const offeredItemNames = new Set(
+                    state.trade?.offeredItems?.map(s => s.split(' x')[0]) ?? []
+                  );
+                  return state.inventory.map((item, i) => (
+                    <InventoryItemRow
+                      key={i}
+                      item={item}
+                      isOffered={offeredItemNames.has(item.name)}
+                    />
+                  ));
+                })()
               ) : (
                 <Text dimColor italic>Empty</Text>
               )}
