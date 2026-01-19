@@ -21,6 +21,7 @@
     "test:goals": "bun test tests/goals",
     "test:scenarios": "bun test tests/scenarios",
     "visualize": "bun run tests/mocks/visualize-world.ts",
+    "test:visual": "bun run tests/visual/run-visual.ts",
     "postinstall": "patch-package"
   },
   "keywords": [

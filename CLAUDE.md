@@ -29,6 +29,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Run tests**: `bun test`
 - **Run specific test**: `bun test tests/scenarios/farmer/`
 - **Visualize test worlds**: `bun run visualize forest` (open http://localhost:3000)
+- **Visual step-through tests**: `bun run test:visual` (list) / `bun run test:visual forest-detection`
 
 ## Bot Management
 

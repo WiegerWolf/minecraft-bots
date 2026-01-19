@@ -109,7 +109,7 @@ createStump(world, pos, logType);  // Default: 'oak_log'
 - **findBlocks() only searches set blocks**: Won't iterate the entire world
 - **Positions are floored**: `Vec3(0.5, 64.9, 0.5)` → block at `(0, 64, 0)`
 
-## Visualization
+## Static Visualization
 
 Visualize MockWorld presets in a browser using prismarine-viewer:
 
@@ -129,14 +129,94 @@ Then open http://localhost:3000 in your browser.
 - Mouse - look around
 - Space/Shift - up/down
 
-### When to Use Visualization
+## Visual Tests (Step-by-Step)
 
-1. **Debugging test failures**: See exactly what the test world looks like
-2. **Designing new tests**: Verify block placement before writing assertions
-3. **Understanding detection logic**: See why a tree might not be detected
-4. **Explaining behavior**: Show others what a "stump field" vs "forest" means
+Watch tests execute step-by-step in the 3D viewer, like Cypress/Playwright for Minecraft:
 
-### Adding Custom Scenarios
+```bash
+# List available visual tests
+bun run test:visual
+
+# Run a visual test (interactive mode)
+bun run test:visual forest-detection
+
+# Run with auto-advance (1.5s per step)
+bun run test:visual forest-detection --auto
+
+# Run all visual tests
+bun run test:visual all --auto
+```
+
+**Controls during test:**
+- `Enter` - advance to next step
+- `a` - enable auto-advance
+- `q` - quit
+
+### Available Visual Tests
+
+| Test | Description |
+|------|-------------|
+| `forest-detection` | Watch forest detection algorithm: forest world, stump field, mixed world |
+| `tree-vs-stump` | See how bot distinguishes trees from stumps, leaf threshold demo |
+
+### Writing Visual Tests
+
+Visual tests use `VisualTestHarness` to step through assertions with viewer updates:
+
+```typescript
+// tests/visual/my-test.visual.ts
+import { VisualTestHarness } from '../mocks/VisualTestHarness';
+import { MockWorld, createOakTree } from '../mocks/MockWorld';
+
+async function main() {
+  const autoAdvance = process.argv.includes('--auto');
+  const harness = new VisualTestHarness();
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-10, 63, -10), new Vec3(10, 63, 10), 'grass_block');
+  createOakTree(world, new Vec3(0, 64, 0), 5);
+
+  await harness.start(world, 'My Visual Test', { autoAdvance });
+
+  await harness.step('Created a tree at origin');
+  await harness.mark(new Vec3(0, 64, 0), 'Tree Base', 'green');
+
+  // Run your test logic
+  const result = someDetectionFunction(world);
+
+  await harness.inspect('Result', result);
+  await harness.assert(result.success, 'Detection should succeed');
+
+  await harness.end('Test passed!');
+  process.exit(0);
+}
+
+main();
+```
+
+### Harness API
+
+| Method | Description |
+|--------|-------------|
+| `start(world, name, opts)` | Start viewer with MockWorld |
+| `step(message)` | Show step, wait for input |
+| `mark(pos, label, color)` | Add colored marker beacon |
+| `markMany(positions, label, color)` | Mark multiple positions |
+| `highlightRegion(from, to, label, color)` | Outline a region |
+| `clearMarkers()` | Remove all markers |
+| `inspect(label, value)` | Print value for inspection |
+| `assert(condition, message)` | Show pass/fail with icon |
+| `end(message)` | Complete test |
+| `fail(message)` | Fail test with error |
+
+**Marker colors:** `red`, `green`, `blue`, `yellow`, `lime`, `orange`, `magenta`, `cyan`, `white`, `black`
+
+### When to Use Static vs Visual
+
+- **Static visualization** (`bun run visualize`): Quick look at preset worlds, designing test scenarios
+- **Visual tests** (`bun run test:visual`): Step-by-step debugging, understanding algorithm flow, demos
+
+## Adding Custom Static Scenarios
 
 Edit `tests/mocks/visualize-world.ts` and add a case:
 
