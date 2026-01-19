@@ -29,6 +29,8 @@ export function freshSpawnLumberjackState(): WorldState {
     'derived.canCraftChest': false,
     'derived.hasVillageCenter': false,
     'derived.hasStorageAccess': false,
+    'derived.needsCraftingTable': true,   // Fresh spawn needs village center
+    'derived.needsChest': true,            // Fresh spawn needs storage
 
     'has.pendingRequests': false,
     'has.studiedSigns': false,
@@ -58,6 +60,8 @@ export function lumberjackReadyToChopState(): WorldState {
   ws.set('nearby.forestTrees', 5);    // Trees in actual forest
   ws.set('has.studiedSigns', true);
   ws.set('has.knownForest', true);    // Knows about forest
+  ws.set('derived.needsCraftingTable', false);  // Has village infrastructure
+  ws.set('derived.needsChest', false);
   return ws;
 }
 
