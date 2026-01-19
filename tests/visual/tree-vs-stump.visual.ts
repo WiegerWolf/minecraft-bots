@@ -5,11 +5,10 @@
  *
  * Usage:
  *   bun run test:visual tree-vs-stump
- *   bun run test:visual tree-vs-stump --auto
  */
 
 import { Vec3 } from 'vec3';
-import { VisualTestHarness } from '../mocks/VisualTestHarness';
+import { getVisualTestServer } from '../mocks/VisualTestServer';
 import { MockWorld, createOakTree, createStump } from '../mocks/MockWorld';
 
 // Replicate the hasLeavesAttached logic for visualization
@@ -48,163 +47,144 @@ function hasLeavesAttached(
 }
 
 async function main() {
-  const autoAdvance = process.argv.includes('--auto');
-  const harness = new VisualTestHarness();
+  const server = getVisualTestServer();
 
   // Test 1: Single tree detection
   {
     const world = new MockWorld();
     world.fill(new Vec3(-15, 63, -15), new Vec3(15, 63, 15), 'grass_block');
-
-    // Create one tree
     createOakTree(world, new Vec3(0, 64, 0), 5);
 
-    await harness.start(world, 'Tree Detection - Single Oak Tree', {
-      autoAdvance,
-      delay: 2000,
+    await server.start(world, 'Tree Detection - Single Oak Tree', {
       center: new Vec3(0, 70, 5),
     });
 
-    await harness.step('Created a single oak tree (5 block trunk)');
+    await server.step('Created a single oak tree (5 block trunk)');
 
     const baseLog = new Vec3(0, 64, 0);
-    await harness.mark(baseLog, 'Base Log', 'orange');
+    await server.mark(baseLog, 'Base Log', 'orange');
 
-    await harness.step('Checking for leaves attached to the base log...');
+    await server.step('Checking for leaves attached to the base log...');
 
     const result = hasLeavesAttached(world, baseLog);
 
-    await harness.inspect('Leaf count', result.leafCount);
-    await harness.inspect('Has enough leaves (≥3)', result.hasLeaves);
+    await server.inspect('Leaf count', result.leafCount);
+    await server.inspect('Has enough leaves (>=3)', result.hasLeaves);
 
-    // Show some leaf positions
-    await harness.step(`Found ${result.leafCount} leaves. Marking some...`);
+    await server.step(`Found ${result.leafCount} leaves. Marking some...`);
     for (const leafPos of result.leafPositions.slice(0, 5)) {
-      await harness.mark(leafPos, 'Leaf', 'green');
+      await server.mark(leafPos, 'Leaf', 'green');
     }
 
-    await harness.assert(result.hasLeaves, 'Tree should have leaves attached');
-    await harness.end('Tree Detection PASSED!');
+    await server.assert(result.hasLeaves, 'Tree should have leaves attached');
+    await server.end('Tree Detection PASSED!');
   }
 
   // Test 2: Stump detection
   {
     const world = new MockWorld();
     world.fill(new Vec3(-15, 63, -15), new Vec3(15, 63, 15), 'grass_block');
-
-    // Create a stump (log without leaves)
     createStump(world, new Vec3(0, 64, 0));
 
-    await harness.start(world, 'Tree Detection - Stump (No Leaves)', {
-      autoAdvance,
-      delay: 2000,
+    await server.start(world, 'Tree Detection - Stump (No Leaves)', {
       center: new Vec3(0, 70, 5),
     });
 
-    await harness.step('Created a stump - single log on grass, no leaves');
+    await server.step('Created a stump - single log on grass, no leaves');
 
     const stumpPos = new Vec3(0, 64, 0);
-    await harness.mark(stumpPos, 'Stump', 'red');
+    await server.mark(stumpPos, 'Stump', 'red');
 
-    await harness.step('Checking for leaves...');
+    await server.step('Checking for leaves...');
 
     const result = hasLeavesAttached(world, stumpPos);
 
-    await harness.inspect('Leaf count', result.leafCount);
-    await harness.inspect('Has enough leaves (≥3)', result.hasLeaves);
+    await server.inspect('Leaf count', result.leafCount);
+    await server.inspect('Has enough leaves (>=3)', result.hasLeaves);
 
-    await harness.assert(!result.hasLeaves, 'Stump should NOT have leaves');
-    await harness.end('Stump Detection PASSED!');
+    await server.assert(!result.hasLeaves, 'Stump should NOT have leaves');
+    await server.end('Stump Detection PASSED!');
   }
 
   // Test 3: Side by side comparison
   {
     const world = new MockWorld();
     world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
-
-    // Create a tree on the left
     createOakTree(world, new Vec3(-8, 64, 0), 5);
-
-    // Create a stump on the right
     createStump(world, new Vec3(8, 64, 0));
 
-    await harness.start(world, 'Tree vs Stump - Side by Side', {
-      autoAdvance,
-      delay: 2000,
+    await server.start(world, 'Tree vs Stump - Side by Side', {
       center: new Vec3(0, 70, 10),
     });
 
-    await harness.step('Created: Tree on LEFT, Stump on RIGHT');
+    await server.step('Created: Tree on LEFT, Stump on RIGHT');
 
     const treePos = new Vec3(-8, 64, 0);
     const stumpPos = new Vec3(8, 64, 0);
 
-    await harness.mark(treePos, 'Tree (left)', 'green');
-    await harness.mark(stumpPos, 'Stump (right)', 'red');
+    await server.mark(treePos, 'Tree (left)', 'green');
+    await server.mark(stumpPos, 'Stump (right)', 'red');
 
-    await harness.step('Checking the TREE (left)...');
+    await server.step('Checking the TREE (left)...');
 
     const treeResult = hasLeavesAttached(world, treePos);
-    await harness.inspect('Tree leaf count', treeResult.leafCount);
-    await harness.inspect('Tree has leaves', treeResult.hasLeaves);
+    await server.inspect('Tree leaf count', treeResult.leafCount);
+    await server.inspect('Tree has leaves', treeResult.hasLeaves);
 
-    await harness.step('Checking the STUMP (right)...');
+    await server.step('Checking the STUMP (right)...');
 
     const stumpResult = hasLeavesAttached(world, stumpPos);
-    await harness.inspect('Stump leaf count', stumpResult.leafCount);
-    await harness.inspect('Stump has leaves', stumpResult.hasLeaves);
+    await server.inspect('Stump leaf count', stumpResult.leafCount);
+    await server.inspect('Stump has leaves', stumpResult.hasLeaves);
 
-    await harness.step('Comparing results...');
+    await server.step('Comparing results...');
 
-    await harness.assert(treeResult.hasLeaves, 'Tree should have leaves');
-    await harness.assert(!stumpResult.hasLeaves, 'Stump should NOT have leaves');
+    await server.assert(treeResult.hasLeaves, 'Tree should have leaves');
+    await server.assert(!stumpResult.hasLeaves, 'Stump should NOT have leaves');
 
-    await harness.end('Side-by-Side Comparison PASSED!');
+    await server.end('Side-by-Side Comparison PASSED!');
   }
 
   // Test 4: Minimum leaf threshold
   {
     const world = new MockWorld();
     world.fill(new Vec3(-15, 63, -15), new Vec3(15, 63, 15), 'grass_block');
-
-    // Create a log with only 2 leaves (below threshold)
     world.setBlock(new Vec3(0, 64, 0), 'oak_log');
     world.setBlock(new Vec3(0, 65, 0), 'oak_leaves');
     world.setBlock(new Vec3(1, 65, 0), 'oak_leaves');
 
-    await harness.start(world, 'Tree Detection - Minimum Leaf Threshold', {
-      autoAdvance,
-      delay: 2000,
+    await server.start(world, 'Tree Detection - Minimum Leaf Threshold', {
       center: new Vec3(0, 70, 5),
     });
 
-    await harness.step('Created a log with only 2 leaves (threshold is 3)');
+    await server.step('Created a log with only 2 leaves (threshold is 3)');
 
-    await harness.mark(new Vec3(0, 64, 0), 'Log', 'orange');
-    await harness.mark(new Vec3(0, 65, 0), 'Leaf 1', 'lime');
-    await harness.mark(new Vec3(1, 65, 0), 'Leaf 2', 'lime');
+    await server.mark(new Vec3(0, 64, 0), 'Log', 'orange');
+    await server.mark(new Vec3(0, 65, 0), 'Leaf 1', 'lime');
+    await server.mark(new Vec3(1, 65, 0), 'Leaf 2', 'lime');
 
     const result1 = hasLeavesAttached(world, new Vec3(0, 64, 0));
-    await harness.inspect('Leaf count', result1.leafCount);
-    await harness.inspect('Has enough leaves', result1.hasLeaves);
+    await server.inspect('Leaf count', result1.leafCount);
+    await server.inspect('Has enough leaves', result1.hasLeaves);
 
-    await harness.assert(!result1.hasLeaves, '2 leaves should NOT count as a tree');
+    await server.assert(!result1.hasLeaves, '2 leaves should NOT count as a tree');
 
-    await harness.step('Adding a third leaf...');
+    await server.step('Adding a third leaf...');
 
     world.setBlock(new Vec3(-1, 65, 0), 'oak_leaves');
-    await harness.mark(new Vec3(-1, 65, 0), 'Leaf 3', 'green');
+    await server.mark(new Vec3(-1, 65, 0), 'Leaf 3', 'green');
 
     const result2 = hasLeavesAttached(world, new Vec3(0, 64, 0));
-    await harness.inspect('Leaf count after', result2.leafCount);
-    await harness.inspect('Has enough leaves', result2.hasLeaves);
+    await server.inspect('Leaf count after', result2.leafCount);
+    await server.inspect('Has enough leaves', result2.hasLeaves);
 
-    await harness.assert(result2.hasLeaves, '3 leaves should count as a tree');
+    await server.assert(result2.hasLeaves, '3 leaves should count as a tree');
 
-    await harness.end('Leaf Threshold Test PASSED!');
+    await server.end('Leaf Threshold Test PASSED!');
   }
 
   console.log('\n🎉 All tree vs stump tests completed!\n');
+  await server.shutdown();
   process.exit(0);
 }
 

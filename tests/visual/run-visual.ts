@@ -4,9 +4,12 @@
  *
  * Usage:
  *   bun run tests/visual/run-visual.ts                    # List available tests
- *   bun run tests/visual/run-visual.ts forest             # Run forest detection test
- *   bun run tests/visual/run-visual.ts forest --auto      # Auto-advance mode
- *   bun run tests/visual/run-visual.ts all --auto         # Run all tests
+ *   bun run tests/visual/run-visual.ts forest-detection   # Run forest detection test
+ *   bun run tests/visual/run-visual.ts all                # Run all tests
+ *
+ * Browser opens automatically with the test UI.
+ * Click "Next" or press Space to advance steps.
+ * Click "Auto" or press A to auto-advance.
  */
 
 import { readdirSync } from 'fs';
@@ -22,20 +25,14 @@ async function listTests(): Promise<string[]> {
     .map(f => f.replace('.visual.ts', ''));
 }
 
-async function runTest(name: string, autoAdvance: boolean): Promise<void> {
+async function runTest(name: string): Promise<void> {
   const testFile = join(VISUAL_DIR, `${name}.visual.ts`);
 
   console.log(`\n🎬 Running visual test: ${name}`);
-  console.log(`   File: ${testFile}`);
-  console.log(`   Mode: ${autoAdvance ? 'auto-advance' : 'interactive'}\n`);
-
-  const args = ['run', testFile];
-  if (autoAdvance) {
-    args.push('--auto');
-  }
+  console.log(`   File: ${testFile}\n`);
 
   const proc = spawn({
-    cmd: ['bun', ...args],
+    cmd: ['bun', 'run', testFile],
     stdout: 'inherit',
     stderr: 'inherit',
     stdin: 'inherit',
@@ -47,7 +44,6 @@ async function runTest(name: string, autoAdvance: boolean): Promise<void> {
 async function main() {
   const args = process.argv.slice(2);
   const testName = args.find(a => !a.startsWith('-'));
-  const autoAdvance = args.includes('--auto') || args.includes('-a');
 
   const tests = await listTests();
 
@@ -57,11 +53,11 @@ async function main() {
       console.log(`   • ${test}`);
     }
     console.log('\nUsage:');
-    console.log('   bun run tests/visual/run-visual.ts <test-name>');
-    console.log('   bun run tests/visual/run-visual.ts <test-name> --auto');
-    console.log('   bun run tests/visual/run-visual.ts all --auto');
+    console.log('   bun run test:visual <test-name>');
+    console.log('   bun run test:visual all');
     console.log('\nExample:');
-    console.log('   bun run tests/visual/run-visual.ts forest-detection');
+    console.log('   bun run test:visual forest-detection');
+    console.log('\nBrowser opens automatically. Use Space/Next to advance, A/Auto to auto-advance.');
     console.log('');
     return;
   }
@@ -69,11 +65,11 @@ async function main() {
   if (testName === 'all') {
     console.log(`\n🎬 Running all ${tests.length} visual tests...\n`);
     for (const test of tests) {
-      await runTest(test, autoAdvance);
+      await runTest(test);
     }
     console.log('\n✨ All visual tests completed!\n');
   } else if (tests.includes(testName)) {
-    await runTest(testName, autoAdvance);
+    await runTest(testName);
   } else {
     console.error(`\n❌ Unknown test: ${testName}`);
     console.error(`   Available tests: ${tests.join(', ')}\n`);

@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visual Test Runner</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #16213e;
+      padding: 12px 20px;
+      border-bottom: 2px solid #0f3460;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #e94560;
+    }
+
+    .connection-status {
+      font-size: 12px;
+      padding: 4px 12px;
+      border-radius: 12px;
+      background: #333;
+    }
+
+    .connection-status.connected {
+      background: #1b4332;
+      color: #95d5b2;
+    }
+
+    .connection-status.disconnected {
+      background: #590d22;
+      color: #ff8fa3;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    .viewer-container {
+      flex: 1;
+      position: relative;
+      background: #000;
+    }
+
+    .viewer-container iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .sidebar {
+      width: 380px;
+      background: #16213e;
+      border-left: 2px solid #0f3460;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .test-info {
+      padding: 16px;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    .test-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: #e94560;
+      margin-bottom: 8px;
+    }
+
+    .step-info {
+      background: #1a1a2e;
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .step-number {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 4px;
+    }
+
+    .step-message {
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .controls {
+      padding: 16px;
+      border-bottom: 1px solid #0f3460;
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      flex: 1;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: #e94560;
+      color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #ff6b6b;
+    }
+
+    .btn-secondary {
+      background: #0f3460;
+      color: #eee;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #1a4a7a;
+    }
+
+    .btn-secondary.active {
+      background: #1b4332;
+      color: #95d5b2;
+    }
+
+    .log-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .log-entry {
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: 'Monaco', 'Menlo', monospace;
+    }
+
+    .log-step {
+      background: #0f3460;
+      border-left: 3px solid #e94560;
+    }
+
+    .log-mark {
+      background: #1a1a2e;
+      color: #a8dadc;
+    }
+
+    .log-inspect {
+      background: #1a1a2e;
+      color: #ffd166;
+    }
+
+    .log-assert {
+      background: #1a1a2e;
+    }
+
+    .log-assert.pass {
+      color: #95d5b2;
+      border-left: 3px solid #2d6a4f;
+    }
+
+    .log-assert.fail {
+      color: #ff8fa3;
+      border-left: 3px solid #9d0208;
+    }
+
+    .log-info {
+      background: #1a1a2e;
+      color: #888;
+    }
+
+    .log-end {
+      background: #1b4332;
+      color: #95d5b2;
+      border-left: 3px solid #40916c;
+    }
+
+    .waiting-overlay {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(233, 69, 96, 0.9);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-weight: 500;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    .no-test {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #666;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Visual Test Runner</h1>
+    <span id="connection-status" class="connection-status disconnected">Disconnected</span>
+  </header>
+
+  <main>
+    <div class="viewer-container">
+      <iframe id="viewer-frame" src="about:blank"></iframe>
+      <div id="waiting-overlay" class="waiting-overlay" style="display: none;">
+        Waiting for input... Press Next or Space
+      </div>
+    </div>
+
+    <aside class="sidebar">
+      <div class="test-info">
+        <div id="test-name" class="test-name">No test running</div>
+        <div class="step-info">
+          <div id="step-number" class="step-number">-</div>
+          <div id="step-message" class="step-message">Waiting for test to start...</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="btn-next" class="btn-primary" disabled>Next (Space)</button>
+        <button id="btn-auto" class="btn-secondary">Auto</button>
+      </div>
+
+      <div class="log-container" id="log-container">
+        <div class="no-test">Run a visual test to see output here</div>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const state = {
+      connected: false,
+      waiting: false,
+      autoAdvance: false,
+      testName: null,
+      stepNumber: 0,
+      viewerPort: null,
+    };
+
+    const elements = {
+      connectionStatus: document.getElementById('connection-status'),
+      testName: document.getElementById('test-name'),
+      stepNumber: document.getElementById('step-number'),
+      stepMessage: document.getElementById('step-message'),
+      btnNext: document.getElementById('btn-next'),
+      btnAuto: document.getElementById('btn-auto'),
+      logContainer: document.getElementById('log-container'),
+      viewerFrame: document.getElementById('viewer-frame'),
+      waitingOverlay: document.getElementById('waiting-overlay'),
+    };
+
+    let ws = null;
+    let reconnectTimer = null;
+
+    function connect() {
+      const wsPort = new URLSearchParams(window.location.search).get('port') || '3008';
+      ws = new WebSocket(`ws://localhost:${wsPort}`);
+
+      ws.onopen = () => {
+        state.connected = true;
+        updateConnectionStatus();
+        console.log('Connected to test harness');
+      };
+
+      ws.onclose = () => {
+        state.connected = false;
+        state.waiting = false;
+        updateConnectionStatus();
+        updateControls();
+        // Reconnect after 1 second
+        reconnectTimer = setTimeout(connect, 1000);
+      };
+
+      ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+      };
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        handleMessage(msg);
+      };
+    }
+
+    function handleMessage(msg) {
+      switch (msg.type) {
+        case 'test-start':
+          state.testName = msg.testName;
+          state.stepNumber = 0;
+          state.viewerPort = msg.viewerPort;
+          elements.testName.textContent = msg.testName;
+          elements.stepNumber.textContent = '-';
+          elements.stepMessage.textContent = 'Test starting...';
+          elements.logContainer.innerHTML = '';
+          // Load viewer
+          elements.viewerFrame.src = `http://localhost:${msg.viewerPort}`;
+          break;
+
+        case 'step':
+          state.stepNumber = msg.stepNumber;
+          elements.stepNumber.textContent = `Step ${msg.stepNumber}`;
+          elements.stepMessage.textContent = msg.message;
+          addLog('step', `[Step ${msg.stepNumber}] ${msg.message}`);
+          break;
+
+        case 'waiting':
+          state.waiting = true;
+          updateControls();
+          if (state.autoAdvance) {
+            setTimeout(() => sendNext(), 500);
+          }
+          break;
+
+        case 'mark':
+          addLog('mark', `📍 ${msg.label} at (${msg.x}, ${msg.y}, ${msg.z}) [${msg.color}]`);
+          break;
+
+        case 'inspect':
+          addLog('inspect', `🔍 ${msg.label}: ${msg.value}`);
+          break;
+
+        case 'assert':
+          addLog('assert', `${msg.passed ? '✅' : '❌'} ${msg.message}`, msg.passed ? 'pass' : 'fail');
+          break;
+
+        case 'clear-markers':
+          addLog('info', '🧹 Cleared all markers');
+          break;
+
+        case 'test-end':
+          state.waiting = false;
+          addLog('end', `✨ ${msg.message}`);
+          updateControls();
+          break;
+
+        case 'info':
+          addLog('info', msg.message);
+          break;
+      }
+    }
+
+    function addLog(type, text, subtype = '') {
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type} ${subtype}`;
+      entry.textContent = text;
+      elements.logContainer.appendChild(entry);
+      elements.logContainer.scrollTop = elements.logContainer.scrollHeight;
+
+      // Remove "no test" message if present
+      const noTest = elements.logContainer.querySelector('.no-test');
+      if (noTest) noTest.remove();
+    }
+
+    function sendNext() {
+      if (ws && state.waiting) {
+        ws.send(JSON.stringify({ type: 'next' }));
+        state.waiting = false;
+        updateControls();
+      }
+    }
+
+    function toggleAuto() {
+      state.autoAdvance = !state.autoAdvance;
+      elements.btnAuto.classList.toggle('active', state.autoAdvance);
+      elements.btnAuto.textContent = state.autoAdvance ? 'Auto (On)' : 'Auto';
+      if (state.autoAdvance && state.waiting) {
+        sendNext();
+      }
+    }
+
+    function updateConnectionStatus() {
+      elements.connectionStatus.textContent = state.connected ? 'Connected' : 'Disconnected';
+      elements.connectionStatus.className = `connection-status ${state.connected ? 'connected' : 'disconnected'}`;
+    }
+
+    function updateControls() {
+      elements.btnNext.disabled = !state.waiting;
+      elements.waitingOverlay.style.display = state.waiting && !state.autoAdvance ? 'block' : 'none';
+    }
+
+    // Event listeners
+    elements.btnNext.addEventListener('click', sendNext);
+    elements.btnAuto.addEventListener('click', toggleAuto);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && state.waiting) {
+        e.preventDefault();
+        sendNext();
+      } else if (e.code === 'KeyA') {
+        toggleAuto();
+      }
+    });
+
+    // Start connection
+    connect();
+  </script>
+</body>
+</html>
