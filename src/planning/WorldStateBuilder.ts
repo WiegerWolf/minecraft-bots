@@ -155,6 +155,7 @@ export class WorldStateBuilder {
 
     // Sign writing
     ws.set('pending.signWrites', bb.pendingSignWrites.length);
+    ws.set('pending.hasFarmSign', bb.pendingSignWrites.some(p => p.type === 'FARM'));
     ws.set('has.sign', this.hasSign(bot));
     ws.set('derived.canCraftSign', this.canCraftSign(bb, bot));
   }

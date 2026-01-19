@@ -293,16 +293,20 @@ export class ReadUnknownSignGoal extends BaseGoal {
 
 /**
  * Goal: Write knowledge signs at spawn to share discoveries.
- * HIGH PRIORITY - sharing farm locations enables other farmers and landscapers.
+ * CRITICAL PRIORITY for FARM signs - landscapers need to know where to terraform.
  *
  * When the farmer establishes a farm center, it queues a FARM sign write.
  * This persists the knowledge for:
+ * - Landscapers (know where to terraform 9x9 farm areas) - MOST IMPORTANT
  * - Other farmers (can start farming at known locations)
- * - Landscapers (know where to terraform 9x9 farm areas)
  * - Future restarts (bots remember discovered resources)
  *
- * Priority is high (85-120) to ensure signs are written promptly after
- * establishing a farm, before getting distracted by routine farming tasks.
+ * FARM signs get VERY HIGH priority (200-250) because:
+ * - Landscapers can't terraform without knowing where farms are
+ * - The terraforming request is sent at the same time, so the sign must be written ASAP
+ * - Everything else can wait - the farm location is critical infrastructure
+ *
+ * Other sign types get moderate priority (85-120).
  */
 export class WriteKnowledgeSignGoal extends BaseGoal {
   name = 'WriteKnowledgeSign';
@@ -321,16 +325,20 @@ export class WriteKnowledgeSignGoal extends BaseGoal {
     const canCraftSign = ws.getBool('derived.canCraftSign');
     const hasStorage = ws.getBool('derived.hasStorageAccess');
 
-    // VERY HIGH priority if we already have a sign ready - go write it now!
+    // FARM signs are CRITICAL - landscapers need this info to terraform
+    const hasFarmSign = ws.getBool('pending.hasFarmSign');
+    if (hasFarmSign) {
+      // CRITICAL priority - beat everything else (CompleteTrade=150, CollectDrops=150 max)
+      if (hasSign) return 250;       // Have sign ready - go write it NOW
+      if (canCraftSign) return 230;  // Can craft - do it immediately
+      if (hasStorage) return 210;    // Get materials from chest first
+      return 200;                    // Need to request materials - still very urgent
+    }
+
+    // Other sign types (WATER, etc.) get normal priority
     if (hasSign) return 120;
-
-    // HIGH priority if we can craft - do it soon
     if (canCraftSign) return 105;
-
-    // MODERATE-HIGH priority if we can get materials from chest
     if (hasStorage) return 95;
-
-    // MODERATE priority if we need to request materials from lumberjack
     return 85;
   }
 

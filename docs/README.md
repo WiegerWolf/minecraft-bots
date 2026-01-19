@@ -168,7 +168,8 @@ The bot manager (`src/manager/`) provides an interactive terminal interface for 
 | Seed threshold | 10 | Comfortable farming buffer |
 | Sign search radius | 25 blocks | Area around spawn to find knowledge signs |
 | Sign types | VILLAGE, CRAFT, CHEST, FOREST, MINE, FARM, WATER | Infrastructure + landmarks |
-| WriteKnowledgeSign utility | 85-120 | High priority, enables other bots to find farms (farmers) |
+| WriteKnowledgeSign utility (FARM) | 200-250 | Critical priority - landscapers need farm location to terraform |
+| WriteKnowledgeSign utility (other) | 85-120 | High priority for other sign types |
 | StudySpawnSigns utility | 200 | High priority on spawn, before other work (both bots) |
 | ReadUnknownSign utility | 45-60 | Low priority curiosity behavior (both bots) |
 | Sign crafting materials | 6 planks + 1 stick | ProcessWood can chain to satisfy this |
