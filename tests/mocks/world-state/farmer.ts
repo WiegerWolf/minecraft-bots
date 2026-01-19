@@ -38,6 +38,7 @@ export function freshSpawnFarmerState(): WorldState {
     // Derived facts
     'derived.hasFarmEstablished': false,
     'derived.hasStorageAccess': false,
+    'derived.hasVillage': false,  // No village center yet
     'derived.canCraftHoe': false,
     'derived.canCraftSign': false,
     'derived.needsWood': true,
@@ -63,6 +64,10 @@ export function freshSpawnFarmerState(): WorldState {
 
     // Tree harvest state
     'tree.active': false,
+
+    // Lumberjack tracking (for following during exploration)
+    'nearby.hasLumberjack': false,
+    'nearby.lumberjackDistance': -1,
   });
 }
 
@@ -102,6 +107,7 @@ export function establishedFarmerState(): WorldState {
     // Derived
     'derived.hasFarmEstablished': true,
     'derived.hasStorageAccess': true,
+    'derived.hasVillage': true,  // Farm requires village
     'derived.canCraftHoe': false,
     'derived.canCraftSign': false,
     'derived.needsWood': false,
@@ -127,6 +133,10 @@ export function establishedFarmerState(): WorldState {
 
     // Tree
     'tree.active': false,
+
+    // Lumberjack tracking (not needed when established)
+    'nearby.hasLumberjack': false,
+    'nearby.lumberjackDistance': -1,
   });
 }
 
@@ -206,12 +216,14 @@ export function farmerNeedsTillingState(): WorldState {
 
 /**
  * Preset: Farmer with no farm established yet (just found water).
+ * Village center has been established, so farmer can now prospect.
  */
 export function farmerFoundWaterState(): WorldState {
   const ws = freshSpawnFarmerState();
   ws.set('has.studiedSigns', true);
   ws.set('nearby.water', 3);
   ws.set('derived.hasFarmEstablished', false);
+  ws.set('derived.hasVillage', true);  // Village center exists
   return ws;
 }
 

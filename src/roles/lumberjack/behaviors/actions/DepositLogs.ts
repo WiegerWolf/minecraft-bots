@@ -79,53 +79,30 @@ export class DepositLogs implements BehaviorNode {
         }
 
         if (!chestPos) {
-            // Collect all known chest positions: from signs + nearby perception
-            const allChestPositions = [...bb.knownChests];
-
-            // Add nearby chests that aren't already in knownChests
-            for (const nearby of bb.nearbyChests) {
-                const alreadyKnown = allChestPositions.some(
-                    known => known.distanceTo(nearby.position) < 2
-                );
-                if (!alreadyKnown) {
-                    allChestPositions.push(nearby.position.clone());
-                }
-            }
-
-            // Sort by distance from bot and filter out full ones
-            const botPos = bot.entity.position;
-            const availableChests = allChestPositions
+            // IMPORTANT: Only use KNOWN chests (from signs, village chat, or bot-placed)
+            // Do NOT adopt random found chests - they may be underground, in ruins, etc.
+            // Bot-placed chests are added to knownChests when placed by PlaceStorageChest
+            const availableChests = bb.knownChests
                 .filter(pos => !this.isChestFull(bb, pos))
-                .sort((a, b) => a.distanceTo(botPos) - b.distanceTo(botPos));
+                .sort((a, b) => {
+                    const botPos = bot.entity.position;
+                    return a.distanceTo(botPos) - b.distanceTo(botPos);
+                });
 
             if (availableChests.length > 0) {
                 chestPos = availableChests[0]!;
-
-                // Add to knownChests if not already there
-                const alreadyInKnown = bb.knownChests.some(k => k.distanceTo(chestPos!) < 2);
-                if (!alreadyInKnown) {
-                    bb.knownChests.push(chestPos.clone());
-
-                    // Queue sign write for newly discovered chest
-                    if (bb.spawnPosition) {
-                        bb.pendingSignWrites.push({
-                            type: 'CHEST',
-                            pos: chestPos.clone()
-                        });
-                        bb.log?.debug({ type: 'CHEST', pos: chestPos.toString() }, 'Queued sign write for discovered chest');
-                    }
-                }
-
-                // Register as shared chest and announce
                 bb.sharedChest = chestPos;
+
+                // Announce to village if not already shared
                 if (bb.villageChat) {
                     bb.villageChat.announceSharedChest(chestPos);
                 }
 
-                bb.log?.info({ chestPos: chestPos.toString() }, 'Selected closest available chest');
+                bb.log?.info({ chestPos: chestPos.toString() }, 'Using known chest for deposits');
             } else {
-                bb.log?.debug('No available (non-full) chests found');
-                return 'failure'; // No chest available
+                // No known chests - need to place one first
+                bb.log?.debug('No known chests available - need to place storage chest first');
+                return 'failure';
             }
         }
 

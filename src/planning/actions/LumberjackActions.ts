@@ -12,6 +12,7 @@ import {
   ProcessWood,
   CraftChest,
   CraftAndPlaceCraftingTable,
+  PlaceStorageChest,
   PatrolForest,
   PlantSaplings,
   WriteKnowledgeSign,
@@ -254,16 +255,17 @@ export class ProcessWoodAction extends BaseGOAPAction {
 }
 
 /**
- * GOAP Action: Craft a chest for storage
- * Will establish village center at current position if needed
+ * GOAP Action: Place a storage chest near village center
+ * IMPORTANT: Places our own chest rather than adopting random found chests.
+ * This ensures the chest is in an accessible location.
  */
-export class CraftChestAction extends BaseGOAPAction {
-  name = 'CraftChest';
-  private impl = new CraftChest();
+export class PlaceStorageChestAction extends BaseGOAPAction {
+  name = 'PlaceStorageChest';
+  private impl = new PlaceStorageChest();
 
   preconditions = [
     booleanPrecondition('derived.needsChest', true, 'needs chest'),
-    // Removed: derived.hasVillage - action will establish village center if needed
+    booleanPrecondition('derived.hasVillage', true, 'has village center'),
     numericPrecondition('inv.planks', v => v >= 8, 'has planks for chest'),
   ];
 
@@ -275,6 +277,37 @@ export class CraftChestAction extends BaseGOAPAction {
 
   override getCost(ws: WorldState): number {
     return 3.0;
+  }
+
+  override async execute(bot: Bot, bb: LumberjackBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
+ * GOAP Action: Craft a chest for storage (legacy - kept for compatibility)
+ * @deprecated Use PlaceStorageChestAction instead
+ */
+export class CraftChestAction extends BaseGOAPAction {
+  name = 'CraftChest';
+  private impl = new CraftChest();
+
+  preconditions = [
+    booleanPrecondition('derived.needsChest', true, 'needs chest'),
+    booleanPrecondition('derived.hasVillage', true, 'has village center'),
+    numericPrecondition('inv.planks', v => v >= 8, 'has planks for chest'),
+  ];
+
+  effects = [
+    setEffect('derived.needsChest', false, 'has chest now'),
+    setEffect('derived.hasStorageAccess', true, 'has storage access'),
+    incrementEffect('inv.planks', -8, 'used planks'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Higher cost than PlaceStorageChest to prefer the new action
+    return 4.0;
   }
 
   override async execute(bot: Bot, bb: LumberjackBlackboard, ws: WorldState): Promise<ActionResult> {
@@ -718,7 +751,8 @@ export function createLumberjackActions(): BaseGOAPAction[] {
     new CraftAxeFromPlanksAction(), // Variant when we have planks ready
     new FulfillRequestsAction(),
     new ProcessWoodAction(),
-    new CraftChestAction(),
+    new PlaceStorageChestAction(),  // Place our own chest (preferred)
+    new CraftChestAction(),          // Legacy chest crafting
     new CraftAndPlaceCraftingTableAction(),
     new WriteKnowledgeSignAction(),
     new ReadUnknownSignAction(),   // Curious bot - read unknown signs

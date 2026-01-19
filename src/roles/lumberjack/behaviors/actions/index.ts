@@ -5,6 +5,7 @@ export { DepositLogs } from './DepositLogs';
 export { CraftAxe } from './CraftAxe';
 export { CraftChest } from './CraftChest';
 export { CraftAndPlaceCraftingTable } from './CraftAndPlaceCraftingTable';
+export { PlaceStorageChest } from './PlaceStorageChest';
 export { ProcessWood } from './ProcessWood';
 export { PatrolForest, WaitForVillage } from './PatrolForest';
 export { PlantSaplings } from './PlantSaplings';

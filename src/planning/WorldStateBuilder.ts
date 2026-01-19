@@ -146,6 +146,7 @@ export class WorldStateBuilder {
     ws.set('derived.needsWood', bb.logCount === 0 && bb.plankCount < 4);
     ws.set('derived.hasFarmEstablished', bb.farmCenter !== null);
     ws.set('derived.hasStorageAccess', bb.sharedChest !== null || bb.nearbyChests.length > 0);
+    ws.set('derived.hasVillage', bb.villageCenter !== null);  // Village center from lumberjack
 
     // Sign-based persistent knowledge
     ws.set('has.studiedSigns', bb.hasStudiedSigns);
@@ -158,6 +159,14 @@ export class WorldStateBuilder {
     ws.set('pending.hasFarmSign', bb.pendingSignWrites.some(p => p.type === 'FARM'));
     ws.set('has.sign', this.hasSign(bot));
     ws.set('derived.canCraftSign', this.canCraftSign(bb, bot));
+
+    // Lumberjack tracking (for following during exploration)
+    ws.set('nearby.hasLumberjack', bb.lumberjackPosition !== null);
+    if (bb.lumberjackPosition) {
+      ws.set('nearby.lumberjackDistance', bot.entity.position.distanceTo(bb.lumberjackPosition));
+    } else {
+      ws.set('nearby.lumberjackDistance', -1);  // -1 means no lumberjack visible
+    }
   }
 
   /**

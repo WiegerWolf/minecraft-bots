@@ -11,8 +11,112 @@ function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Blocks suitable for village center (natural surface blocks)
+const VALID_SURFACE_BLOCKS = [
+    'grass_block', 'dirt', 'podzol', 'mycelium', 'coarse_dirt', 'rooted_dirt',
+    'sand', 'red_sand', 'gravel', 'clay', 'moss_block',
+    'stone', 'deepslate', 'andesite', 'diorite', 'granite',
+];
+
+/**
+ * Check if a position is suitable for establishing a village center.
+ * Requirements:
+ * 1. Standing on a valid surface block (grass, dirt, stone, etc.)
+ * 2. Enough open space around (not in a 1-block wide hole)
+ * 3. Has sky access or is in an open area (not deep underground)
+ */
+function isValidVillageCenterPosition(bot: Bot, pos: Vec3): boolean {
+    const groundBlock = bot.blockAt(pos.offset(0, -1, 0));
+    const feetBlock = bot.blockAt(pos);
+    const headBlock = bot.blockAt(pos.offset(0, 1, 0));
+
+    // Must be standing on valid surface
+    if (!groundBlock || !VALID_SURFACE_BLOCKS.includes(groundBlock.name)) {
+        return false;
+    }
+
+    // Must have air at feet and head level
+    if (!feetBlock || feetBlock.name !== 'air') return false;
+    if (!headBlock || headBlock.name !== 'air') return false;
+
+    // Check for open space around (at least 2 of 4 cardinal directions should be open)
+    const cardinalOffsets = [
+        new Vec3(1, 0, 0), new Vec3(-1, 0, 0),
+        new Vec3(0, 0, 1), new Vec3(0, 0, -1),
+    ];
+
+    let openSides = 0;
+    for (const offset of cardinalOffsets) {
+        const checkPos = pos.plus(offset);
+        const blockAtFeet = bot.blockAt(checkPos);
+        const blockAtHead = bot.blockAt(checkPos.offset(0, 1, 0));
+
+        if (blockAtFeet?.name === 'air' && blockAtHead?.name === 'air') {
+            openSides++;
+        }
+    }
+
+    if (openSides < 2) {
+        return false; // Too enclosed (in a hole or corridor)
+    }
+
+    // Check for sky access (or at least not deep underground)
+    // Look up to 10 blocks above - should find air or leaves
+    let skyAccess = true;
+    for (let dy = 2; dy <= 10; dy++) {
+        const above = bot.blockAt(pos.offset(0, dy, 0));
+        if (!above) break;
+        if (above.name !== 'air' && !above.name.includes('leaves')) {
+            // Check if it's solid - if so, we're underground
+            if (above.boundingBox === 'block') {
+                skyAccess = false;
+                break;
+            }
+        }
+    }
+
+    // If no sky access, check if we're on grass (grass needs light to survive)
+    // If grass block exists, we're probably not underground
+    if (!skyAccess && groundBlock.name !== 'grass_block') {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Find a valid village center position near the current location.
+ * Searches in an expanding spiral pattern.
+ */
+function findValidVillageCenterNearby(bot: Bot, startPos: Vec3, maxRadius: number = 10): Vec3 | null {
+    // First check current position
+    if (isValidVillageCenterPosition(bot, startPos)) {
+        return startPos.clone();
+    }
+
+    // Search in expanding squares
+    for (let radius = 1; radius <= maxRadius; radius++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dz = -radius; dz <= radius; dz++) {
+                // Only check perimeter of the square at this radius
+                if (Math.abs(dx) !== radius && Math.abs(dz) !== radius) continue;
+
+                const checkPos = startPos.offset(dx, 0, dz).floored();
+                if (isValidVillageCenterPosition(bot, checkPos)) {
+                    return checkPos;
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
 /**
  * CraftAndPlaceCraftingTable - Craft a crafting table if needed and place it at village center
+ *
+ * IMPORTANT: Village center must be on a proper surface (grass/dirt),
+ * with open space around, not in a hole or underground.
  */
 export class CraftAndPlaceCraftingTable implements BehaviorNode {
     name = 'CraftAndPlaceCraftingTable';
@@ -23,22 +127,29 @@ export class CraftAndPlaceCraftingTable implements BehaviorNode {
             return 'failure';
         }
 
-        // Establish village center at current position if not set
+        // Establish village center at a valid position if not set
         if (!bb.villageCenter) {
-            const pos = bot.entity.position.floored();
-            bb.villageCenter = pos;
-            bb.log?.debug(`[Lumberjack] Establishing village center at ${pos}`);
+            const currentPos = bot.entity.position.floored();
+            const validPos = findValidVillageCenterNearby(bot, currentPos);
+
+            if (!validPos) {
+                bb.log?.debug('Cannot find valid surface for village center - need open area on grass/dirt');
+                return 'failure';
+            }
+
+            bb.villageCenter = validPos;
+            bb.log?.info({ pos: validPos.toString() }, 'Establishing village center at valid surface location');
             if (bb.villageChat) {
-                bb.villageChat.announceVillageCenter(pos);
+                bb.villageChat.announceVillageCenter(validPos);
             }
 
             // Queue sign write for village center
             if (bb.spawnPosition) {
                 bb.pendingSignWrites.push({
                     type: 'VILLAGE',
-                    pos: pos.clone()
+                    pos: validPos.clone()
                 });
-                bb.log?.debug({ type: 'VILLAGE', pos: pos.toString() }, 'Queued sign write for village center');
+                bb.log?.debug({ type: 'VILLAGE', pos: validPos.toString() }, 'Queued sign write for village center');
             }
         }
 
@@ -141,6 +252,7 @@ export class CraftAndPlaceCraftingTable implements BehaviorNode {
         if (!tableItem) return false;
 
         // Find suitable spot near village center (1 block away from center)
+        // Must be on valid surface, not in a hole
         const placements = [
             bb.villageCenter!.offset(1, 0, 0),
             bb.villageCenter!.offset(-1, 0, 0),
@@ -155,31 +267,43 @@ export class CraftAndPlaceCraftingTable implements BehaviorNode {
         for (const placePos of placements) {
             const groundBlock = bot.blockAt(placePos.offset(0, -1, 0));
             const targetBlock = bot.blockAt(placePos);
+            const aboveTarget = bot.blockAt(placePos.offset(0, 1, 0));
 
-            if (groundBlock && groundBlock.boundingBox === 'block' && targetBlock && targetBlock.name === 'air') {
-                try {
-                    const moveResult = await smartPathfinderGoto(
-                        bot,
-                        new GoalNear(placePos.x, placePos.y, placePos.z, 3),
-                        { timeoutMs: 15000 }
-                    );
-                    if (!moveResult.success) continue;
-                    await bot.equip(tableItem, 'hand');
-                    await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
-                    await sleep(200);
-                    const placedTable = bot.blockAt(placePos);
+            // Must have solid ground, air at target, and air above (so bots can use it)
+            if (!groundBlock || groundBlock.boundingBox !== 'block') continue;
+            if (!targetBlock || targetBlock.name !== 'air') continue;
+            if (!aboveTarget || aboveTarget.name !== 'air') continue;
 
-                    if (placedTable && placedTable.name === 'crafting_table') {
-                        // Announce to village
-                        if (bb.villageChat) {
-                            bb.villageChat.announceSharedCraftingTable(placePos);
-                            bb.sharedCraftingTable = placePos;
-                        }
-                        return true;
+            // Prefer valid surface blocks (grass, dirt, stone) over random blocks
+            const isGoodSurface = VALID_SURFACE_BLOCKS.includes(groundBlock.name);
+            if (!isGoodSurface) {
+                bb.log?.debug({ groundBlock: groundBlock.name, pos: placePos.toString() }, 'Skipping placement on non-surface block');
+                continue;
+            }
+
+            try {
+                const moveResult = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(placePos.x, placePos.y, placePos.z, 3),
+                    { timeoutMs: 15000 }
+                );
+                if (!moveResult.success) continue;
+                await bot.equip(tableItem, 'hand');
+                await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
+                await sleep(200);
+                const placedTable = bot.blockAt(placePos);
+
+                if (placedTable && placedTable.name === 'crafting_table') {
+                    // Announce to village
+                    if (bb.villageChat) {
+                        bb.villageChat.announceSharedCraftingTable(placePos);
+                        bb.sharedCraftingTable = placePos;
                     }
-                } catch (error) {
-                    bb.log?.warn({ err: error }, 'Failed to place crafting table');
+                    bb.log?.info({ pos: placePos.toString() }, 'Placed crafting table at village center');
+                    return true;
                 }
+            } catch (error) {
+                bb.log?.warn({ err: error }, 'Failed to place crafting table');
             }
         }
 

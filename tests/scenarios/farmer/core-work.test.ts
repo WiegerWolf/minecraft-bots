@@ -189,13 +189,24 @@ describe('Farmer Core Work', () => {
       expect(farmGoal.getUtility(ws)).toBe(75);
     });
 
-    test('SPEC: No water = medium priority (65)', () => {
+    test('SPEC: No water = medium priority (65) when village exists', () => {
       const ws = freshSpawnFarmerState();
       ws.set('has.studiedSigns', true);
       ws.set('nearby.water', 0);
+      ws.set('derived.hasVillage', true);  // Village center required
 
       const farmGoal = goals.find((g) => g.name === 'EstablishFarm')!;
       expect(farmGoal.getUtility(ws)).toBe(65);
+    });
+
+    test('SPEC: No village center = zero utility (wait for lumberjack)', () => {
+      const ws = freshSpawnFarmerState();
+      ws.set('has.studiedSigns', true);
+      ws.set('nearby.water', 3);
+      ws.set('derived.hasVillage', false);
+
+      const farmGoal = goals.find((g) => g.name === 'EstablishFarm')!;
+      expect(farmGoal.getUtility(ws)).toBe(0);  // Must wait for village
     });
 
     test('SPEC: Farm established = zero utility', () => {

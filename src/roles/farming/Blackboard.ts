@@ -52,6 +52,7 @@ export interface FarmingBlackboard {
     farmChest: Vec3 | null;  // POI: chest for storing harvest (deprecated, use sharedChest)
     sharedChest: Vec3 | null;  // Village shared chest (for all bots)
     sharedCraftingTable: Vec3 | null;  // Village shared crafting table (for all bots)
+    villageCenter: Vec3 | null;  // Village center established by lumberjack
     lastAction: string;
     consecutiveIdleTicks: number;
 
@@ -111,6 +112,12 @@ export interface FarmingBlackboard {
     pendingTradeOffers: TradeOffer[];           // Active offers from other bots we might want
     activeTrade: ActiveTrade | null;            // Current trade state (if any)
     lastOfferTime: number;                      // When we last broadcast an offer (cooldown)
+
+    // ═══════════════════════════════════════════════════════════════
+    // LUMBERJACK TRACKING (for following during exploration)
+    // ═══════════════════════════════════════════════════════════════
+    lumberjackPosition: Vec3 | null;            // Last known position of a lumberjack
+    lumberjackName: string | null;              // Name of the lumberjack being followed
 }
 
 export function createBlackboard(): FarmingBlackboard {
@@ -136,6 +143,7 @@ export function createBlackboard(): FarmingBlackboard {
         farmChest: null,
         sharedChest: null,
         sharedCraftingTable: null,
+        villageCenter: null,
         lastAction: 'none',
         consecutiveIdleTicks: 0,
 
@@ -183,6 +191,10 @@ export function createBlackboard(): FarmingBlackboard {
         pendingTradeOffers: [],
         activeTrade: null,
         lastOfferTime: 0,
+
+        // Lumberjack tracking
+        lumberjackPosition: null,
+        lumberjackName: null,
     };
 }
 
@@ -414,6 +426,7 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
 
     // Get shared village state from chat
     if (bb.villageChat) {
+        bb.villageCenter = bb.villageChat.getVillageCenter();
         bb.sharedChest = bb.villageChat.getSharedChest();
         bb.sharedCraftingTable = bb.villageChat.getSharedCraftingTable();
 
@@ -499,6 +512,51 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
 
         // Clean up stale offers
         bb.villageChat.cleanupOldTradeOffers();
+    }
+
+    // ═══════════════════════════════════════════════
+    // LUMBERJACK TRACKING
+    // ═══════════════════════════════════════════════
+    // Track lumberjack position for following during exploration phase
+    // Only track if we don't have a village center yet (exploration phase)
+    if (!bb.villageCenter) {
+        bb.lumberjackPosition = null;
+        bb.lumberjackName = null;
+
+        // Find the closest lumberjack player
+        for (const [playerName, player] of Object.entries(bot.players)) {
+            // Skip self
+            if (playerName === bot.username) continue;
+
+            // Check if this is a lumberjack (name contains Lmbr, Lumberjack, etc.)
+            const isLumberjack = playerName.includes('Lmbr') ||
+                                 playerName.toLowerCase().includes('lumber') ||
+                                 playerName.toLowerCase().includes('lumberjack');
+            if (!isLumberjack) continue;
+
+            // Get their entity (only works if they're in render distance)
+            const entity = player.entity;
+            if (!entity) continue;
+
+            const distance = pos.distanceTo(entity.position);
+
+            // Update if this is the first or closest lumberjack
+            if (!bb.lumberjackPosition || distance < pos.distanceTo(bb.lumberjackPosition)) {
+                bb.lumberjackPosition = entity.position.clone();
+                bb.lumberjackName = playerName;
+            }
+        }
+
+        if (bb.lumberjackPosition) {
+            bb.log?.debug({
+                lumberjack: bb.lumberjackName,
+                distance: pos.distanceTo(bb.lumberjackPosition).toFixed(1)
+            }, 'Tracking lumberjack');
+        }
+    } else {
+        // Village established, no need to follow
+        bb.lumberjackPosition = null;
+        bb.lumberjackName = null;
     }
 }
 

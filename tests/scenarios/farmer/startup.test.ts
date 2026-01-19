@@ -26,10 +26,11 @@ describe('Farmer Startup', () => {
     expect(result?.utility).toBe(200);
   });
 
-  test('SPEC: After signs, establish farm if none exists (water found = 75)', () => {
+  test('SPEC: After signs, establish farm if village exists (water found = 75)', () => {
     const ws = freshSpawnFarmerState();
     ws.set('has.studiedSigns', true);
     ws.set('nearby.water', 3);
+    ws.set('derived.hasVillage', true);  // Village center required
 
     arbiter.clearCurrentGoal();
     const result = arbiter.selectGoal(ws);
@@ -38,19 +39,20 @@ describe('Farmer Startup', () => {
     expect(result?.utility).toBe(75);
   });
 
-  test('SPEC: After signs, establish farm even without water (utility 65)', () => {
+  test('SPEC: After signs, no village = wait (gather seeds instead)', () => {
     const ws = freshSpawnFarmerState();
     ws.set('has.studiedSigns', true);
-    ws.set('nearby.water', 0);
+    ws.set('nearby.water', 3);
+    ws.set('derived.hasVillage', false);  // No village yet
 
     arbiter.clearCurrentGoal();
     const result = arbiter.selectGoal(ws);
 
-    expect(result?.goal.name).toBe('EstablishFarm');
-    expect(result?.utility).toBe(65);
+    // Farmer waits for village - does other tasks like gathering seeds
+    expect(result?.goal.name).not.toBe('EstablishFarm');
   });
 
-  test('SPEC: Full startup sequence', () => {
+  test('SPEC: Full startup sequence with village center', () => {
     const ws = freshSpawnFarmerState();
 
     // Step 1: Study signs
@@ -58,13 +60,19 @@ describe('Farmer Startup', () => {
     let result = arbiter.selectGoal(ws);
     expect(result?.goal.name).toBe('StudySpawnSigns');
 
-    // Step 2: Establish farm
+    // Step 2: Wait for village (lumberjack establishes it)
     ws.set('has.studiedSigns', true);
     ws.set('nearby.water', 3);
+    ws.set('derived.hasVillage', false);  // No village yet
+    result = arbiter.selectGoal(ws);
+    expect(result?.goal.name).not.toBe('EstablishFarm');  // Can't establish without village
+
+    // Step 3: Village established - now establish farm
+    ws.set('derived.hasVillage', true);
     result = arbiter.selectGoal(ws);
     expect(result?.goal.name).toBe('EstablishFarm');
 
-    // Step 3: With farm, gather seeds if no hoe
+    // Step 4: With farm, gather seeds if no hoe
     ws.set('derived.hasFarmEstablished', true);
     ws.set('has.hoe', false);
     ws.set('inv.seeds', 0);

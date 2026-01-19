@@ -211,6 +211,10 @@ export class GatherSeedsGoal extends BaseGoal {
 /**
  * Goal: Establish a farm near water.
  * High priority at game start, low once farm is established.
+ *
+ * IMPORTANT: Wait for village center to be established first!
+ * The village center determines the general area where the village will be built.
+ * Farmers should set up farms near the village, not wander off to random water.
  */
 export class EstablishFarmGoal extends BaseGoal {
   name = 'EstablishFarm';
@@ -223,10 +227,15 @@ export class EstablishFarmGoal extends BaseGoal {
   getUtility(ws: WorldState): number {
     const hasFarm = ws.getBool('derived.hasFarmEstablished');
     const waterCount = ws.getNumber('nearby.water');
+    const hasVillage = ws.getBool('derived.hasVillage');
 
     if (hasFarm) return 0;
 
-    // Very high priority if we have no farm yet
+    // IMPORTANT: Wait for village center first!
+    // Otherwise farmer wanders to random water while lumberjack finds forest
+    if (!hasVillage) return 0;
+
+    // Very high priority if we have no farm yet (and village exists)
     if (waterCount > 0) return 75; // Water found, just need to set center
     return 65; // Need to find water
   }
@@ -344,6 +353,65 @@ export class WriteKnowledgeSignGoal extends BaseGoal {
 
   override isValid(ws: WorldState): boolean {
     return ws.getNumber('pending.signWrites') > 0;
+  }
+}
+
+/**
+ * Goal: Follow the lumberjack during exploration phase.
+ * MEDIUM-LOW PRIORITY - when no village center exists, stay near the lumberjack.
+ *
+ * This keeps the farmer in VillageChat range so they can hear about the
+ * village center location when the lumberjack establishes it.
+ *
+ * The goal is satisfied when:
+ * - Village center is established (hasVillage = true), OR
+ * - Bot is within 30 blocks of the lumberjack
+ */
+export class FollowLumberjackGoal extends BaseGoal {
+  name = 'FollowLumberjack';
+  description = 'Stay near lumberjack during exploration phase';
+
+  conditions = [
+    // Goal satisfied when village exists OR close to lumberjack
+    {
+      key: 'derived.hasVillage',
+      check: (value: any) => value === true,
+      description: 'village center established',
+    },
+  ];
+
+  getUtility(ws: WorldState): number {
+    const hasVillage = ws.getBool('derived.hasVillage');
+    const hasStudiedSigns = ws.getBool('has.studiedSigns');
+    const hasLumberjack = ws.getBool('nearby.hasLumberjack');
+    const lumberjackDistance = ws.getNumber('nearby.lumberjackDistance');
+
+    // No need to follow if village is established
+    if (hasVillage) return 0;
+
+    // Must have studied signs first
+    if (!hasStudiedSigns) return 0;
+
+    // Can't follow if no lumberjack visible
+    if (!hasLumberjack || lumberjackDistance < 0) return 0;
+
+    // Already close enough (within 30 blocks)
+    if (lumberjackDistance <= 30) return 0;
+
+    // Higher utility when further away (need to catch up)
+    // Base 55 + up to 15 based on distance (max utility 70)
+    const distanceBonus = Math.min(15, (lumberjackDistance - 30) / 10);
+    return 55 + distanceBonus;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const hasVillage = ws.getBool('derived.hasVillage');
+    const hasStudiedSigns = ws.getBool('has.studiedSigns');
+    const hasLumberjack = ws.getBool('nearby.hasLumberjack');
+    const lumberjackDistance = ws.getNumber('nearby.lumberjackDistance');
+
+    // Valid when: no village, studied signs, lumberjack visible, and too far away
+    return !hasVillage && hasStudiedSigns && hasLumberjack && lumberjackDistance > 30;
   }
 }
 
@@ -535,6 +603,7 @@ export function createFarmingGoals(): BaseGoal[] {
     new WriteKnowledgeSignGoal(), // Write farm/water signs to share knowledge
     new BroadcastTradeOfferGoal(),// Offer unwanted items when idle
     new ReadUnknownSignGoal(),    // Curious bot - read unknown signs
+    new FollowLumberjackGoal(),   // Follow lumberjack during exploration (no village yet)
     new ExploreGoal(), // Always last - lowest priority fallback
   ];
 }

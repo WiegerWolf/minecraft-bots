@@ -17,6 +17,7 @@ import { StudySpawnSigns } from '../../roles/farming/behaviors/actions/StudySpaw
 import { ReadUnknownSign } from '../../roles/farming/behaviors/actions/ReadUnknownSign';
 import { WriteKnowledgeSign } from '../../roles/farming/behaviors/actions/WriteKnowledgeSign';
 import { BroadcastOffer, RespondToOffer, CompleteTrade } from '../../roles/farming/behaviors/actions/TradeActions';
+import { FollowLumberjack } from '../../roles/farming/behaviors/actions/FollowLumberjack';
 
 /**
  * GOAP Action: Pick up dropped items
@@ -327,6 +328,42 @@ export class FindFarmCenterAction extends BaseGOAPAction {
 
   override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
     const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
+ * GOAP Action: Follow lumberjack during exploration phase.
+ *
+ * When there's no village center, the farmer should stay near the lumberjack
+ * to hear village chat messages about the village center location.
+ */
+export class FollowLumberjackAction extends BaseGOAPAction {
+  name = 'FollowLumberjack';
+  private impl = new FollowLumberjack();
+
+  preconditions = [
+    booleanPrecondition('has.studiedSigns', true, 'has studied signs'),
+    booleanPrecondition('derived.hasVillage', false, 'no village center yet'),
+    booleanPrecondition('nearby.hasLumberjack', true, 'lumberjack visible'),
+    numericPrecondition('nearby.lumberjackDistance', v => v > 30, 'too far from lumberjack'),
+  ];
+
+  effects = [
+    // After following, we should be close enough
+    setEffect('nearby.lumberjackDistance', 20, 'near lumberjack'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Medium cost - following takes time but is important
+    const distance = ws.getNumber('nearby.lumberjackDistance');
+    // Cost scales with distance
+    return 3.0 + Math.min(distance / 50, 5.0);
+  }
+
+  override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    if (result === 'running') return ActionResult.RUNNING;
     return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
   }
 }
@@ -657,6 +694,7 @@ export function createFarmingActions(): BaseGOAPAction[] {
     new GetSignMaterialsAction(),    // Get materials for sign crafting
     new WriteKnowledgeSignAction(),  // Write farm/water signs
     new ReadUnknownSignAction(),  // Curious bot - read unknown signs
+    new FollowLumberjackAction(),    // Follow lumberjack during exploration
     new ExploreAction(),
   ];
 }
