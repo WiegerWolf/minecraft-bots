@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
 import type { VillageChat, TradeOffer, ActiveTrade } from '../../shared/VillageChat';
-import { LOG_NAMES, LEAF_NAMES, SAPLING_NAMES, type TreeHarvestState } from '../shared/TreeHarvest';
+import { LOG_NAMES, LEAF_NAMES, SAPLING_NAMES, LOG_TO_LEAF_MAP, type TreeHarvestState } from '../shared/TreeHarvest';
 import type { Logger } from '../../shared/logger';
 import { SIGN_SEARCH_RADIUS } from '../../shared/SignKnowledge';
 import { type StuckTracker, createStuckTracker } from '../../shared/PathfindingUtils';
@@ -501,11 +501,60 @@ const FOREST_CLUSTER_RADIUS = 16;
 const STRUCTURE_CHECK_RADIUS = 4;
 
 /**
+ * Check if a log block has matching leaves attached (indicating it's a real tree).
+ * Real trees have leaves above/around the trunk; structure logs don't.
+ *
+ * @param bot - The bot instance
+ * @param logBlock - The log block to check
+ * @param searchRadius - How far to search for leaves (default 5)
+ * @param minLeaves - Minimum leaves required to confirm it's a tree (default 3)
+ * @returns true if the log has matching leaves attached
+ */
+function hasLeavesAttached(
+    bot: Bot,
+    logBlock: Block,
+    searchRadius: number = 5,
+    minLeaves: number = 3
+): boolean {
+    const logName = logBlock.name;
+    const validLeaves = LOG_TO_LEAF_MAP[logName];
+    if (!validLeaves) return false; // Unknown log type
+
+    const logPos = logBlock.position;
+    let leafCount = 0;
+
+    // Search above and around the log for matching leaves
+    // Trees have leaves mostly above the trunk, so search higher up
+    for (let dy = 0; dy <= searchRadius + 3; dy++) {
+        for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+            for (let dz = -searchRadius; dz <= searchRadius; dz++) {
+                // Skip blocks too far away (use taxicab for horizontal, allow more vertical)
+                const horizontalDist = Math.abs(dx) + Math.abs(dz);
+                if (horizontalDist > searchRadius) continue;
+
+                const checkPos = logPos.offset(dx, dy, dz);
+                const block = bot.blockAt(checkPos);
+
+                if (block && validLeaves.includes(block.name)) {
+                    leafCount++;
+                    if (leafCount >= minLeaves) {
+                        return true; // Found enough matching leaves
+                    }
+                }
+            }
+        }
+    }
+
+    return false; // Not enough matching leaves found
+}
+
+/**
  * Filter trees to only include those that are part of actual forests.
  * Excludes:
- * 1. Isolated trees (not part of a 3+ tree cluster)
- * 2. Trees near structure blocks (likely part of a building)
- * 3. Trees not near known forest centers (if any)
+ * 1. Logs without leaves attached (not real trees - likely structure logs)
+ * 2. Isolated trees (not part of a 3+ tree cluster)
+ * 3. Trees near structure blocks (likely part of a building)
+ * 4. Trees not near known forest centers (if any)
  */
 function filterForestTrees(
     bot: Bot,
@@ -515,8 +564,19 @@ function filterForestTrees(
 ): Block[] {
     if (reachableTrees.length === 0) return [];
 
-    // Step 1: Filter out trees near structures
-    const naturalTrees = reachableTrees.filter(tree => {
+    // Step 1: Filter out logs without leaves attached (not real trees)
+    const realTrees = reachableTrees.filter(tree => {
+        if (!hasLeavesAttached(bot, tree)) {
+            log?.debug({ pos: tree.position.floored().toString(), type: tree.name }, 'Skipping log without leaves (not a real tree)');
+            return false;
+        }
+        return true;
+    });
+
+    if (realTrees.length === 0) return [];
+
+    // Step 2: Filter out trees near structures
+    const naturalTrees = realTrees.filter(tree => {
         if (isNearStructure(bot, tree.position)) {
             log?.debug({ pos: tree.position.floored().toString() }, 'Skipping tree near structure');
             return false;

@@ -37,6 +37,19 @@ export const SAPLING_MAP: Record<string, string> = {
     'cherry_log': 'cherry_sapling',
 };
 
+// Map log types to their corresponding leaf types
+// Used to verify a log is part of a real tree (has matching leaves attached)
+export const LOG_TO_LEAF_MAP: Record<string, string[]> = {
+    'oak_log': ['oak_leaves', 'azalea_leaves', 'flowering_azalea_leaves'],
+    'birch_log': ['birch_leaves'],
+    'spruce_log': ['spruce_leaves'],
+    'jungle_log': ['jungle_leaves'],
+    'acacia_log': ['acacia_leaves'],
+    'dark_oak_log': ['dark_oak_leaves'],
+    'mangrove_log': ['mangrove_leaves'],
+    'cherry_log': ['cherry_leaves'],
+};
+
 export const SAPLING_NAMES = Object.values(SAPLING_MAP);
 
 // Max consecutive pathfinding failures before giving up on replanting

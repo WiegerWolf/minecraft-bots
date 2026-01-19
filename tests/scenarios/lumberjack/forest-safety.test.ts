@@ -12,8 +12,12 @@ import {
  * Lumberjacks should ONLY chop trees that are part of actual forests,
  * NOT logs that are part of village houses or other structures.
  *
- * A forest is defined as an area with 3+ trees clustered together.
- * Scattered logs near structures should be avoided.
+ * Safety checks (in order):
+ * 1. LEAF VERIFICATION: Log must have matching leaves attached above/around it
+ *    - Real trees have leaves (oak_log needs oak_leaves nearby)
+ *    - Structure logs (walls, frames) don't have leaves attached
+ * 2. STRUCTURE AVOIDANCE: Tree must not be near structure blocks (stairs, doors, planks)
+ * 3. CLUSTER DETECTION: Must be part of a forest (3+ trees within 16 blocks)
  *
  * This prevents the bot from dismantling villager houses.
  */
@@ -21,6 +25,23 @@ import {
 describe('Lumberjack Forest Safety', () => {
   const goals = createLumberjackGoals();
   const arbiter = new GoalArbiter(goals);
+
+  /**
+   * Leaf verification is implemented in LumberjackBlackboard.filterForestTrees().
+   * It checks that each log block has matching leaves within 5 blocks above/around.
+   *
+   * Log type → Valid leaves mapping (from LOG_TO_LEAF_MAP):
+   * - oak_log → oak_leaves, azalea_leaves, flowering_azalea_leaves
+   * - birch_log → birch_leaves
+   * - spruce_log → spruce_leaves
+   * - jungle_log → jungle_leaves
+   * - acacia_log → acacia_leaves
+   * - dark_oak_log → dark_oak_leaves
+   * - mangrove_log → mangrove_leaves
+   * - cherry_log → cherry_leaves
+   *
+   * Minimum 3 matching leaves required to confirm it's a real tree.
+   */
 
   describe('Forest Tree Detection', () => {
     test('SPEC: ChopTree uses forestTrees not reachableTrees', () => {
