@@ -11,6 +11,14 @@ import { useMemoryProfiler } from './hooks/useMemoryProfiler';
 import type { BotConfig, LogEntry } from './types';
 import { DEFAULT_BOT_CONFIGS, BOT_SPAWN_DELAY } from './types';
 
+/**
+ * Set the terminal window title using ANSI escape sequences.
+ * Works on most terminal emulators (xterm, iTerm2, GNOME Terminal, etc.)
+ */
+function setTerminalTitle(title: string): void {
+  process.stdout.write(`\x1b]0;${title}\x07`);
+}
+
 interface AppProps {
   sessionId: string;
   initialConfigs?: BotConfig[];
@@ -127,6 +135,26 @@ export function App({ sessionId, initialConfigs = DEFAULT_BOT_CONFIGS, autoStart
       startBots();
     }
   }, []); // Only run once on mount
+
+  // Update terminal title based on bot state
+  useEffect(() => {
+    const runningBots = bots.filter(b => b.status === 'running');
+    const totalBots = bots.length;
+
+    if (totalBots === 0) {
+      setTerminalTitle('Minecraft Bots');
+    } else if (runningBots.length === 0) {
+      setTerminalTitle(`Minecraft Bots [0/${totalBots} running]`);
+    } else {
+      const names = runningBots.map(b => b.config.roleLabel).join(', ');
+      setTerminalTitle(`Minecraft Bots [${runningBots.length}/${totalBots}] ${names}`);
+    }
+
+    // Reset title on unmount
+    return () => {
+      setTerminalTitle('');
+    };
+  }, [bots]);
 
   // All roles are always available (can have multiple of the same)
   const availableRoles = DEFAULT_BOT_CONFIGS;

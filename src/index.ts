@@ -5,6 +5,30 @@ import { fileURLToPath } from "url";
 import { faker } from '@faker-js/faker';
 import { createManagerLogger, formatBotLogLine, generateSessionId } from './shared/logger';
 
+/**
+ * Set the terminal window title using ANSI escape sequences.
+ */
+function setTerminalTitle(title: string): void {
+    process.stdout.write(`\x1b]0;${title}\x07`);
+}
+
+/**
+ * Update terminal title based on running bots.
+ */
+function updateTerminalTitle() {
+    const runningCount = botProcesses.size;
+    const totalCount = BOT_CONFIGS.length;
+    if (runningCount === 0) {
+        setTerminalTitle(`Minecraft Bots [0/${totalCount} running]`);
+    } else {
+        const names = BOT_CONFIGS
+            .filter(c => botProcesses.has(c.role))
+            .map(c => c.roleLabel)
+            .join(', ');
+        setTerminalTitle(`Minecraft Bots [${runningCount}/${totalCount}] ${names}`);
+    }
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -124,6 +148,7 @@ async function startBot(config: { role: string; roleLabel: string }, isRestart =
     });
 
     botProcesses.set(configKey, botProcess);
+    updateTerminalTitle();
 
     // Handle stdout - pretty print JSON logs from bots
     const handleStdout = async () => {
@@ -183,6 +208,8 @@ async function startBot(config: { role: string; roleLabel: string }, isRestart =
             const delay = Math.min(INITIAL_BACKOFF * Math.pow(2, attempts), MAX_BACKOFF);
             log.warn({ bot: config.roleLabel, exitCode, delaySeconds: delay / 1000 }, 'Bot exited, reconnecting');
             reconnectAttempts.set(configKey, attempts + 1);
+            botProcesses.delete(configKey);
+            updateTerminalTitle();
 
             const timeout = setTimeout(() => {
                 retryTimeouts.delete(configKey);
@@ -191,6 +218,8 @@ async function startBot(config: { role: string; roleLabel: string }, isRestart =
             retryTimeouts.set(configKey, timeout);
         } else {
             log.info({ bot: config.roleLabel }, 'Bot exited cleanly');
+            botProcesses.delete(configKey);
+            updateTerminalTitle();
         }
     });
 }
@@ -208,6 +237,7 @@ async function startAllBots() {
 }
 
 // Initial start
+setTerminalTitle(`Minecraft Bots [starting ${BOT_CONFIGS.length} bots...]`);
 startAllBots();
 
 const botCount = BOT_CONFIGS.length;
@@ -235,6 +265,7 @@ watch(__dirname, { recursive: true }, (event, filename) => {
 
 process.on("SIGINT", () => {
     log.info('Stopping hot-reload manager');
+    setTerminalTitle(''); // Reset terminal title
     for (const [role, proc] of botProcesses) {
         log.info({ role }, 'Killing bot');
         proc.kill();
