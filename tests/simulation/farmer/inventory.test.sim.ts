@@ -28,22 +28,38 @@ async function testCollectsDrops() {
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
-    botPosition: new Vec3(3, 65, 3),
+    botPosition: new Vec3(0, 64, 0),
     botInventory: [{ name: 'iron_hoe', count: 1 }],
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  // Spawn items near the bot
-  await test.rcon('summon item 2 65 2 {Item:{id:"minecraft:wheat_seeds",count:10}}');
+  // Spread 10 seeds across the map at various distances from the bot
+  // Bot starts at (0, 64, 0), seeds are placed far enough to require navigation
+  const seedPositions = [
+    { x: 8, z: 0 },    // East
+    { x: -8, z: 0 },   // West
+    { x: 0, z: 8 },    // South
+    { x: 0, z: -8 },   // North
+    { x: 6, z: 6 },    // SE
+    { x: -6, z: 6 },   // SW
+    { x: 6, z: -6 },   // NE
+    { x: -6, z: -6 },  // NW
+    { x: 10, z: 5 },   // Far east
+    { x: -10, z: -5 }, // Far west
+  ];
+
+  for (const pos of seedPositions) {
+    await test.rcon(`summon item ${pos.x} 64 ${pos.z} {Item:{id:"minecraft:wheat_seeds",count:1}}`);
+  }
 
   const role = new GOAPFarmingRole();
   role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
   await test.waitForInventory('wheat_seeds', 10, {
-    timeout: 30000,
-    message: 'Bot should collect dropped wheat seeds',
+    timeout: 60000,
+    message: 'Bot should collect all 10 scattered wheat seeds',
   });
 
   role.stop(test.bot);
