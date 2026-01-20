@@ -45,6 +45,8 @@ const SERVER_DIR = path.join(import.meta.dir, '../../server');
 const INSTANCE_DIR = path.join(SERVER_DIR, 'instance');
 
 export interface SimulationOptions {
+  /** Skip the default bedrock/grass ground fill (for void world tests) */
+  skipDefaultGround?: boolean;
   /** Bot spawn position */
   botPosition?: Vec3;
   /** Items to give the bot */
@@ -103,6 +105,7 @@ export class PaperSimulationServer {
     autoStartServer: true,
     clearWorld: true,
     clearRadius: 50,
+    skipDefaultGround: false,
     waitForPlayer: true,
     testName: '',
   };
@@ -548,15 +551,18 @@ export class PaperSimulationServer {
     }
 
     // Set bedrock floor at y=62 and grass at y=63 (common base for most test worlds)
-    for (let x = -r; x < r; x += chunkSize) {
-      for (let z = -r; z < r; z += chunkSize) {
-        const x1 = x;
-        const z1 = z;
-        const x2 = Math.min(x + chunkSize - 1, r - 1);
-        const z2 = Math.min(z + chunkSize - 1, r - 1);
+    // Skip this for void world tests (obstacle courses, etc.)
+    if (!this.options.skipDefaultGround) {
+      for (let x = -r; x < r; x += chunkSize) {
+        for (let z = -r; z < r; z += chunkSize) {
+          const x1 = x;
+          const z1 = z;
+          const x2 = Math.min(x + chunkSize - 1, r - 1);
+          const z2 = Math.min(z + chunkSize - 1, r - 1);
 
-        await this.rconCommand(`fill ${x1} 62 ${z1} ${x2} 62 ${z2} minecraft:bedrock replace`);
-        await this.rconCommand(`fill ${x1} 63 ${z1} ${x2} 63 ${z2} minecraft:grass_block replace`);
+          await this.rconCommand(`fill ${x1} 62 ${z1} ${x2} 62 ${z2} minecraft:bedrock replace`);
+          await this.rconCommand(`fill ${x1} 63 ${z1} ${x2} 63 ${z2} minecraft:grass_block replace`);
+        }
       }
     }
 
@@ -568,9 +574,9 @@ export class PaperSimulationServer {
     if (!this.mockWorld || !this.rcon) return;
 
     const blocks = this.mockWorld.getAllBlocks();
-    // Skip air blocks and grass_block at y=63 (already placed by clearWorldArea)
+    // Skip grass_block at y=63 (already placed by clearWorldArea)
+    // But DO place air blocks - they can be used to clear the default grass
     const blocksToPlace = blocks.filter(b => {
-      if (b.name === 'air') return false;
       if (b.name === 'grass_block' && b.position.y === 63) return false;
       return true;
     });

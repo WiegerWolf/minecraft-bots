@@ -42,6 +42,11 @@ export class GOAPFarmingRole extends GOAPRole {
   private lastDropReplanTime = 0;
   private static readonly DROP_REPLAN_DEBOUNCE_MS = 2000; // Only replan for drops every 2 seconds max
 
+  // Dynamic movement configurations - switch based on location
+  private normalMovements: Movements | null = null;
+  private farmSafeMovements: Movements | null = null;
+  private isInFarmMode = false;
+
   constructor(config?: GOAPRoleConfig) {
     super(config);
     this.log?.info('Initialized with GOAP planning system');
@@ -70,11 +75,22 @@ export class GOAPFarmingRole extends GOAPRole {
   }
 
   override start(bot: Bot, options?: any): void {
-    // Configure pathfinder
-    const movements = new Movements(bot);
-    movements.canDig = true;
-    movements.digCost = 10;
-    bot.pathfinder.setMovements(movements);
+    // Create two movement configurations: normal (full freedom) and farm-safe (no jumping)
+    this.normalMovements = new Movements(bot);
+    this.normalMovements.canDig = true;
+    this.normalMovements.digCost = 10;
+    this.normalMovements.allowParkour = true;
+    this.normalMovements.allowSprinting = true;
+
+    this.farmSafeMovements = new Movements(bot);
+    this.farmSafeMovements.canDig = true;
+    this.farmSafeMovements.digCost = 10;
+    this.farmSafeMovements.allowParkour = false; // Prevent gap-jumping over water/farmland
+    this.farmSafeMovements.allowSprinting = false; // Sprinting momentum can cause jumps
+
+    // Start with normal movements
+    bot.pathfinder.setMovements(this.normalMovements);
+    this.isInFarmMode = false;
 
     this.log?.info('Starting GOAP farming bot');
     super.start(bot, options);
@@ -92,10 +108,22 @@ export class GOAPFarmingRole extends GOAPRole {
       }
     }
 
-    // Set up farmland protection - prevent jumping when near farmland to avoid trampling crops
+    // Set up farmland protection - dynamically switch movement config based on location
     this.farmlandProtectionInterval = setInterval(() => {
-      if (isNearFarmland(bot)) {
-        // Clear jump control state to prevent trampling
+      const nearFarmland = isNearFarmland(bot);
+
+      if (nearFarmland && !this.isInFarmMode) {
+        // Entering farm area - switch to safe movements
+        bot.pathfinder.setMovements(this.farmSafeMovements!);
+        this.isInFarmMode = true;
+      } else if (!nearFarmland && this.isInFarmMode) {
+        // Leaving farm area - restore normal movements
+        bot.pathfinder.setMovements(this.normalMovements!);
+        this.isInFarmMode = false;
+      }
+
+      if (nearFarmland) {
+        // Also clear jump control state as a fallback
         bot.controlState.jump = false;
       }
     }, 50); // Check frequently (20 times per second)
