@@ -109,10 +109,13 @@ async function testPlantsSeeds() {
   world.setBlock(new Vec3(10, 63, 10), 'water');
 
   // Create empty farmland (no crops yet)
+  // Track farmland positions for verification
+  const farmlandPositions: Vec3[] = [];
   for (let dx = -2; dx <= 2; dx++) {
     for (let dz = -2; dz <= 2; dz++) {
       if (dx === 0 && dz === 0) continue;
       world.setBlock(new Vec3(10 + dx, 63, 10 + dz), 'farmland');
+      farmlandPositions.push(new Vec3(10 + dx, 64, 10 + dz)); // y+1 for crop position
     }
   }
 
@@ -133,20 +136,38 @@ async function testPlantsSeeds() {
   const role = new GOAPFarmingRole();
   role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
+  // Expect bot to plant on most of the farmland (80%+)
+  const expectedMinPlanted = Math.floor(farmlandPositions.length * 0.8);
   const initialSeeds = test.botInventoryCount('wheat_seeds');
+
   await test.waitUntil(
-    () => test.botInventoryCount('wheat_seeds') < initialSeeds,
+    () => initialSeeds - test.botInventoryCount('wheat_seeds') >= expectedMinPlanted,
     {
-      timeout: 60000,
-      message: 'Bot should plant some seeds (seed count decreased)',
+      timeout: 90000,
+      message: `Bot should plant at least ${expectedMinPlanted} seeds (on ${farmlandPositions.length} farmland)`,
     }
   );
 
   const finalSeeds = test.botInventoryCount('wheat_seeds');
+  const seedsPlanted = initialSeeds - finalSeeds;
   test.assertGreater(
-    initialSeeds - finalSeeds,
-    0,
-    `Bot should have planted seeds (${initialSeeds} -> ${finalSeeds})`
+    seedsPlanted,
+    expectedMinPlanted - 1,
+    `Bot should have planted most farmland (${seedsPlanted}/${farmlandPositions.length})`
+  );
+
+  // Verify wheat blocks actually exist on farmland
+  let cropsPlanted = 0;
+  for (const pos of farmlandPositions) {
+    const block = test.blockAt(pos);
+    if (block?.startsWith('wheat')) {
+      cropsPlanted++;
+    }
+  }
+  test.assertGreater(
+    cropsPlanted,
+    expectedMinPlanted - 1,
+    `Wheat should be growing on farmland (${cropsPlanted}/${farmlandPositions.length} planted)`
   );
 
   role.stop(test.bot);
