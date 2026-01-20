@@ -22,6 +22,8 @@
     "test:scenarios": "bun test tests/scenarios",
     "visualize": "bun run tests/mocks/visualize-world.ts",
     "test:visual": "bun run tests/visual/run-visual.ts",
+    "sim": "bun run tests/simulation/run-simulation.ts",
+    "sim:lumberjack": "bun run tests/simulation/run-lumberjack.sim.ts",
     "postinstall": "patch-package"
   },
   "keywords": [
@@ -32,6 +34,7 @@
   "license": "MIT",
   "dependencies": {
     "@faker-js/faker": "^10.2.0",
+    "flying-squid": "^1.11.0",
     "@types/react": "^19.2.8",
     "canvas": "^3.2.1",
     "ink": "^6.6.0",
