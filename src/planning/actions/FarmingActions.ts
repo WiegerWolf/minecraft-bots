@@ -252,6 +252,7 @@ export class CheckSharedChestAction extends BaseGOAPAction {
 
   preconditions = [
     booleanPrecondition('needs.tools', true, 'needs tools'),
+    booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
   ];
 
   effects = [
@@ -259,9 +260,8 @@ export class CheckSharedChestAction extends BaseGOAPAction {
   ];
 
   override getCost(ws: WorldState): number {
-    // Lower cost if we have chest access
-    const hasStorage = ws.getBool('derived.hasStorageAccess');
-    return hasStorage ? 2.0 : 3.0;
+    // Cost for checking chest - lower than BroadcastNeed since it's faster
+    return 2.0;
   }
 
   override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {

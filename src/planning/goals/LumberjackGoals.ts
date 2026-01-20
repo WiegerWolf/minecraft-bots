@@ -56,6 +56,14 @@ export class FulfillNeedsGoal extends BaseGoal {
 
     return 120;
   }
+
+  override isValid(ws: WorldState): boolean {
+    // Only valid when we have incoming needs AND can spare materials
+    // This must exactly match the action preconditions to prevent planning failures
+    const hasNeeds = ws.getBool('has.incomingNeeds');
+    const canSpare = ws.getBool('can.spareForNeeds');
+    return hasNeeds && canSpare;
+  }
 }
 
 /**

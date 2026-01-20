@@ -1,0 +1,3 @@
+- [ ] No jumping on farmland allowed. when on farmland, the bot should walk, not jump. because jumping or running breaks the farmland and crops. this should only apply to farmland blocks (9x9 area and surrounding blocks).
+- [ ] When lumberjack breaks leaves, she walks back and forth too much from one leave to another on the same tree. she should just break all leaves on the same tree at once as much as possible. prioritise contiguous leaves breaking, not jumping and running around the tree.
+- [ ] For some reason, after bots study signs at spawn they don't record the learned information in their world knowledge. they should. Double check that all types of signs are recorded in their appropiate categories.

@@ -69,13 +69,17 @@ export class TerraformAreaAction extends BaseGOAPAction {
   ];
 
   // Override to check for either shovel or pickaxe
+  // Also applicable when terraform is already active (to continue/complete it)
   override checkPreconditions(ws: WorldState): boolean {
     const hasPending = ws.getBool('has.pendingTerraformRequest');
+    const terraformActive = ws.getBool('terraform.active');
     const hasShovel = ws.getBool('has.shovel');
     const hasPickaxe = ws.getBool('has.pickaxe');
     const hasAnyTool = ws.getBool('derived.hasAnyTool');
 
-    if (!hasPending) return false;
+    // Need either a pending request OR an active terraform task
+    if (!hasPending && !terraformActive) return false;
+    // Need at least one tool
     if (!hasShovel && !hasPickaxe && !hasAnyTool) return false;
 
     return true;
