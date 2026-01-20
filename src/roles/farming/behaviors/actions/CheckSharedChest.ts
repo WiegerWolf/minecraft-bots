@@ -28,17 +28,32 @@ export class CheckSharedChest {
     readonly name = 'CheckSharedChest';
     private lastRequestTime = 0;
 
-    private hasSufficientMaterials(bb: FarmingBlackboard): boolean {
+    private hasSufficientMaterials(bot: Bot, bb: FarmingBlackboard): boolean {
         // Skip if we don't need tools
         if (!bb.needsTools) return true;
 
-        // Check if we have enough materials to craft a hoe:
-        // Need: 2 planks (head) + 2 sticks (handle)
-        // Or: 2 logs (= 8 planks = enough for sticks + hoe)
-        return (
-            (bb.stickCount >= 2 && bb.plankCount >= 2) ||
-            bb.logCount >= 2
-        );
+        // Check if crafting table is available (needed for hoe crafting)
+        const existingTable = bot.findBlocks({
+            matching: b => b.name === 'crafting_table',
+            maxDistance: 64,
+            count: 1
+        });
+        const hasTableItem = bot.inventory.items().some(i => i.name === 'crafting_table');
+        const hasCraftingTableAccess = existingTable.length > 0 || hasTableItem;
+
+        // Materials needed:
+        // - Hoe: 2 planks (head) + 2 sticks (handle)
+        // - Crafting table (if not available): 4 planks
+        // - Sticks (from 2 planks): 4 sticks per 2 planks
+
+        if (hasCraftingTableAccess) {
+            // Just need hoe materials: 2 planks + 2 sticks OR 2 logs (= 8 planks)
+            return (bb.stickCount >= 2 && bb.plankCount >= 2) || bb.logCount >= 2;
+        } else {
+            // Need table + hoe: 4 planks (table) + 2 planks (head) + 2 sticks = 6 planks + 2 sticks
+            // Or: 2 logs (= 8 planks) is enough for everything
+            return bb.logCount >= 2 || bb.plankCount >= 6;
+        }
     }
 
     private findChest(bot: Bot, bb: FarmingBlackboard): Vec3 | null {
@@ -92,7 +107,7 @@ export class CheckSharedChest {
 
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
         // Already have sufficient materials
-        if (this.hasSufficientMaterials(bb)) {
+        if (this.hasSufficientMaterials(bot, bb)) {
             return 'failure';
         }
 

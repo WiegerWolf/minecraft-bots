@@ -169,6 +169,7 @@ export class WorldStateBuilder {
     ws.set('derived.hasStorageAccess', bb.sharedChest !== null || bb.nearbyChests.length > 0);
     ws.set('derived.hasVillage', bb.villageCenter !== null);  // Village center from lumberjack
     ws.set('derived.chestRecentlyEmpty', Date.now() < bb.chestEmptyUntil);  // Backoff for empty chest
+    ws.set('derived.exploreOnCooldown', Date.now() < bb.exploreOnCooldownUntil);  // Cooldown for exploration
 
     // Sign-based persistent knowledge
     ws.set('has.studiedSigns', bb.hasStudiedSigns);

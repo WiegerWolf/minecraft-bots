@@ -387,7 +387,8 @@ export class ExploreAction extends BaseGOAPAction {
   private impl = new Explore();
 
   preconditions = [
-    // Always applicable - fallback action
+    // Not available during cooldown (prevents rapid goal cycling)
+    booleanPrecondition('derived.exploreOnCooldown', false, 'explore not on cooldown'),
   ];
 
   effects = [

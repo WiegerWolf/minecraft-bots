@@ -16,13 +16,18 @@ interface ExplorationCandidate {
     score: number;
 }
 
+// Cooldown between explorations in milliseconds
+const EXPLORE_COOLDOWN_MS = 5000;
+
 export class Explore implements BehaviorNode {
     name = 'Explore';
-    private lastExploreTime = 0;
 
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
-        // Don't explore too frequently (5 second cooldown between explorations)
-        if (Date.now() - this.lastExploreTime < 5000) {
+        // Don't explore too frequently - check blackboard cooldown
+        // Note: The cooldown is checked both here (behavior) and in GOAP preconditions
+        // The precondition prevents the planner from selecting Explore during cooldown
+        // This check is a safety net in case the behavior is called directly
+        if (Date.now() < bb.exploreOnCooldownUntil) {
             return 'failure';
         }
 
@@ -31,7 +36,6 @@ export class Explore implements BehaviorNode {
         // GOAP already controls exploration priority via ExploreGoal utility functions.
 
         bb.lastAction = 'explore';
-        this.lastExploreTime = Date.now();
 
         // Generate candidate positions in a circle around the bot
         const currentPos = bot.entity.position;
@@ -85,6 +89,7 @@ export class Explore implements BehaviorNode {
 
         if (candidates.length === 0) {
             bb.log?.debug(`[BT] No valid exploration targets found`);
+            bb.exploreOnCooldownUntil = Date.now() + EXPLORE_COOLDOWN_MS;
             return 'failure';
         }
 
@@ -94,6 +99,7 @@ export class Explore implements BehaviorNode {
 
         if (!best || best.score < -50) {
             bb.log?.debug(`[BT] All exploration targets have poor scores, waiting...`);
+            bb.exploreOnCooldownUntil = Date.now() + EXPLORE_COOLDOWN_MS;
             return 'failure';
         }
 
@@ -104,6 +110,9 @@ export class Explore implements BehaviorNode {
             new GoalNear(best.pos.x, best.pos.y, best.pos.z, 3),
             { timeoutMs: 30000 }  // Longer timeout for exploration
         );
+
+        // Set cooldown for next exploration attempt
+        bb.exploreOnCooldownUntil = Date.now() + EXPLORE_COOLDOWN_MS;
 
         if (result.success) {
             // Record this position as explored

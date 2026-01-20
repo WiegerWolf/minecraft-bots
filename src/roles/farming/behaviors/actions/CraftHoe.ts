@@ -93,16 +93,18 @@ export class CraftHoe implements BehaviorNode {
             return 'failure';
         }
 
-        // Step 2: Craft crafting table if we don't have one nearby (2x2 recipe)
-        if (bb.plankCount >= 4) {
-            const existingTable = bot.findBlocks({
-                matching: b => b.name === 'crafting_table',
-                maxDistance: 64, // Increased range for navigation
-                count: 1
-            });
-            const hasTableItem = bot.inventory.items().some(i => i.name === 'crafting_table');
+        // Step 2: Ensure crafting table is available (needed for hoe crafting)
+        // Check if we have an existing table nearby or a table item
+        const existingTable = bot.findBlocks({
+            matching: b => b.name === 'crafting_table',
+            maxDistance: 64, // Increased range for navigation
+            count: 1
+        });
+        const hasTableItem = bot.inventory.items().some(i => i.name === 'crafting_table');
 
-            if (existingTable.length === 0 && !hasTableItem) {
+        // If no table available and we have enough planks, craft one
+        if (existingTable.length === 0 && !hasTableItem) {
+            if (bb.plankCount >= 4) {
                 bb.log?.debug('Crafting crafting table');
                 const tableItem = bot.registry.itemsByName['crafting_table'];
                 if (tableItem) {
@@ -117,6 +119,11 @@ export class CraftHoe implements BehaviorNode {
                         }
                     }
                 }
+                return 'failure';
+            } else {
+                // No table and not enough planks - need more materials
+                // Don't proceed to hoe crafting since it will fail
+                bb.log?.debug('Need crafting table but only have %d planks (need 4)', bb.plankCount);
                 return 'failure';
             }
         }

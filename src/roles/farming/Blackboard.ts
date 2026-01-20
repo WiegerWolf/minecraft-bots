@@ -110,6 +110,11 @@ export interface FarmingBlackboard {
     chestEmptyUntil: number;                    // Timestamp when chest backoff expires
 
     // ═══════════════════════════════════════════════════════════════
+    // EXPLORATION COOLDOWN (prevent rapid explore cycling)
+    // ═══════════════════════════════════════════════════════════════
+    exploreOnCooldownUntil: number;             // Timestamp when explore cooldown expires
+
+    // ═══════════════════════════════════════════════════════════════
     // TRADE STATE
     // ═══════════════════════════════════════════════════════════════
     tradeableItems: InventoryItem[];            // Items we can offer for trade
@@ -193,6 +198,9 @@ export function createBlackboard(): FarmingBlackboard {
 
         // Chest backoff
         chestEmptyUntil: 0,
+
+        // Exploration cooldown
+        exploreOnCooldownUntil: 0,
 
         // Trade state
         tradeableItems: [],
