@@ -1,6 +1,0 @@
-- [x] bots should prioritize solving their needs through trading with each other, if someone is offering something that someone else needs, they should trade it even if at the moment they are preoccupied with something else. same goes for providing resources to other bots that need them. trading should be a priority over other activities, like gathering resources or building
-  - Fixed in all three role goal files (`FarmingGoals.ts`, `LumberjackGoals.ts`, `LandscaperGoals.ts`):
-    - Increased `RespondToTradeOfferGoal` utility from 120 to 140
-    - This ensures trade offers can preempt most activities (utility 140 > activity 100 + preemption threshold 30 = 130)
-    - Added tests verifying trade offers preempt harvesting, tree chopping, and terraforming
-- [ ] i noticed that landscapers dont actually go up to and look at the signs at the spawn, like other bots do. we need to fix this
