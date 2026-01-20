@@ -1,0 +1,449 @@
+/**
+ * PaperSimulationServer - Run bot logic against a real Paper Minecraft server
+ * with custom world definitions.
+ *
+ * This provides accurate Minecraft physics for testing bot behavior.
+ *
+ * Prerequisites:
+ *   - Paper server running on port 25566 with RCON enabled
+ *   - Start with: cd server && ./start.sh
+ *
+ * Usage:
+ * ```typescript
+ * const sim = new PaperSimulationServer();
+ *
+ * // Define your world (same API as MockWorld)
+ * const world = new MockWorld();
+ * world.fill(new Vec3(-10, 63, -10), new Vec3(10, 63, 10), 'grass_block');
+ * createOakTree(world, new Vec3(0, 64, 0), 5);
+ *
+ * // Start simulation
+ * await sim.start(world, {
+ *   botPosition: new Vec3(5, 64, 5),
+ *   botInventory: [{ name: 'diamond_axe', count: 1 }],
+ * });
+ *
+ * // Access the real bot
+ * const bot = sim.getBot();
+ * ```
+ */
+
+import { Vec3 } from 'vec3';
+import type { Bot } from 'mineflayer';
+import { MockWorld } from '../mocks/MockWorld';
+import { spawn, type Subprocess } from 'bun';
+import { Rcon } from 'rcon-client';
+import path from 'path';
+
+// @ts-ignore
+import mineflayer from 'mineflayer';
+// @ts-ignore
+import { mineflayer as mineflayerViewer } from 'prismarine-viewer';
+
+const VERSION = '1.21.4';
+const SERVER_DIR = path.join(import.meta.dir, '../../server');
+const INSTANCE_DIR = path.join(SERVER_DIR, 'instance');
+
+export interface SimulationOptions {
+  /** Bot spawn position */
+  botPosition?: Vec3;
+  /** Items to give the bot */
+  botInventory?: Array<{ name: string; count: number }>;
+  /** Game mode: 'survival' or 'creative' */
+  gameMode?: 'survival' | 'creative';
+  /** Server port (default: 25566) */
+  serverPort?: number;
+  /** RCON port (default: 25575) */
+  rconPort?: number;
+  /** RCON password (default: 'simulation') */
+  rconPassword?: string;
+  /** Viewer port (default: 3000) */
+  viewerPort?: number;
+  /** Enable prismarine-viewer (default: true) */
+  enableViewer?: boolean;
+  /** First-person view (default: false = bird's eye) */
+  firstPerson?: boolean;
+  /** Auto-open browser (default: true) */
+  openBrowser?: boolean;
+  /** Start server automatically (default: true) */
+  autoStartServer?: boolean;
+  /** Clear world before placing blocks (default: true) */
+  clearWorld?: boolean;
+  /** World clear radius (default: 50) */
+  clearRadius?: number;
+}
+
+export class PaperSimulationServer {
+  private serverProcess: Subprocess | null = null;
+  private rcon: Rcon | null = null;
+  private bot: Bot | null = null;
+  private mockWorld: MockWorld | null = null;
+  private options: Required<SimulationOptions>;
+
+  private defaultOptions: Required<SimulationOptions> = {
+    botPosition: new Vec3(0, 65, 0),
+    botInventory: [],
+    gameMode: 'survival',
+    serverPort: 25566,
+    rconPort: 25575,
+    rconPassword: 'simulation',
+    viewerPort: 3000,
+    enableViewer: true,
+    firstPerson: false,
+    openBrowser: true,
+    autoStartServer: true,
+    clearWorld: true,
+    clearRadius: 50,
+  };
+
+  /**
+   * Start the simulation with a custom world.
+   */
+  async start(world: MockWorld, options: SimulationOptions = {}): Promise<Bot> {
+    this.mockWorld = world;
+    this.options = { ...this.defaultOptions, ...options };
+
+    // Start server if needed
+    if (this.options.autoStartServer) {
+      console.log('[PaperSim] Starting Paper server...');
+      await this.startServer();
+    }
+
+    // Connect RCON
+    console.log('[PaperSim] Connecting to RCON...');
+    await this.connectRcon();
+
+    // Clear and build world
+    if (this.options.clearWorld) {
+      console.log('[PaperSim] Clearing world area...');
+      await this.clearWorldArea();
+    }
+
+    console.log('[PaperSim] Building world from MockWorld...');
+    await this.buildWorld();
+
+    // Connect bot
+    console.log('[PaperSim] Connecting bot...');
+    await this.connectBot();
+
+    // Setup bot state
+    console.log('[PaperSim] Setting up bot state...');
+    await this.setupBotState();
+
+    // Start viewer
+    if (this.options.enableViewer) {
+      console.log('[PaperSim] Starting viewer...');
+      await this.startViewer();
+    }
+
+    console.log('[PaperSim] Ready!');
+    return this.bot!;
+  }
+
+  /**
+   * Get the connected bot instance.
+   */
+  getBot(): Bot {
+    if (!this.bot) throw new Error('Simulation not started');
+    return this.bot;
+  }
+
+  /**
+   * Execute an RCON command.
+   */
+  async rconCommand(command: string): Promise<string> {
+    if (!this.rcon) throw new Error('RCON not connected');
+    return await this.rcon.send(command);
+  }
+
+  /**
+   * Set a block via RCON.
+   */
+  async setBlock(pos: Vec3, blockName: string): Promise<void> {
+    const x = Math.floor(pos.x);
+    const y = Math.floor(pos.y);
+    const z = Math.floor(pos.z);
+    await this.rconCommand(`setblock ${x} ${y} ${z} minecraft:${blockName} replace`);
+  }
+
+  /**
+   * Fill a region via RCON.
+   */
+  async fill(from: Vec3, to: Vec3, blockName: string): Promise<void> {
+    const cmd = `fill ${Math.floor(from.x)} ${Math.floor(from.y)} ${Math.floor(from.z)} ` +
+                `${Math.floor(to.x)} ${Math.floor(to.y)} ${Math.floor(to.z)} ` +
+                `minecraft:${blockName} replace`;
+    await this.rconCommand(cmd);
+  }
+
+  /**
+   * Stop the simulation and clean up.
+   */
+  async stop(): Promise<void> {
+    console.log('[PaperSim] Stopping...');
+
+    if (this.bot) {
+      this.bot.quit();
+      this.bot = null;
+    }
+
+    if (this.rcon) {
+      await this.rcon.end();
+      this.rcon = null;
+    }
+
+    if (this.serverProcess) {
+      this.serverProcess.kill();
+      this.serverProcess = null;
+    }
+
+    this.mockWorld = null;
+    console.log('[PaperSim] Stopped');
+  }
+
+  // --- Private methods ---
+
+  private async startServer(): Promise<void> {
+    // Check if server is already running
+    try {
+      const testRcon = new Rcon({
+        host: 'localhost',
+        port: this.options.rconPort,
+        password: this.options.rconPassword,
+      });
+      await testRcon.connect();
+      await testRcon.end();
+      console.log('[PaperSim] Server already running');
+      return;
+    } catch {
+      // Server not running, start it
+    }
+
+    // Run setup if instance doesn't exist
+    const paperJar = path.join(INSTANCE_DIR, 'paper.jar');
+    const fs = await import('fs');
+    if (!fs.existsSync(paperJar)) {
+      console.log('[PaperSim] Running setup.sh to download Paper...');
+      const setupProc = spawn({
+        cmd: ['./setup.sh'],
+        cwd: SERVER_DIR,
+        stdout: 'inherit',
+        stderr: 'inherit',
+      });
+      await setupProc.exited;
+    }
+
+    console.log('[PaperSim] Starting server process...');
+    this.serverProcess = spawn({
+      cmd: ['java', '-Xms512M', '-Xmx1G', '-jar', 'paper.jar', '--nogui'],
+      cwd: INSTANCE_DIR,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    // Wait for server to be ready (look for "Done" in output)
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Server start timeout')), 120000);
+
+      const checkOutput = async () => {
+        const reader = this.serverProcess!.stdout.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const text = decoder.decode(value);
+          process.stdout.write(text); // Show server output
+
+          if (text.includes('Done') && text.includes('For help')) {
+            clearTimeout(timeout);
+            reader.releaseLock();
+            // Give it a moment to fully initialize
+            await this.delay(1000);
+            resolve();
+            return;
+          }
+        }
+      };
+
+      checkOutput().catch(reject);
+    });
+  }
+
+  private async connectRcon(): Promise<void> {
+    let retries = 10;
+    while (retries > 0) {
+      try {
+        this.rcon = new Rcon({
+          host: 'localhost',
+          port: this.options.rconPort,
+          password: this.options.rconPassword,
+        });
+        await this.rcon.connect();
+        console.log('[PaperSim] RCON connected');
+        return;
+      } catch (err) {
+        retries--;
+        if (retries === 0) throw err;
+        console.log(`[PaperSim] RCON connection failed, retrying... (${retries} left)`);
+        await this.delay(2000);
+      }
+    }
+  }
+
+  private async clearWorldArea(): Promise<void> {
+    const r = this.options.clearRadius;
+    const pos = this.options.botPosition;
+
+    // Fill area with air first
+    console.log(`[PaperSim] Clearing ${r * 2}x${r * 2} area...`);
+
+    // Clear in chunks to avoid command length limits
+    const chunkSize = 32;
+    for (let x = -r; x < r; x += chunkSize) {
+      for (let z = -r; z < r; z += chunkSize) {
+        const x1 = Math.floor(pos.x) + x;
+        const z1 = Math.floor(pos.z) + z;
+        const x2 = Math.min(x1 + chunkSize - 1, Math.floor(pos.x) + r - 1);
+        const z2 = Math.min(z1 + chunkSize - 1, Math.floor(pos.z) + r - 1);
+
+        // Clear from y=60 to y=80
+        await this.rconCommand(`fill ${x1} 60 ${z1} ${x2} 80 ${z2} minecraft:air replace`);
+      }
+    }
+
+    // Set bedrock floor at y=62
+    for (let x = -r; x < r; x += chunkSize) {
+      for (let z = -r; z < r; z += chunkSize) {
+        const x1 = Math.floor(pos.x) + x;
+        const z1 = Math.floor(pos.z) + z;
+        const x2 = Math.min(x1 + chunkSize - 1, Math.floor(pos.x) + r - 1);
+        const z2 = Math.min(z1 + chunkSize - 1, Math.floor(pos.z) + r - 1);
+
+        await this.rconCommand(`fill ${x1} 62 ${z1} ${x2} 62 ${z2} minecraft:bedrock replace`);
+      }
+    }
+  }
+
+  private async buildWorld(): Promise<void> {
+    if (!this.mockWorld || !this.rcon) return;
+
+    const blocks = this.mockWorld.getAllBlocks();
+    console.log(`[PaperSim] Placing ${blocks.length} blocks...`);
+
+    // Group blocks by type for more efficient /fill commands where possible
+    const blocksByType = new Map<string, Vec3[]>();
+    for (const block of blocks) {
+      if (block.name === 'air') continue;
+
+      const existing = blocksByType.get(block.name) || [];
+      existing.push(block.position);
+      blocksByType.set(block.name, existing);
+    }
+
+    // Place blocks (could be optimized with batching)
+    let placed = 0;
+    for (const [blockName, positions] of blocksByType) {
+      for (const pos of positions) {
+        try {
+          await this.setBlock(pos, blockName);
+          placed++;
+
+          // Progress update every 100 blocks
+          if (placed % 100 === 0) {
+            console.log(`[PaperSim] Placed ${placed}/${blocks.length} blocks...`);
+          }
+        } catch (err) {
+          console.warn(`[PaperSim] Failed to place ${blockName} at ${pos}: ${err}`);
+        }
+      }
+    }
+
+    console.log(`[PaperSim] Placed ${placed} blocks`);
+  }
+
+  private async connectBot(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.bot = mineflayer.createBot({
+        host: 'localhost',
+        port: this.options.serverPort,
+        username: 'SimBot',
+        version: VERSION,
+        auth: 'offline',
+      });
+
+      this.bot.once('spawn', () => {
+        console.log('[PaperSim] Bot spawned');
+        resolve();
+      });
+
+      this.bot.once('error', (err: Error) => {
+        console.error('[PaperSim] Bot error:', err);
+        reject(err);
+      });
+
+      this.bot.once('kicked', (reason: string) => {
+        console.error('[PaperSim] Bot kicked:', reason);
+        reject(new Error(`Bot kicked: ${reason}`));
+      });
+    });
+  }
+
+  private async setupBotState(): Promise<void> {
+    if (!this.bot || !this.rcon) return;
+
+    const pos = this.options.botPosition;
+
+    // Teleport bot
+    await this.rconCommand(`tp SimBot ${pos.x} ${pos.y} ${pos.z}`);
+
+    // Set game mode
+    await this.rconCommand(`gamemode ${this.options.gameMode} SimBot`);
+
+    // Give items
+    for (const item of this.options.botInventory) {
+      await this.rconCommand(`give SimBot minecraft:${item.name} ${item.count}`);
+    }
+
+    // Op the bot for any needed permissions
+    await this.rconCommand('op SimBot');
+
+    await this.delay(500);
+  }
+
+  private async startViewer(): Promise<void> {
+    if (!this.bot) return;
+
+    mineflayerViewer(this.bot, {
+      port: this.options.viewerPort,
+      firstPerson: this.options.firstPerson,
+    });
+
+    console.log(`[PaperSim] Viewer at http://localhost:${this.options.viewerPort}`);
+
+    if (this.options.openBrowser) {
+      const { exec } = await import('child_process');
+      const url = `http://localhost:${this.options.viewerPort}`;
+      const cmd = process.platform === 'darwin' ? 'open' :
+                  process.platform === 'win32' ? 'start' : 'xdg-open';
+      exec(`${cmd} "${url}"`);
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+
+/**
+ * Convenience function to create and start a simulation.
+ */
+export async function createPaperSimulation(
+  world: MockWorld,
+  options?: SimulationOptions
+): Promise<{ server: PaperSimulationServer; bot: Bot }> {
+  const server = new PaperSimulationServer();
+  const bot = await server.start(world, options);
+  return { server, bot };
+}

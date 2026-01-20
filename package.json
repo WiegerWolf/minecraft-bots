@@ -23,7 +23,8 @@
     "visualize": "bun run tests/mocks/visualize-world.ts",
     "test:visual": "bun run tests/visual/run-visual.ts",
     "sim": "bun run tests/simulation/run-simulation.ts",
-    "sim:lumberjack": "bun run tests/simulation/run-lumberjack.sim.ts",
+    "sim:lumberjack": "bun run tests/simulation/run-lumberjack-paper.sim.ts",
+    "server:start": "cd server && ./start.sh",
     "postinstall": "patch-package"
   },
   "keywords": [
@@ -34,7 +35,7 @@
   "license": "MIT",
   "dependencies": {
     "@faker-js/faker": "^10.2.0",
-    "flying-squid": "^1.11.0",
+        "rcon-client": "^4.2.5",
     "@types/react": "^19.2.8",
     "canvas": "^3.2.1",
     "ink": "^6.6.0",
