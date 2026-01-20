@@ -22,7 +22,7 @@ import { GOAPFarmingRole } from '../../../src/roles/GOAPFarmingRole';
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function testHarvestsMatureWheat() {
-  const test = new SimulationTest('Harvests mature wheat');
+  const test = new SimulationTest('Harvests mature wheat (selective)');
 
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
@@ -30,12 +30,25 @@ async function testHarvestsMatureWheat() {
   // Water source for the farm
   world.setBlock(new Vec3(10, 63, 10), 'water');
 
-  // Create farmland with mature wheat
+  // Create farmland with mixed-age wheat (mature and immature)
+  // Track positions for later verification
+  let matureCount = 0;
+  const immaturePositions: Vec3[] = [];
+
   for (let dx = -2; dx <= 2; dx++) {
     for (let dz = -2; dz <= 2; dz++) {
       if (dx === 0 && dz === 0) continue;
       world.setBlock(new Vec3(10 + dx, 63, 10 + dz), 'farmland');
-      world.setBlock(new Vec3(10 + dx, 64, 10 + dz), 'wheat[age=7]');
+
+      // Checkerboard pattern: alternating mature (age=7) and immature (age=3)
+      const isMature = (dx + dz) % 2 === 0;
+      if (isMature) {
+        world.setBlock(new Vec3(10 + dx, 64, 10 + dz), 'wheat[age=7]');
+        matureCount++;
+      } else {
+        world.setBlock(new Vec3(10 + dx, 64, 10 + dz), 'wheat[age=3]');
+        immaturePositions.push(new Vec3(10 + dx, 64, 10 + dz));
+      }
     }
   }
 
@@ -53,13 +66,30 @@ async function testHarvestsMatureWheat() {
   const role = new GOAPFarmingRole();
   role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
-  await test.waitForInventory('wheat', 1, {
+  // Wait for bot to harvest most of the mature wheat
+  // Expect at least 80% of mature crops harvested (accounting for drop RNG)
+  const expectedMinWheat = Math.floor(matureCount * 0.8);
+  await test.waitForInventory('wheat', expectedMinWheat, {
     timeout: 90000,
-    message: 'Bot should harvest at least 1 wheat',
+    message: `Bot should harvest at least ${expectedMinWheat} wheat (from ${matureCount} mature crops)`,
   });
 
   const wheatCount = test.botInventoryCount('wheat');
-  test.assertGreater(wheatCount, 0, 'Bot should have collected wheat');
+  test.assertGreater(wheatCount, expectedMinWheat - 1, `Bot should have harvested most mature wheat (got ${wheatCount})`);
+
+  // Verify immature wheat was NOT harvested - blocks should still exist
+  let immatureRemaining = 0;
+  for (const pos of immaturePositions) {
+    const block = test.blockAt(pos);
+    if (block?.startsWith('wheat')) {
+      immatureRemaining++;
+    }
+  }
+  test.assertGreater(
+    immatureRemaining,
+    immaturePositions.length * 0.8,
+    `Immature wheat should remain unharvested (${immatureRemaining}/${immaturePositions.length} still growing)`
+  );
 
   role.stop(test.bot);
   return test.cleanup();
