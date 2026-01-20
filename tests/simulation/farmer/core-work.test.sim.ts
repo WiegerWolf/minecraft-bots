@@ -293,30 +293,39 @@ async function testGathersSeeds() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST: Complete farming cycle (Till -> Plant -> Harvest)
+// TEST: Complete farming cycle (Till -> Plant -> Harvest -> Replant -> Deposit)
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function testCompleteFarmingCycle() {
   const test = new SimulationTest('Complete farming cycle');
 
   const world = new MockWorld();
-  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+  world.fill(new Vec3(-30, 63, -30), new Vec3(30, 63, 30), 'grass_block');
 
-  // Water source
-  world.setBlock(new Vec3(0, 63, 0), 'water');
+  // Farm center with water - away from spawn area
+  const farmCenter = new Vec3(20, 63, 20);
+  world.setBlock(farmCenter, 'water');
 
-  // Chest for deposits
-  world.setBlock(new Vec3(5, 64, 5), 'chest');
+  // Chest for deposits - near farm but not in tillable area
+  const chestPos = new Vec3(15, 64, 15);
+  world.setBlock(chestPos, 'chest');
 
-  world.setBlock(new Vec3(-2, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
-  world.setBlock(new Vec3(-4, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 0\nY: 63\nZ: 0' });
-  world.setBlock(new Vec3(-6, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: 5\nY: 64\nZ: 5' });
+  // Signs at spawn area (away from farm)
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 20\nY: 63\nZ: 20' });
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: 15\nY: 64\nZ: 15' });
+
+  // 9x9 farm = 80 farmland blocks (81 - 1 water center)
+  // Give enough seeds plus extra for replanting
+  const farmRadius = 4;
+  const maxFarmland = (farmRadius * 2 + 1) ** 2 - 1; // 80 blocks
+  const seedCount = 100; // Extra for replanting after harvest
 
   await test.setup(world, {
-    botPosition: new Vec3(3, 64, 3),
+    botPosition: new Vec3(5, 64, 5),
     botInventory: [
       { name: 'iron_hoe', count: 1 },
-      { name: 'wheat_seeds', count: 16 },
+      { name: 'wheat_seeds', count: seedCount },
     ],
   });
 
@@ -326,42 +335,129 @@ async function testCompleteFarmingCycle() {
   const role = new GOAPFarmingRole();
   role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
-  // Step 1: Wait for tilling
+  // Helper: count farmland blocks around farm center
+  const countFarmland = () => {
+    let count = 0;
+    for (let dx = -farmRadius; dx <= farmRadius; dx++) {
+      for (let dz = -farmRadius; dz <= farmRadius; dz++) {
+        if (dx === 0 && dz === 0) continue;
+        const block = test.blockAt(new Vec3(farmCenter.x + dx, 63, farmCenter.z + dz));
+        if (block === 'farmland') count++;
+      }
+    }
+    return count;
+  };
+
+  // Helper: count wheat blocks (any age) around farm center
+  const countWheat = () => {
+    let count = 0;
+    for (let dx = -farmRadius; dx <= farmRadius; dx++) {
+      for (let dz = -farmRadius; dz <= farmRadius; dz++) {
+        if (dx === 0 && dz === 0) continue;
+        const block = test.blockAt(new Vec3(farmCenter.x + dx, 64, farmCenter.z + dz));
+        if (block?.startsWith('wheat')) count++;
+      }
+    }
+    return count;
+  };
+
+  // Helper: find positions with wheat blocks
+  const getWheatPositions = () => {
+    const positions: Vec3[] = [];
+    for (let dx = -farmRadius; dx <= farmRadius; dx++) {
+      for (let dz = -farmRadius; dz <= farmRadius; dz++) {
+        if (dx === 0 && dz === 0) continue;
+        const pos = new Vec3(farmCenter.x + dx, 64, farmCenter.z + dz);
+        const block = test.blockAt(pos);
+        if (block?.startsWith('wheat')) positions.push(pos);
+      }
+    }
+    return positions;
+  };
+
+  // ── Step 1: Wait for tilling (80% of 9x9 area) ──
+  const expectedMinFarmland = Math.floor(maxFarmland * 0.8);
+  await test.waitUntil(
+    () => countFarmland() >= expectedMinFarmland,
+    { timeout: 120000, message: `Bot should till at least ${expectedMinFarmland}/${maxFarmland} farmland` }
+  );
+  test.assertGreater(countFarmland(), expectedMinFarmland - 1, 'Tilling complete');
+
+  // ── Step 2: Wait for planting (80% of farmland) ──
+  const expectedMinPlanted = Math.floor(expectedMinFarmland * 0.8);
+  await test.waitUntil(
+    () => countWheat() >= expectedMinPlanted,
+    { timeout: 120000, message: `Bot should plant at least ${expectedMinPlanted} crops` }
+  );
+  test.assertGreater(countWheat(), expectedMinPlanted - 1, 'Planting complete');
+
+  // ── Step 3: Simulate gradual crop growth (first wave - 50%) ──
+  // Mature only half the crops first (realistic - crops don't all ripen at once)
+  const plantedPositions = getWheatPositions();
+  const firstWaveCount = Math.floor(plantedPositions.length / 2);
+  const firstWavePositions = plantedPositions.slice(0, firstWaveCount);
+
+  for (const pos of firstWavePositions) {
+    await test.rcon(`setblock ${pos.x} ${pos.y} ${pos.z} wheat[age=7]`);
+  }
+  await test.wait(1000, 'First wave of crops matured');
+
+  // ── Step 4: Wait for harvest of first wave ──
+  await test.waitForInventory('wheat', Math.floor(firstWaveCount * 0.5), {
+    timeout: 90000,
+    message: 'Bot should harvest first wave of mature wheat',
+  });
+
+  // ── Step 5: Wait for replanting on harvested spots ──
+  // After harvesting, those spots should have new wheat planted
   await test.waitUntil(
     () => {
-      for (let dx = -4; dx <= 4; dx++) {
-        for (let dz = -4; dz <= 4; dz++) {
-          if (dx === 0 && dz === 0) continue;
-          const block = test.blockAt(new Vec3(dx, 63, dz));
-          if (block === 'farmland') return true;
-        }
+      // Check that most first-wave positions have wheat again (replanted)
+      let replantedCount = 0;
+      for (const pos of firstWavePositions) {
+        const block = test.blockAt(pos);
+        if (block?.startsWith('wheat')) replantedCount++;
       }
-      return false;
+      return replantedCount >= firstWaveCount * 0.7;
     },
-    { timeout: 60000, message: 'Bot should till ground to create farmland' }
+    { timeout: 90000, message: 'Bot should replant harvested spots' }
   );
 
-  // Step 2: Wait for planting
-  const initialSeeds = test.botInventoryCount('wheat_seeds');
-  await test.waitUntil(
-    () => test.botInventoryCount('wheat_seeds') < initialSeeds,
-    { timeout: 60000, message: 'Bot should plant seeds on farmland' }
-  );
-
-  // Step 3: Simulate crop growth via RCON
-  for (let dx = -2; dx <= 2; dx++) {
-    for (let dz = -2; dz <= 2; dz++) {
-      if (dx === 0 && dz === 0) continue;
-      await test.rcon(`setblock ${dx} 64 ${dz} wheat[age=7]`);
-    }
+  // ── Step 6: Mature second wave and verify continuous cycle ──
+  const secondWavePositions = plantedPositions.slice(firstWaveCount);
+  for (const pos of secondWavePositions) {
+    await test.rcon(`setblock ${pos.x} ${pos.y} ${pos.z} wheat[age=7]`);
   }
-  await test.wait(1000, 'Mature wheat placed');
+  await test.wait(1000, 'Second wave of crops matured');
 
-  // Step 4: Wait for harvest
-  await test.waitForInventory('wheat', 1, {
-    timeout: 60000,
-    message: 'Bot should harvest mature wheat',
-  });
+  // Wait for more wheat to be harvested
+  const wheatBeforeSecondHarvest = test.botInventoryCount('wheat');
+  await test.waitUntil(
+    () => test.botInventoryCount('wheat') > wheatBeforeSecondHarvest + 5,
+    { timeout: 90000, message: 'Bot should harvest second wave of mature wheat' }
+  );
+
+  // ── Step 7: Wait for deposit to chest ──
+  // Bot should deposit when inventory gets full enough
+  // Give it some wheat to trigger deposit threshold
+  const wheatInInventory = test.botInventoryCount('wheat');
+  if (wheatInInventory < 20) {
+    // If not enough wheat yet, wait for more harvesting
+    await test.waitForInventory('wheat', 20, {
+      timeout: 60000,
+      message: 'Bot should accumulate wheat for deposit',
+    });
+  }
+
+  // Check that bot eventually deposits to chest
+  await test.waitUntil(
+    () => {
+      // Wheat count should decrease as bot deposits
+      const currentWheat = test.botInventoryCount('wheat');
+      return currentWheat < 10; // Bot deposited most wheat
+    },
+    { timeout: 120000, message: 'Bot should deposit wheat to chest' }
+  );
 
   role.stop(test.bot);
   return test.cleanup();
