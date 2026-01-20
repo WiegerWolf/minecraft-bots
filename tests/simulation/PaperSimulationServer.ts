@@ -122,6 +122,10 @@ export class PaperSimulationServer {
     console.log('[PaperSim] Building world from MockWorld...');
     await this.buildWorld();
 
+    // Set up world environment (time, weather, gamerules)
+    console.log('[PaperSim] Setting world environment...');
+    await this.setupWorldEnvironment();
+
     // Connect bot
     console.log('[PaperSim] Connecting bot...');
     await this.connectBot();
@@ -385,6 +389,29 @@ export class PaperSimulationServer {
     }
 
     console.log(`[PaperSim] Placed ${placed} blocks`);
+  }
+
+  /**
+   * Set up world environment for consistent testing conditions.
+   * - Stops daylight cycle at noon
+   * - Clears weather and stops weather cycle
+   */
+  private async setupWorldEnvironment(): Promise<void> {
+    if (!this.rcon) return;
+
+    // Set time to noon and stop daylight cycle
+    await this.rconCommand('time set noon');
+    await this.rconCommand('gamerule doDaylightCycle false');
+
+    // Clear weather and stop weather cycle
+    await this.rconCommand('weather clear');
+    await this.rconCommand('gamerule doWeatherCycle false');
+
+    // Disable other annoyances for testing
+    await this.rconCommand('gamerule doMobSpawning false');
+    await this.rconCommand('gamerule doFireTick false');
+    await this.rconCommand('gamerule mobGriefing false');
+    await this.rconCommand('gamerule announceAdvancements false');
   }
 
   private async connectBot(): Promise<void> {
