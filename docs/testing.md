@@ -264,6 +264,173 @@ main().catch(err => {
 - **Static visualization** (`bun run visualize`): Quick look at preset worlds, designing test scenarios
 - **Visual tests** (`bun run test:visual`): Step-by-step debugging, understanding algorithm flow, demos
 
+## Simulation Tests (Real Physics)
+
+Simulation tests run bot behavior against a **real Paper Minecraft server** with actual game physics. Unlike MockWorld tests which simulate block data, simulation tests verify the bot works correctly with real pathfinding, block breaking, item pickup, and inventory management.
+
+### Why Simulation Tests?
+
+MockWorld is great for unit testing detection algorithms, but some behaviors require real physics:
+- Pathfinding actually moves the bot
+- Block breaking drops real items
+- Items despawn, gravity applies
+- Timing and physics quirks match the real game
+
+### Running Simulation Tests
+
+```bash
+# Run automated simulation tests
+bun run sim:test
+
+# Run interactive simulation (watch bot in browser or Minecraft client)
+bun run sim:lumberjack
+```
+
+The Paper server starts automatically if not running. A superflat world is used for consistent test isolation.
+
+### Prerequisites
+
+The simulation server is set up automatically on first run:
+- Downloads Paper 1.21.4 to `server/instance/`
+- Copies configs from `server/config/`
+- Uses port 25566 (game) and 25575 (RCON)
+
+You can also join with a real Minecraft client at `localhost:25566` to observe tests.
+
+### Writing Simulation Tests
+
+```typescript
+import { Vec3 } from 'vec3';
+import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import { SimulationTest, runSimulationTests } from './SimulationTest';
+import { MockWorld, createOakTree } from '../mocks/MockWorld';
+import { LumberjackRole } from '../../src/roles/lumberjack/LumberjackRole';
+
+async function testChopsTree() {
+  const test = new SimulationTest('Lumberjack chops trees');
+
+  // Create world (same MockWorld API - synced to real server via RCON)
+  const world = new MockWorld();
+  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+  createOakTree(world, new Vec3(10, 64, 10), 5);
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
+
+  // Setup: spawns bot, syncs world, clears inventory
+  await test.setup(world, {
+    botPosition: new Vec3(3, 65, 3),
+    botInventory: [{ name: 'iron_axe', count: 1 }],
+  });
+
+  // Load plugins and start role
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  const role = new LumberjackRole();
+  role.start(test.bot);
+
+  // Wait for conditions with timeout
+  await test.waitForInventory('oak_log', 1, {
+    timeout: 60000,
+    message: 'Bot should collect at least 1 oak log',
+  });
+
+  // Assertions
+  test.assertGreater(test.botInventoryCount('oak_log'), 0, 'Has logs');
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// Run test suite
+async function main() {
+  const { passed, failed } = await runSimulationTests([
+    testChopsTree,
+  ]);
+  process.exit(failed > 0 ? 1 : 0);
+}
+```
+
+### SimulationTest API
+
+**Setup & Cleanup:**
+| Method | Description |
+|--------|-------------|
+| `setup(world, options)` | Start server, sync world, spawn bot |
+| `cleanup()` | Stop bot, return test results |
+
+**Wait Helpers:**
+| Method | Description |
+|--------|-------------|
+| `wait(ms, reason?)` | Simple delay |
+| `waitUntil(condition, options)` | Wait for condition to be true |
+| `waitForInventory(item, count, options)` | Wait for item count |
+| `waitForPosition(pos, distance, options)` | Wait for bot near position |
+| `waitForBlock(pos, block, options)` | Wait for block type |
+
+**Assertions:**
+| Method | Description |
+|--------|-------------|
+| `assert(condition, message)` | Basic assertion |
+| `assertEqual(actual, expected, message)` | Equality check |
+| `assertGreater(actual, expected, message)` | Greater than check |
+| `assertNear(pos, distance, message)` | Bot position check |
+| `assertInventory(item, minCount, message)` | Inventory check |
+| `assertBlock(pos, block, message)` | Block type check |
+
+**State Queries:**
+| Method | Description |
+|--------|-------------|
+| `botInventoryCount(item)` | Count of item in inventory |
+| `botDistanceTo(pos)` | Distance from bot to position |
+| `botPosition()` | Current bot position |
+| `blockAt(pos)` | Block name at position |
+| `botHealth()` | Bot health |
+| `botFood()` | Bot food level |
+
+**Actions:**
+| Method | Description |
+|--------|-------------|
+| `rcon(command)` | Execute RCON command |
+| `teleportBot(pos)` | Teleport bot |
+| `giveItem(item, count)` | Give item to bot |
+| `setBlock(pos, block)` | Set block in world |
+| `chat(message)` | Send chat as bot |
+
+### World Isolation
+
+Between tests, the simulation framework:
+1. Clears a 100x100 area centered at origin (y=60-100)
+2. Sets bedrock floor (y=62) and grass (y=63)
+3. Kills all dropped items
+4. Clears bot inventory
+
+The server uses a superflat world (`level-type=minecraft:flat`) to prevent natural terrain interference.
+
+### Interactive Simulation
+
+For debugging, run an interactive simulation:
+
+```bash
+bun run sim:lumberjack
+```
+
+This opens:
+- **Browser viewer** at http://localhost:3000 (prismarine-viewer)
+- **Minecraft client** can connect to localhost:25566
+
+The bot runs continuously until you press Ctrl+C. You're auto-opped when joining, so you can use `/gamemode`, `/tp`, etc.
+
+### When to Use Simulation vs MockWorld
+
+| Use Case | MockWorld | Simulation |
+|----------|-----------|------------|
+| Tree detection algorithm | ✅ Fast, deterministic | Overkill |
+| Goal utility calculations | ✅ No physics needed | Overkill |
+| Pathfinding behavior | ❌ No real movement | ✅ Real physics |
+| Block breaking & drops | ❌ Simulated | ✅ Real items |
+| Full role integration | ❌ Missing physics | ✅ End-to-end |
+| CI/CD pipeline | ✅ No server needed | Requires server |
+
 ## Adding Custom Static Scenarios
 
 Edit `tests/mocks/visualize-world.ts` and add a case:

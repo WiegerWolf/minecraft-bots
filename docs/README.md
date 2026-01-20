@@ -49,8 +49,9 @@ How the system handles failures at every level:
 - Zombie detection and graceful shutdown
 
 ### [Testing Infrastructure](./testing.md)
-How to test bot behavior without a Minecraft server:
-- MockWorld: deterministic 3D block grid
+How to test bot behavior at different levels:
+- MockWorld: deterministic 3D block grid (fast unit tests)
+- Simulation tests: real Paper server with actual physics (integration tests)
 - Tree builders and preset worlds
 - Visualization with prismarine-viewer
 - WorldState presets for planning tests
