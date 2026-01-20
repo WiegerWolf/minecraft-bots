@@ -299,7 +299,6 @@ bun run visualize structure    # Wooden building + tree
 Run simulation tests (real Paper server):
 ```bash
 bun run sim:test        # Automated integration tests
-bun run sim:lumberjack  # Interactive - watch in browser or Minecraft client
 ```
 
 ## Contributing to Docs

@@ -33,7 +33,6 @@ tests/
     landscaper.test.sim.ts    # Landscaper integration tests
     multi-bot.test.sim.ts     # Multi-bot coordination tests
     run-all-tests.ts          # Run all simulation test suites
-    run-lumberjack-paper.sim.ts # Interactive simulation runner
   mocks/
     world-state/       # WorldState presets by role
     MockWorld.ts       # 3D block grid for world simulation
@@ -292,9 +291,6 @@ bun run sim:test:lumberjack   # Tree chopping, stump detection, drops
 bun run sim:test:farmer       # Harvesting, planting, tilling, seed gathering
 bun run sim:test:landscaper   # Terraforming, dirt gathering, hole filling
 bun run sim:test:multibot     # Multi-bot coordination, chat, trading
-
-# Run interactive simulation (watch bot in browser or Minecraft client)
-bun run sim:lumberjack
 ```
 
 The Paper server starts automatically if not running. A superflat world is used for consistent test isolation.
@@ -463,20 +459,6 @@ Between tests, the simulation framework:
 4. Clears bot inventory
 
 The server uses a superflat world (`level-type=minecraft:flat`) to prevent natural terrain interference.
-
-### Interactive Simulation
-
-For debugging, run an interactive simulation:
-
-```bash
-bun run sim:lumberjack
-```
-
-This opens:
-- **Browser viewer** at http://localhost:3000 (prismarine-viewer)
-- **Minecraft client** can connect to localhost:25566
-
-The bot runs continuously until you press Ctrl+C. You're auto-opped when joining, so you can use `/gamemode`, `/tp`, etc.
 
 ### When to Use Simulation vs MockWorld
 
