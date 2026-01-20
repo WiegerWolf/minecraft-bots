@@ -13,40 +13,59 @@ export class HarvestCrops implements BehaviorNode {
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
         if (!bb.canHarvest) return 'failure';
 
-        // Harvest multiple crops in one go (up to 5)
-        const cropsToHarvest = bb.nearbyMatureCrops.slice(0, 5);
-        if (cropsToHarvest.length === 0) return 'failure';
+        const allCrops = bb.nearbyMatureCrops;
+        if (allCrops.length === 0) return 'failure';
 
         bb.lastAction = 'harvest';
-        let harvestedAny = false;
 
-        for (const crop of cropsToHarvest) {
+        // Find the best cluster of crops to harvest (most crops within reach)
+        const clusterRadius = 4;
+        let bestCluster: typeof allCrops = [];
+        let bestClusterCenter = allCrops[0];
+
+        for (const crop of allCrops) {
+            const nearby = allCrops.filter(c =>
+                c.position.distanceTo(crop.position) <= clusterRadius
+            );
+            if (nearby.length > bestCluster.length) {
+                bestCluster = nearby;
+                bestClusterCenter = crop;
+            }
+        }
+
+        if (bestCluster.length === 0) return 'failure';
+
+        // Move to cluster if needed
+        const distToCluster = bot.entity.position.distanceTo(bestClusterCenter.position);
+        if (distToCluster > 4) {
+            bb.log?.debug(`[BT] Moving to crop cluster at ${bestClusterCenter.position} (${Math.round(distToCluster)} blocks away, ${bestCluster.length} crops)`);
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(bestClusterCenter.position.x, bestClusterCenter.position.y, bestClusterCenter.position.z, 3),
+                { timeoutMs: 10000 }
+            );
+            if (!result.success) {
+                bb.log?.debug(`[BT] Failed to reach crop cluster: ${result.failureReason}`);
+                return 'failure';
+            }
+            bot.pathfinder.stop();
+        }
+
+        // Harvest all reachable crops in the cluster
+        let harvestedCount = 0;
+        for (const crop of bestCluster) {
+            const dist = bot.entity.position.distanceTo(crop.position);
+            if (dist > 4.5) continue; // Too far to reach
+
             try {
-                // Get within 3 blocks (can dig from this distance)
-                const dist = bot.entity.position.distanceTo(crop.position);
-                if (dist > 4) {
-                    bb.log?.debug(`[BT] Moving to crop at ${crop.position} (${Math.round(dist)} blocks away)`);
-                    const result = await smartPathfinderGoto(
-                        bot,
-                        new GoalNear(crop.position.x, crop.position.y, crop.position.z, 3),
-                        { timeoutMs: 10000 }  // Reduced from 15s to 10s
-                    );
-                    if (!result.success) {
-                        bb.log?.debug(`[BT] Failed to reach crop: ${result.failureReason}`);
-                        continue;
-                    }
-                    bot.pathfinder.stop();
-                }
-
-                // Look at and harvest the crop
                 await bot.lookAt(crop.position.offset(0.5, 0.5, 0.5), true);
                 const currentBlock = bot.blockAt(crop.position);
                 if (!currentBlock || !this.isMatureCrop(currentBlock)) continue;
 
                 bb.log?.debug(`[BT] Harvesting ${currentBlock.name} at ${crop.position}`);
                 await bot.dig(currentBlock);
-                harvestedAny = true;
-                await sleep(100);
+                harvestedCount++;
+                await sleep(50); // Shorter delay between harvests
 
                 // Immediately replant on the farmland below
                 const farmlandPos = crop.position.offset(0, -1, 0);
@@ -55,11 +74,16 @@ export class HarvestCrops implements BehaviorNode {
                     await this.replant(bot, bb, farmland);
                 }
             } catch {
-                // Continue to next crop if this one fails
+                // Continue to next crop
             }
         }
 
-        return harvestedAny ? 'success' : 'failure';
+        if (harvestedCount > 0) {
+            bb.log?.debug(`[BT] Harvested ${harvestedCount} crops`);
+            return 'success';
+        }
+
+        return 'failure';
     }
 
     private isMatureCrop(block: any): boolean {

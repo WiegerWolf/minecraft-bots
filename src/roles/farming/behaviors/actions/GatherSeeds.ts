@@ -68,7 +68,7 @@ export class GatherSeeds implements BehaviorNode {
             const grassBlocks = bot.findBlocks({
                 point: bot.entity.position,
                 maxDistance: 64,
-                count: 10, // Get multiple candidates
+                count: 20, // Get more candidates to find clusters
                 matching: b => {
                     if (!b || !b.name) return false;
                     return grassNames.includes(b.name);
@@ -86,43 +86,86 @@ export class GatherSeeds implements BehaviorNode {
             return 'failure';
         }
 
-        // Try each grass candidate in order (closest first, since findBlocks sorts by distance)
-        for (const grass of grassCandidates) {
-            const dist = bot.entity.position.distanceTo(grass.position);
-            bb.log?.debug(`[BT] Trying to reach ${grass.name} for seeds at ${grass.position.floored()} (dist: ${dist.toFixed(1)})`);
-            bb.lastAction = 'gather_seeds';
+        // Find the best cluster of grass to harvest (most grass within reach distance)
+        const clusterRadius = 4; // Break all grass within 4 blocks
+        let bestCluster: Block[] = [];
+        let bestClusterCenter: Block | null = null;
 
-            try {
-                // Scale timeout with distance - 10s base + 0.2s per block
+        for (const grass of grassCandidates) {
+            const nearbyGrass = grassCandidates.filter(g =>
+                g.position.distanceTo(grass.position) <= clusterRadius
+            );
+            if (nearbyGrass.length > bestCluster.length) {
+                bestCluster = nearbyGrass;
+                bestClusterCenter = grass;
+            }
+        }
+
+        if (!bestClusterCenter) {
+            bb.log?.debug(`[BT] No reachable grass found nearby for seeds`);
+            return 'failure';
+        }
+
+        const dist = bot.entity.position.distanceTo(bestClusterCenter.position);
+        bb.log?.debug(`[BT] Found grass cluster of ${bestCluster.length} at ${bestClusterCenter.position.floored()} (dist: ${dist.toFixed(1)})`);
+        bb.lastAction = 'gather_seeds';
+
+        try {
+            // Only pathfind if not already close
+            if (dist > 3) {
                 const timeout = Math.min(20000, 10000 + dist * 200);
 
                 const result = await smartPathfinderGoto(
                     bot,
-                    new GoalNear(grass.position.x, grass.position.y, grass.position.z, 2),
-                    { timeoutMs: timeout }
+                    new GoalNear(bestClusterCenter.position.x, bestClusterCenter.position.y, bestClusterCenter.position.z, 2),
+                    {
+                        timeoutMs: timeout,
+                        knightMoveRecovery: dist > 5,
+                    }
                 );
 
                 if (!result.success) {
-                    bb.log?.debug(`[BT] Failed to reach grass at ${grass.position.floored()}: ${result.failureReason}`);
-                    // Mark as unreachable and try next candidate
-                    this.unreachableGrass.set(this.posKey(grass.position), now + UNREACHABLE_GRASS_COOLDOWN);
+                    bb.log?.debug(`[BT] Failed to reach grass cluster at ${bestClusterCenter.position.floored()}: ${result.failureReason}`);
+                    // Mark center as unreachable and return
+                    this.unreachableGrass.set(this.posKey(bestClusterCenter.position), now + UNREACHABLE_GRASS_COOLDOWN);
+                    return 'failure';
+                }
+            }
+
+            // Now break all grass blocks in the cluster that are within reach
+            let brokenCount = 0;
+            for (const grass of bestCluster) {
+                const grassDist = bot.entity.position.distanceTo(grass.position);
+                if (grassDist > 4.5) continue; // Too far to reach without moving
+
+                // Check if grass still exists (might have been broken already)
+                const currentBlock = bot.blockAt(grass.position);
+                if (!currentBlock || !currentBlock.name.includes('grass') && currentBlock.name !== 'fern' && !currentBlock.name.includes('fern')) {
                     continue;
                 }
 
-                // Successfully reached, try to dig
-                await bot.dig(grass);
-                await sleep(300);
-                return 'success';
-            } catch (err) {
-                bb.log?.debug(`[BT] Error reaching grass at ${grass.position.floored()}: ${err}`);
-                // Mark as unreachable and try next candidate
-                this.unreachableGrass.set(this.posKey(grass.position), now + UNREACHABLE_GRASS_COOLDOWN);
-                continue;
+                try {
+                    await bot.dig(currentBlock);
+                    brokenCount++;
+                    await sleep(100); // Short delay between breaks
+                } catch (digErr) {
+                    bb.log?.debug(`[BT] Failed to break grass at ${grass.position.floored()}: ${digErr}`);
+                }
             }
-        }
 
-        // All candidates failed
-        bb.log?.debug(`[BT] All ${grassCandidates.length} grass candidates were unreachable`);
-        return 'failure';
+            if (brokenCount > 0) {
+                bb.log?.debug(`[BT] Broke ${brokenCount} grass blocks`);
+                await sleep(200); // Brief pause to let items drop
+                return 'success';
+            }
+
+            // Couldn't break any grass
+            this.unreachableGrass.set(this.posKey(bestClusterCenter.position), now + UNREACHABLE_GRASS_COOLDOWN);
+            return 'failure';
+        } catch (err) {
+            bb.log?.debug(`[BT] Error gathering seeds: ${err}`);
+            this.unreachableGrass.set(this.posKey(bestClusterCenter.position), now + UNREACHABLE_GRASS_COOLDOWN);
+            return 'failure';
+        }
     }
 }

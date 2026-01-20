@@ -196,6 +196,7 @@ export class SimulationTest {
       enableViewer: false,  // Use Minecraft client instead
       openBrowser: false,
       waitForPlayer: true,  // Wait for player to join before starting test
+      testName: this.name,  // Display test name in game chat
       ...options,
     });
   }

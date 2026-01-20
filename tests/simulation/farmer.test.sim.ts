@@ -96,6 +96,25 @@ async function testPlantsSeeds() {
     }
   }
 
+  // Add grass patches around the world (for natural appearance and seed gathering if needed)
+  // Patch near spawn
+  for (let x = -5; x <= -2; x++) {
+    for (let z = -2; z <= 2; z++) {
+      if ((x + z) % 2 === 0) {
+        world.setBlock(new Vec3(x, 64, z), 'short_grass');
+      }
+    }
+  }
+
+  // Patch east of farm
+  for (let x = 15; x <= 18; x++) {
+    for (let z = 8; z <= 12; z++) {
+      if ((x + z) % 3 !== 0) {
+        world.setBlock(new Vec3(x, 64, z), 'short_grass');
+      }
+    }
+  }
+
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
   world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 10\nY: 63\nZ: 10' });
 
@@ -199,23 +218,37 @@ async function testGathersSeeds() {
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
 
-  // Plant lots of tall grass near spawn
-  for (let dx = -5; dx <= 5; dx++) {
-    for (let dz = -5; dz <= 5; dz++) {
-      if (Math.abs(dx) > 2 || Math.abs(dz) > 2) {
-        // Skip area right at spawn
-        world.setBlock(new Vec3(5 + dx, 64, 5 + dz), 'short_grass');
+  // Water source for farm (far from grass area to avoid interference)
+  world.setBlock(new Vec3(-10, 63, -10), 'water');
+
+  // Plant grass in patches around the map (like natural Minecraft generation)
+  // Patch 1: Near spawn (5x5 area with some gaps)
+  for (let x = 3; x <= 7; x++) {
+    for (let z = -2; z <= 2; z++) {
+      // Skip some positions for natural-looking gaps
+      if ((x + z) % 3 !== 0) {
+        world.setBlock(new Vec3(x, 64, z), 'short_grass');
       }
     }
   }
 
-  // Water source for eventual farm
-  world.setBlock(new Vec3(15, 63, 15), 'water');
+  // Patch 2: Further east (3x3 dense cluster)
+  for (let x = 12; x <= 14; x++) {
+    for (let z = -1; z <= 1; z++) {
+      world.setBlock(new Vec3(x, 64, z), 'short_grass');
+    }
+  }
+
+  // Patch 3: South area (scattered)
+  for (let x = 0; x <= 8; x += 2) {
+    world.setBlock(new Vec3(x, 64, 8), 'short_grass');
+    world.setBlock(new Vec3(x + 1, 64, 10), 'short_grass');
+  }
 
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
-    botPosition: new Vec3(3, 65, 3),
+    botPosition: new Vec3(3, 64, 3),
     botInventory: [{ name: 'iron_hoe', count: 1 }],
     // No seeds - bot needs to gather them
   });
@@ -332,6 +365,9 @@ async function testDepositsToChest() {
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
 
+  // Water source for farm center (required for farmer to work)
+  world.setBlock(new Vec3(10, 63, 10), 'water');
+
   // Chest for deposits
   world.setBlock(new Vec3(-5, 64, 0), 'chest');
 
@@ -368,20 +404,42 @@ async function testDepositsToChest() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MAIN - Run all tests
+// MAIN - Run all tests or specific test by name
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function main() {
-  const { passed, failed } = await runSimulationTests([
-    testHarvestsMatureWheat,
-    testPlantsSeeds,
-    testTillsGround,
-    testGathersSeeds,
-    testCollectsDrops,
-    testCraftsHoe,
-    testDepositsToChest,
-  ]);
+// Map test names to functions for CLI selection
+const ALL_TESTS: Record<string, () => Promise<any>> = {
+  'harvest': testHarvestsMatureWheat,
+  'plant': testPlantsSeeds,
+  'till': testTillsGround,
+  'seeds': testGathersSeeds,
+  'drops': testCollectsDrops,
+  'hoe': testCraftsHoe,
+  'deposit': testDepositsToChest,
+};
 
+async function main() {
+  const testName = process.argv[2];
+
+  if (testName === '--list' || testName === '-l') {
+    console.log('Available tests:', Object.keys(ALL_TESTS).join(', '));
+    process.exit(0);
+  }
+
+  let testsToRun: Array<() => Promise<any>>;
+
+  if (testName && ALL_TESTS[testName]) {
+    console.log(`Running single test: ${testName}`);
+    testsToRun = [ALL_TESTS[testName]];
+  } else if (testName) {
+    console.error(`Unknown test: ${testName}`);
+    console.error('Available tests:', Object.keys(ALL_TESTS).join(', '));
+    process.exit(1);
+  } else {
+    testsToRun = Object.values(ALL_TESTS);
+  }
+
+  const { passed, failed } = await runSimulationTests(testsToRun);
   process.exit(failed > 0 ? 1 : 0);
 }
 

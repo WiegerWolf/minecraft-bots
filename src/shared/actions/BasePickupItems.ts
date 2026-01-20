@@ -82,6 +82,7 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
     // Track consecutive failures at current target
     private lastTargetId: number | null = null;
     private failedAttemptsAtTarget = 0;
+    private lastDistanceToTarget: number = Infinity;
 
     constructor(config?: PickupItemsConfig) {
         this.config = { ...DEFAULT_CONFIG, ...config };
@@ -109,26 +110,58 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
         const dropId = drop.id;
         const dist = bot.entity.position.distanceTo(drop.position);
 
-        // Track attempts at this target
+        // Track attempts at this target - only increment if we didn't make progress
         if (this.lastTargetId === dropId) {
-            this.failedAttemptsAtTarget++;
+            // Only count as failed attempt if we didn't get significantly closer
+            const madeProgress = dist < this.lastDistanceToTarget - 0.5;
+            if (!madeProgress) {
+                this.failedAttemptsAtTarget++;
+            }
         } else {
             this.lastTargetId = dropId;
             this.failedAttemptsAtTarget = 0;
         }
+        this.lastDistanceToTarget = dist;
 
-        // If we've tried too many times, mark as unreachable in blackboard
+        // If we've tried too many times without progress, mark as unreachable
         if (this.failedAttemptsAtTarget >= this.config.maxAttempts) {
             bb.log?.debug(
-                `[${this.config.roleLabel}] Item ${dropId} at ${drop.position.floored()} unreachable after ${this.config.maxAttempts} attempts`
+                `[${this.config.roleLabel}] Item ${dropId} at ${drop.position.floored()} unreachable after ${this.config.maxAttempts} attempts without progress`
             );
             bb.unreachableDrops.set(dropId, now + UNREACHABLE_COOLDOWN);
             this.lastTargetId = null;
             this.failedAttemptsAtTarget = 0;
+            this.lastDistanceToTarget = Infinity;
             return 'failure';
         }
 
-        // If close distance threshold is set and we're close, wait for auto-pickup
+        // If very close, walk directly into the item to trigger pickup
+        if (dist < 1.0) {
+            bb.lastAction = this.config.lastActionWaiting;
+            // Walk directly toward the item
+            const direction = drop.position.minus(bot.entity.position);
+            const yaw = Math.atan2(-direction.x, -direction.z);
+            await bot.look(yaw, 0);
+            bot.setControlState('forward', true);
+            await sleep(300);
+            bot.clearControlStates();
+            await sleep(100);
+
+            // Check if item was picked up
+            const stillExists = Object.values(bot.entities).some(e => e.id === dropId);
+            if (!stillExists) {
+                // Success! Item was picked up
+                this.lastTargetId = null;
+                this.failedAttemptsAtTarget = 0;
+                this.lastDistanceToTarget = Infinity;
+                return 'success';
+            }
+
+            // Still there, will retry next tick
+            return 'success';
+        }
+
+        // If close but not very close, wait for auto-pickup briefly
         if (this.config.closeDistanceThreshold > 0 && dist < this.config.closeDistanceThreshold) {
             bb.lastAction = this.config.lastActionWaiting;
             await sleep(this.config.closeDistanceWaitMs);
@@ -139,11 +172,11 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
                 // Success! Item was picked up
                 this.lastTargetId = null;
                 this.failedAttemptsAtTarget = 0;
+                this.lastDistanceToTarget = Infinity;
                 return 'success';
             }
 
-            // Item still there - will increment failedAttemptsAtTarget next tick
-            return 'success'; // Return success to keep the goal active
+            // Item still there but we're close - continue to pathfind closer
         }
 
         // Move to pickup
@@ -153,41 +186,43 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
         );
 
         try {
+            // Use a smaller goal radius to get closer to the item
+            const goalRadius = Math.max(0.5, this.config.goalRadius);
             const result = await smartPathfinderGoto(
                 bot,
-                new GoalNear(drop.position.x, drop.position.y, drop.position.z, this.config.goalRadius),
-                { timeoutMs: this.config.pathfindingTimeoutMs }
+                new GoalNear(drop.position.x, drop.position.y, drop.position.z, goalRadius),
+                {
+                    timeoutMs: this.config.pathfindingTimeoutMs,
+                    // Enable knight's move recovery for any significant distance
+                    knightMoveRecovery: dist > 2,
+                }
             );
 
             if (!result.success) {
                 bb.log?.debug(`[${this.config.roleLabel}] Pickup path failed: ${result.failureReason}`);
-
-                // If pathfinder says "unreachable", this is definitive - mark immediately
-                // Don't waste attempts retrying something that truly can't be reached
-                if (result.failureReason === 'unreachable') {
-                    bb.log?.debug(
-                        `[${this.config.roleLabel}] Item ${dropId} at ${drop.position.floored()} marked unreachable (pathfinder)`
-                    );
-                    bb.unreachableDrops.set(dropId, now + UNREACHABLE_COOLDOWN);
-                    this.lastTargetId = null;
-                    this.failedAttemptsAtTarget = 0;
-                }
-                // For timeout/cancelled, we retry (might succeed from different approach)
-
                 return 'failure';
             }
 
-            // If no close-distance handling, check if we picked up the item
-            if (this.config.closeDistanceThreshold === 0) {
-                await sleep(this.config.closeDistanceWaitMs);
-                const stillExists = Object.values(bot.entities).some(e => e.id === dropId);
-                if (stillExists) {
-                    // Will increment failedAttemptsAtTarget next tick
-                    return 'failure';
-                }
+            // After pathfinding, try to walk into the item
+            const newDist = bot.entity.position.distanceTo(drop.position);
+            if (newDist < 2) {
+                const direction = drop.position.minus(bot.entity.position);
+                const yaw = Math.atan2(-direction.x, -direction.z);
+                await bot.look(yaw, 0);
+                bot.setControlState('forward', true);
+                await sleep(400);
+                bot.clearControlStates();
+            }
+
+            await sleep(this.config.closeDistanceWaitMs);
+
+            // Check if item was picked up
+            const stillExists = Object.values(bot.entities).some(e => e.id === dropId);
+            if (!stillExists) {
                 // Success! Reset tracking
                 this.lastTargetId = null;
                 this.failedAttemptsAtTarget = 0;
+                this.lastDistanceToTarget = Infinity;
             }
 
             return 'success';

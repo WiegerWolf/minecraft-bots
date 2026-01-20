@@ -73,6 +73,8 @@ export interface SimulationOptions {
   clearRadius?: number;
   /** Wait for a player to join before proceeding (default: true) */
   waitForPlayer?: boolean;
+  /** Test name to display in chat (optional) */
+  testName?: string;
 }
 
 // Track players we've already set up spectator view for (persists across test runs)
@@ -102,6 +104,7 @@ export class PaperSimulationServer {
     clearWorld: true,
     clearRadius: 50,
     waitForPlayer: true,
+    testName: '',
   };
 
   /**
@@ -151,6 +154,11 @@ export class PaperSimulationServer {
     // Wait for player to join before proceeding
     if (this.options.waitForPlayer) {
       await this.waitForPlayerJoin();
+    }
+
+    // Announce test name in chat if provided
+    if (this.options.testName) {
+      await this.rconCommand(`say §e§l[TEST] §r§f${this.options.testName}`);
     }
 
     console.log('[PaperSim] Ready!');
@@ -247,15 +255,24 @@ export class PaperSimulationServer {
     // Set spectator mode
     await this.rconCommand(`gamemode spectator ${playerName}`);
 
-    // Teleport above the test area, looking down
-    // Position: above origin at y=90, looking down (pitch 90 = straight down)
-    const viewX = 0;
-    const viewY = 90;
-    const viewZ = 0;
-    const yaw = 0;    // Facing south
-    const pitch = 50; // Looking down at an angle (90 = straight down)
+    // Teleport to a position looking at world center (0, 64, 0)
+    // Position: offset from center, lower than before, angled toward center
+    const viewX = 35;
+    const viewY = 75;
+    const viewZ = 35;
 
-    await this.rconCommand(`tp ${playerName} ${viewX} ${viewY} ${viewZ} ${yaw} ${pitch}`);
+    // Calculate yaw to look at origin (0, 64, 0)
+    // yaw = atan2(dz, -dx) * 180/PI + 180 (Minecraft convention)
+    const dx = 0 - viewX;
+    const dz = 0 - viewZ;
+    const yaw = Math.atan2(dz, -dx) * (180 / Math.PI) + 180;
+
+    // Calculate pitch to look down at target (y=64)
+    const dy = 64 - viewY;
+    const horizontalDist = Math.sqrt(dx * dx + dz * dz);
+    const pitch = -Math.atan2(-dy, horizontalDist) * (180 / Math.PI);
+
+    await this.rconCommand(`tp ${playerName} ${viewX} ${viewY} ${viewZ} ${yaw.toFixed(1)} ${pitch.toFixed(1)}`);
 
     await this.delay(200);
   }

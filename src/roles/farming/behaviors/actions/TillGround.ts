@@ -76,51 +76,74 @@ export class TillGround implements BehaviorNode {
         if (!hoe) return 'failure';
 
         bb.lastAction = 'till';
+        await bot.equip(hoe, 'hand');
 
-        // Try each candidate until one works
-        for (const targetPos of candidates) {
-            bb.log?.debug({ pos: targetPos.toString() }, 'Trying to till ground');
+        // Find the best cluster to till (most tillable blocks within reach)
+        const clusterRadius = 4;
+        let bestCluster: Vec3[] = [];
+        let bestClusterCenter: Vec3 | null = null;
 
-            try {
-                // Check if we are already close enough to till
-                if (bot.entity.position.distanceTo(targetPos) > 4.5) {
-                    const result = await smartPathfinderGoto(
-                        bot,
-                        new GoalNear(targetPos.x, targetPos.y, targetPos.z, 4),
-                        { timeoutMs: 15000 }
-                    );
-                    if (!result.success) {
-                        bb.log?.debug({ pos: targetPos.toString(), reason: result.failureReason }, 'Cannot reach till target, trying next');
-                        markUnreachable(targetPos);
-                        continue;  // Try next candidate
-                    }
-                }
-                bot.pathfinder.stop();
-
-                await bot.equip(hoe, 'hand');
-                const block = bot.blockAt(targetPos);
-                if (block) {
-                    await bot.lookAt(targetPos.offset(0.5, 1, 0.5), true);
-                    await bot.activateBlock(block);
-                    await sleep(200);
-
-                    // Verify tilling worked
-                    const afterBlock = bot.blockAt(targetPos);
-                    if (afterBlock?.name === 'farmland') {
-                        bb.log?.debug({ pos: targetPos.toString() }, 'Successfully created farmland');
-                    } else {
-                        bb.log?.debug({ pos: targetPos.toString(), blockName: afterBlock?.name }, 'Tilling may have failed');
-                    }
-                }
-                return 'success';
-            } catch (err) {
-                bb.log?.debug({ pos: targetPos.toString(), err }, 'Error tilling, trying next');
-                continue;
+        for (const pos of candidates) {
+            const nearby = candidates.filter(c => c.distanceTo(pos) <= clusterRadius);
+            if (nearby.length > bestCluster.length) {
+                bestCluster = nearby;
+                bestClusterCenter = pos;
             }
         }
 
-        // All candidates failed
-        bb.log?.warn('Failed to till any candidate positions');
+        if (!bestClusterCenter) {
+            bb.log?.debug('No tillable cluster found');
+            return 'failure';
+        }
+
+        bb.log?.debug({ pos: bestClusterCenter.toString(), count: bestCluster.length }, 'Found tillable cluster');
+
+        // Move to cluster if needed
+        const distToCluster = bot.entity.position.distanceTo(bestClusterCenter);
+        if (distToCluster > 4) {
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(bestClusterCenter.x, bestClusterCenter.y, bestClusterCenter.z, 3),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success) {
+                bb.log?.debug({ reason: result.failureReason }, 'Cannot reach till cluster');
+                markUnreachable(bestClusterCenter);
+                return 'failure';
+            }
+            bot.pathfinder.stop();
+        }
+
+        // Till all reachable blocks in the cluster
+        let tilledCount = 0;
+        for (const targetPos of bestCluster) {
+            const dist = bot.entity.position.distanceTo(targetPos);
+            if (dist > 4.5) continue; // Too far to reach
+
+            try {
+                const block = bot.blockAt(targetPos);
+                if (!block || !['grass_block', 'dirt'].includes(block.name)) continue;
+
+                await bot.lookAt(targetPos.offset(0.5, 1, 0.5), true);
+                await bot.activateBlock(block);
+                await sleep(100);
+
+                const afterBlock = bot.blockAt(targetPos);
+                if (afterBlock?.name === 'farmland') {
+                    tilledCount++;
+                }
+            } catch {
+                // Continue to next position
+            }
+        }
+
+        if (tilledCount > 0) {
+            bb.log?.debug({ count: tilledCount }, 'Tilled ground blocks');
+            return 'success';
+        }
+
+        // All positions failed
+        markUnreachable(bestClusterCenter);
         return 'failure';
     }
 }
