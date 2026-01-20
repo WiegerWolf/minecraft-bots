@@ -148,107 +148,132 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
         }
 
         const now = Date.now();
+        let collectedAny = false;
+        let consecutiveFailures = 0;
+        const maxConsecutiveFailures = 3;
 
-        // Find closest drop
-        const sorted = [...bb.nearbyDrops].sort((a, b) =>
-            bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position)
-        );
-
-        const drop = sorted[0];
-        if (!drop) return 'failure';
-
-        const dropId = drop.id;
-        const dist = bot.entity.position.distanceTo(drop.position);
-
-        // Track attempts at this target - only increment if we didn't make progress
-        if (this.lastTargetId === dropId) {
-            // Only count as failed attempt if we didn't get significantly closer
-            const madeProgress = dist < this.lastDistanceToTarget - 0.5;
-            if (!madeProgress) {
-                this.failedAttemptsAtTarget++;
-            }
-        } else {
-            this.lastTargetId = dropId;
-            this.failedAttemptsAtTarget = 0;
-        }
-        this.lastDistanceToTarget = dist;
-
-        // If we've tried too many times without progress, mark as unreachable
-        if (this.failedAttemptsAtTarget >= this.config.maxAttempts) {
-            bb.log?.debug(
-                `[${this.config.roleLabel}] Item ${dropId} at ${drop.position.floored()} unreachable after ${this.config.maxAttempts} attempts without progress`
+        // Batch collect all visible drops in one sweep
+        while (true) {
+            // Re-fetch and sort drops each iteration (our position changed, some may be collected)
+            const currentDrops = bb.nearbyDrops.filter(e =>
+                e.position && Object.values(bot.entities).some(entity => entity.id === e.id)
             );
-            bb.unreachableDrops.set(dropId, now + UNREACHABLE_COOLDOWN);
-            this.lastTargetId = null;
-            this.failedAttemptsAtTarget = 0;
-            this.lastDistanceToTarget = Infinity;
-            return 'failure';
-        }
 
-        // If close enough, walk directly into the item
-        if (dist < this.config.closeDistanceThreshold) {
-            bb.lastAction = this.config.lastActionWaiting;
+            if (currentDrops.length === 0) break;
+            if (bb.inventoryFull) break;
+            if (consecutiveFailures >= maxConsecutiveFailures) break;
 
-            // Event-driven: walk toward item, resolve on playerCollect
-            const walkTime = Math.min(600, Math.max(200, dist * 150));
-            const pickedUp = await walkTowardAndCollect(bot, drop, walkTime);
+            // Sort by distance from current position
+            const sorted = currentDrops.sort((a, b) =>
+                bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position)
+            );
 
-            if (pickedUp) {
+            const drop = sorted[0];
+            if (!drop) break;
+
+            const dropId = drop.id;
+            const dist = bot.entity.position.distanceTo(drop.position);
+
+            // Track attempts at this target - only increment if we didn't make progress
+            if (this.lastTargetId === dropId) {
+                // Only count as failed attempt if we didn't get significantly closer
+                const madeProgress = dist < this.lastDistanceToTarget - 0.5;
+                if (!madeProgress) {
+                    this.failedAttemptsAtTarget++;
+                }
+            } else {
+                this.lastTargetId = dropId;
+                this.failedAttemptsAtTarget = 0;
+            }
+            this.lastDistanceToTarget = dist;
+
+            // If we've tried too many times without progress, mark as unreachable
+            if (this.failedAttemptsAtTarget >= this.config.maxAttempts) {
+                bb.log?.debug(
+                    `[${this.config.roleLabel}] Item ${dropId} at ${drop.position.floored()} unreachable after ${this.config.maxAttempts} attempts without progress`
+                );
+                bb.unreachableDrops.set(dropId, now + UNREACHABLE_COOLDOWN);
                 this.lastTargetId = null;
                 this.failedAttemptsAtTarget = 0;
                 this.lastDistanceToTarget = Infinity;
-            }
-            return 'success';
-        }
-
-        // Move to pickup
-        bb.lastAction = this.config.lastActionMoving;
-        bb.log?.debug(
-            `[${this.config.roleLabel}] Moving to pickup item at ${drop.position.floored()} (dist: ${dist.toFixed(1)})`
-        );
-
-        try {
-            // Use a smaller goal radius to get closer to the item
-            const goalRadius = Math.max(0.5, this.config.goalRadius);
-            const result = await smartPathfinderGoto(
-                bot,
-                new GoalNear(drop.position.x, drop.position.y, drop.position.z, goalRadius),
-                {
-                    timeoutMs: this.config.pathfindingTimeoutMs,
-                    // Enable knight's move recovery for any significant distance
-                    knightMoveRecovery: dist > 2,
-                }
-            );
-
-            if (!result.success) {
-                bb.log?.debug(`[${this.config.roleLabel}] Pickup path failed: ${result.failureReason}`);
-                return 'failure';
+                consecutiveFailures++;
+                continue; // Try next drop
             }
 
-            // After pathfinding, walk directly into the item
-            const newDist = bot.entity.position.distanceTo(drop.position);
-            if (newDist < goalRadius + 1) {
+            // If close enough, walk directly into the item
+            if (dist < this.config.closeDistanceThreshold) {
+                bb.lastAction = this.config.lastActionWaiting;
+
                 // Event-driven: walk toward item, resolve on playerCollect
-                const walkTime = Math.min(800, Math.max(200, newDist * 200));
+                const walkTime = Math.min(600, Math.max(200, dist * 150));
                 const pickedUp = await walkTowardAndCollect(bot, drop, walkTime);
 
                 if (pickedUp) {
                     this.lastTargetId = null;
                     this.failedAttemptsAtTarget = 0;
                     this.lastDistanceToTarget = Infinity;
+                    collectedAny = true;
+                    consecutiveFailures = 0;
+                } else {
+                    consecutiveFailures++;
                 }
-                return 'success';
+                continue; // Move to next drop
             }
 
-            // Pathfinding didn't get us close enough - will retry next tick
-            return 'success';
-        } catch (error) {
-            const msg = error instanceof Error ? error.message : 'unknown';
-            // Don't log common pathfinding interruptions
-            if (!msg.includes('goal was changed') && !msg.includes('Path was stopped')) {
-                bb.log?.debug(`[${this.config.roleLabel}] Pickup path error: ${msg}`);
+            // Move to pickup (farther item)
+            bb.lastAction = this.config.lastActionMoving;
+            bb.log?.debug(
+                `[${this.config.roleLabel}] Moving to pickup item at ${drop.position.floored()} (dist: ${dist.toFixed(1)}, remaining: ${currentDrops.length})`
+            );
+
+            try {
+                // Use a smaller goal radius to get closer to the item
+                const goalRadius = Math.max(0.5, this.config.goalRadius);
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(drop.position.x, drop.position.y, drop.position.z, goalRadius),
+                    {
+                        timeoutMs: this.config.pathfindingTimeoutMs,
+                        // Enable knight's move recovery for any significant distance
+                        knightMoveRecovery: dist > 2,
+                    }
+                );
+
+                if (!result.success) {
+                    bb.log?.debug(`[${this.config.roleLabel}] Pickup path failed: ${result.failureReason}`);
+                    consecutiveFailures++;
+                    continue; // Try next drop
+                }
+
+                // After pathfinding, walk directly into the item
+                const newDist = bot.entity.position.distanceTo(drop.position);
+                if (newDist < goalRadius + 1) {
+                    // Event-driven: walk toward item, resolve on playerCollect
+                    const walkTime = Math.min(800, Math.max(200, newDist * 200));
+                    const pickedUp = await walkTowardAndCollect(bot, drop, walkTime);
+
+                    if (pickedUp) {
+                        this.lastTargetId = null;
+                        this.failedAttemptsAtTarget = 0;
+                        this.lastDistanceToTarget = Infinity;
+                        collectedAny = true;
+                        consecutiveFailures = 0;
+                    } else {
+                        consecutiveFailures++;
+                    }
+                }
+                // Continue to next drop regardless
+            } catch (error) {
+                const msg = error instanceof Error ? error.message : 'unknown';
+                // Don't log common pathfinding interruptions
+                if (!msg.includes('goal was changed') && !msg.includes('Path was stopped')) {
+                    bb.log?.debug(`[${this.config.roleLabel}] Pickup path error: ${msg}`);
+                }
+                consecutiveFailures++;
+                // Continue to try next drop
             }
-            return 'failure';
         }
+
+        return collectedAny ? 'success' : 'failure';
     }
 }

@@ -39,6 +39,8 @@ export class GOAPFarmingRole extends GOAPRole {
   name = 'goap-farming';
   private farmlandProtectionInterval: NodeJS.Timeout | null = null;
   private entitySpawnHandler: ((entity: Entity) => void) | null = null;
+  private lastDropReplanTime = 0;
+  private static readonly DROP_REPLAN_DEBOUNCE_MS = 2000; // Only replan for drops every 2 seconds max
 
   constructor(config?: GOAPRoleConfig) {
     super(config);
@@ -98,13 +100,21 @@ export class GOAPFarmingRole extends GOAPRole {
       }
     }, 50); // Check frequently (20 times per second)
 
-    // Listen for dropped items spawning nearby - trigger immediate replan
+    // Listen for dropped items spawning nearby - trigger immediate replan (debounced)
     // This ensures drops interrupt current work without waiting for next blackboard update
+    // Debounce prevents spam when harvesting creates many drops at once
     this.entitySpawnHandler = (entity: Entity) => {
       if (entity.name !== 'item' || !entity.position) return;
 
       const dist = bot.entity.position.distanceTo(entity.position);
       if (dist < 16) {
+        const now = Date.now();
+        // Debounce: only trigger replan if enough time has passed since last drop-triggered replan
+        if (now - this.lastDropReplanTime < GOAPFarmingRole.DROP_REPLAN_DEBOUNCE_MS) {
+          return; // Skip - batch collection will handle this drop
+        }
+        this.lastDropReplanTime = now;
+
         // Dropped item appeared nearby - interrupt current plan to collect it
         this.log?.debug({ pos: entity.position.floored().toString(), dist: dist.toFixed(1) }, 'Drop spawned nearby, triggering replan');
         this.executor?.cancel(ReplanReason.WORLD_CHANGED);
