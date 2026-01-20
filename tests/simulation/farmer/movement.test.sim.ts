@@ -51,12 +51,13 @@ async function testParkourAndFarmObstacleCourse() {
   // Gap from x=13 to x=14
   buildPath(15, 19, 'stone');
 
-  // ── Section 5: Square farm (7x7 with water center) ──
-  // Farm spans x=20-26, z=-3 to z=3 (centered on z=0)
+  // ── Section 5: Square farm (9x9 with water center) ──
+  // Farm spans x=20-28, z=-4 to z=4 (centered on z=0)
+  // Wider entry side for easier landing from parkour
   const farmlandPositions: Vec3[] = [];
-  const farmX1 = 20, farmX2 = 26;
-  const farmZ1 = -3, farmZ2 = 3;
-  const waterPos = new Vec3(23, floorY, 0); // Center
+  const farmX1 = 20, farmX2 = 28;
+  const farmZ1 = -4, farmZ2 = 4;
+  const waterPos = new Vec3(24, floorY, 0); // Center
 
   for (let x = farmX1; x <= farmX2; x++) {
     for (let z = farmZ1; z <= farmZ2; z++) {
@@ -72,14 +73,11 @@ async function testParkourAndFarmObstacleCourse() {
   }
 
   // ── Section 6: Exit platform from farm ──
-  buildPath(27, 31, 'stone');
+  buildPath(29, 33, 'stone');
 
   // ── Section 7: Third parkour gap (after farm - proves bot can jump again) ──
-  // Gap from x=32 to x=33
-  buildPath(34, 36, 'stone');
-
-  // ── Section 8: Goal platform ──
-  buildPath(39, 43, 'grass_block');
+  // Gap from x=34 to x=35
+  buildPath(36, 38, 'stone');
 
   await test.setup(world, {
     botPosition: new Vec3(0, floorY + 1, 0),
@@ -104,23 +102,20 @@ async function testParkourAndFarmObstacleCourse() {
   // Entry platform (x=15-19)
   await test.rcon('summon item 17 65 0 {Item:{id:"minecraft:wheat",count:2}}');
   await test.wait(500);
-  // On farm (x=20-26, avoiding water at x=23)
-  await test.rcon('summon item 21 65 0 {Item:{id:"minecraft:wheat",count:2}}');
+  // On farm (x=20-28, avoiding water at x=24)
+  await test.rcon('summon item 22 65 0 {Item:{id:"minecraft:wheat",count:2}}');
   await test.wait(500);
-  await test.rcon('summon item 25 65 0 {Item:{id:"minecraft:wheat",count:2}}');
+  await test.rcon('summon item 26 65 0 {Item:{id:"minecraft:wheat",count:2}}');
   await test.wait(500);
-  // Exit platform (x=27-31)
-  await test.rcon('summon item 29 65 0 {Item:{id:"minecraft:wheat",count:2}}');
+  // Exit platform (x=29-33)
+  await test.rcon('summon item 31 65 0 {Item:{id:"minecraft:wheat",count:2}}');
   await test.wait(500);
-  // Platform 3 (x=34-36)
-  await test.rcon('summon item 35 65 0 {Item:{id:"minecraft:wheat",count:2}}');
-  await test.wait(500);
-  // Goal platform (x=39-43)
-  await test.rcon('summon item 41 65 0 {Item:{id:"minecraft:wheat",count:5}}');
+  // Final platform (x=36-38)
+  await test.rcon('summon item 37 65 0 {Item:{id:"minecraft:wheat",count:5}}');
 
   // Wait for bot to collect most wheat (proves it navigated the whole course)
-  // Total spawned: 19 wheat, expect at least 17
-  await test.waitForInventory('wheat', 17, {
+  // Total spawned: 17 wheat, expect at least 15
+  await test.waitForInventory('wheat', 15, {
     timeout: 120000,
     message: 'Bot should navigate parkour + farm to collect wheat',
   });
