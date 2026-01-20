@@ -5,9 +5,9 @@
  * Usage:
  *   bun run sim                    # List available simulations
  *   bun run sim lumberjack         # Run lumberjack simulation
- *   bun run sim example-lumberjack # Run example simulation
  *
  * Simulations are files matching *.sim.ts in this directory.
+ * They run against a real Paper Minecraft server with accurate physics.
  */
 
 import { readdirSync } from 'fs';
@@ -26,8 +26,7 @@ async function listSimulations(): Promise<string[]> {
 async function runSimulation(name: string): Promise<void> {
   // Handle aliases
   const aliases: Record<string, string> = {
-    'lumberjack': 'run-lumberjack',
-    'example': 'example-lumberjack',
+    'lumberjack': 'run-lumberjack-paper',
   };
 
   const actualName = aliases[name] ?? name;
@@ -58,25 +57,26 @@ async function main() {
       console.log(`   • ${sim}`);
     }
     console.log('\nAliases:');
-    console.log('   • lumberjack  → run-lumberjack');
-    console.log('   • example     → example-lumberjack');
+    console.log('   • lumberjack → run-lumberjack-paper');
     console.log('\nUsage:');
     console.log('   bun run sim <simulation-name>');
     console.log('\nExample:');
     console.log('   bun run sim lumberjack');
-    console.log('\nSimulations start a real flying-squid server + prismarine-viewer.');
-    console.log('Your bot runs with full physics against a custom world you define.\n');
+    console.log('\nSimulations run against a real Paper server with accurate Minecraft physics.');
+    console.log('The server auto-starts if needed. You can also join with a real client.\n');
     return;
   }
 
   // Check if simulation exists
-  const actualName = simName === 'lumberjack' ? 'run-lumberjack' :
-                     simName === 'example' ? 'example-lumberjack' : simName;
+  const aliases: Record<string, string> = {
+    'lumberjack': 'run-lumberjack-paper',
+  };
+  const actualName = aliases[simName] ?? simName;
 
   if (!sims.includes(actualName)) {
     console.error(`\n❌ Unknown simulation: ${simName}`);
     console.error(`   Available: ${sims.join(', ')}`);
-    console.error(`   Aliases: lumberjack, example\n`);
+    console.error(`   Aliases: lumberjack\n`);
     process.exit(1);
   }
 
