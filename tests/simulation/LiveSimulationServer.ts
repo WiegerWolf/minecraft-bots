@@ -182,17 +182,19 @@ export class LiveSimulationServer {
           'generation': {
             name: 'superflat',
             options: {
-              // Just bedrock + air - we'll fill in our blocks
               version: VERSION,
             },
           },
-          'logging': false,
+          'logging': true, // Enable to see server logs
           'everybody-op': true,
-          'plugins': {}, // Required by flying-squid
+          'plugins': {},
           'player-list-text': {
-            header: '',
-            footer: '',
+            header: { text: 'Simulation' },
+            footer: { text: '' },
           },
+          'kickTimeout': 10000,
+          'max-entities': 100,
+          'modpe': false,
         });
 
         this.server.on('listening', () => {
