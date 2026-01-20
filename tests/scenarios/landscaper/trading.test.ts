@@ -29,14 +29,15 @@ describe('Landscaper Trading', () => {
   });
 
   describe('Responding to Offers', () => {
-    test('SPEC: Pending trade offers = high priority (utility 120)', () => {
+    test('SPEC: Pending trade offers = very high priority (utility 140)', () => {
       const ws = landscaperWithTradeOffersState();
 
       arbiter.clearCurrentGoal();
       const result = arbiter.selectGoal(ws);
 
       expect(result?.goal.name).toBe('RespondToTradeOffer');
-      expect(result?.utility).toBe(120);
+      // Utility must be 140+ to preempt goals at ~100 (100 + 30 preemption threshold = 130)
+      expect(result?.utility).toBeGreaterThanOrEqual(140);
     });
 
     test('SPEC: Trade offer interrupts idle landscaper', () => {
@@ -49,6 +50,23 @@ describe('Landscaper Trading', () => {
       const result = arbiter.selectGoal(ws);
 
       expect(result?.goal.name).toBe('RespondToTradeOffer');
+    });
+
+    test('SPEC: Trade offers can preempt terraforming work', () => {
+      const ws = landscaperWithTradeOffersState();
+
+      const respondGoal = goals.find((g) => g.name === 'RespondToTradeOffer')!;
+      const terraformGoal = goals.find((g) => g.name === 'FulfillTerraformRequest')!;
+
+      // Set up state where terraforming is needed
+      ws.set('has.pendingTerraformRequest', true);
+      ws.set('has.shovel', true);
+
+      const respondUtility = respondGoal.getUtility(ws);
+      const terraformUtility = terraformGoal.getUtility(ws);
+
+      // RespondToTradeOffer must be able to preempt terraform (utility + 30)
+      expect(respondUtility).toBeGreaterThan(terraformUtility + 30);
     });
   });
 

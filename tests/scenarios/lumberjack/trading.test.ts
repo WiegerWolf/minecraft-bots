@@ -40,14 +40,32 @@ describe('Lumberjack Trading', () => {
   });
 
   describe('Responding to Offers', () => {
-    test('SPEC: Pending trade offers = high priority (utility 120)', () => {
+    test('SPEC: Pending trade offers = very high priority (utility 140)', () => {
       const ws = lumberjackWithTradeOffersState();
 
       arbiter.clearCurrentGoal();
       const result = arbiter.selectGoal(ws);
 
       expect(result?.goal.name).toBe('RespondToTradeOffer');
-      expect(result?.utility).toBe(120);
+      // Utility must be 140+ to preempt goals at ~100 (100 + 30 preemption threshold = 130)
+      expect(result?.utility).toBeGreaterThanOrEqual(140);
+    });
+
+    test('SPEC: Trade offers can preempt tree chopping (utility > ChopTree + 30)', () => {
+      const ws = lumberjackWithTradeOffersState();
+
+      const respondGoal = goals.find((g) => g.name === 'RespondToTradeOffer')!;
+      const chopGoal = goals.find((g) => g.name === 'ChopTree')!;
+
+      // Set up state where chopping is viable
+      ws.set('nearby.reachableTrees', 5);
+      ws.set('has.axe', true);
+
+      const respondUtility = respondGoal.getUtility(ws);
+      const chopUtility = chopGoal.getUtility(ws);
+
+      // RespondToTradeOffer must be able to preempt ChopTree (utility + 30)
+      expect(respondUtility).toBeGreaterThan(chopUtility + 30);
     });
   });
 

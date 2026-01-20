@@ -34,14 +34,15 @@ describe('Farmer Trading', () => {
   });
 
   describe('Responding to Offers', () => {
-    test('SPEC: Pending trade offers = high priority (utility 120)', () => {
+    test('SPEC: Pending trade offers = very high priority (utility 140)', () => {
       const ws = farmerWithTradeOffersState();
 
       arbiter.clearCurrentGoal();
       const result = arbiter.selectGoal(ws);
 
       expect(result?.goal.name).toBe('RespondToTradeOffer');
-      expect(result?.utility).toBe(120);
+      // Utility must be 140+ to preempt goals at ~100 (100 + 30 preemption threshold = 130)
+      expect(result?.utility).toBeGreaterThanOrEqual(140);
     });
 
     test('SPEC: Trade offers preempt normal farming', () => {
@@ -54,6 +55,25 @@ describe('Farmer Trading', () => {
       const result = arbiter.selectGoal(ws);
 
       expect(result?.goal.name).toBe('RespondToTradeOffer');
+    });
+
+    test('SPEC: Trade offers can preempt any non-trade activity (utility > max_activity + 30)', () => {
+      // The preemption threshold is 30, so for a bot doing HarvestCrops at utility ~100,
+      // RespondToTradeOffer needs utility > 130 to interrupt
+      const ws = farmerWithTradeOffersState();
+
+      const respondGoal = goals.find((g) => g.name === 'RespondToTradeOffer')!;
+      const harvestGoal = goals.find((g) => g.name === 'HarvestCrops')!;
+
+      // Set up state where harvesting is viable
+      ws.set('nearby.matureCrops', 10);
+      ws.set('state.inventoryFull', false);
+
+      const respondUtility = respondGoal.getUtility(ws);
+      const harvestUtility = harvestGoal.getUtility(ws);
+
+      // RespondToTradeOffer must be able to preempt HarvestCrops (utility + 30)
+      expect(respondUtility).toBeGreaterThan(harvestUtility + 30);
     });
   });
 

@@ -586,7 +586,8 @@ export class CompleteTradeGoal extends BaseGoal {
 
 /**
  * Goal: Respond to trade offers for items we want.
- * MEDIUM priority when there's an offer for something we need.
+ * VERY HIGH priority when there's an offer for something we need.
+ * Trading should preempt most activities (utility > activity + 30 preemption threshold).
  *
  * The goal is satisfied when we've responded (trade.status == 'wanting')
  * or entered an active trade.
@@ -608,8 +609,9 @@ export class RespondToTradeOfferGoal extends BaseGoal {
     // Use computed boolean from WorldStateBuilder (single source of truth)
     if (!ws.getBool('trade.canRespondToOffers')) return 0;
 
-    // High priority - trading saves time vs gathering
-    return 120;
+    // Very high priority - trading should preempt most activities
+    // Utility 140 ensures preemption of goals at 100+ (100 + 30 threshold = 130)
+    return 140;
   }
 
   override isValid(ws: WorldState): boolean {
