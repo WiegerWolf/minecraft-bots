@@ -135,48 +135,35 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
             return 'failure';
         }
 
-        // If very close, walk directly into the item to trigger pickup
-        if (dist < 1.0) {
+        // If close enough, walk directly into the item
+        if (dist < this.config.closeDistanceThreshold) {
             bb.lastAction = this.config.lastActionWaiting;
-            // Walk directly toward the item
             const direction = drop.position.minus(bot.entity.position);
             const yaw = Math.atan2(-direction.x, -direction.z);
             await bot.look(yaw, 0);
+
+            // Walk toward item until picked up or close enough
             bot.setControlState('forward', true);
-            await sleep(300);
+            const startTime = Date.now();
+            const maxWalkTime = 400;
+
+            while (Date.now() - startTime < maxWalkTime) {
+                const exists = Object.values(bot.entities).some(e => e.id === dropId);
+                if (!exists) break;
+                const currentDist = bot.entity.position.distanceTo(drop.position);
+                if (currentDist < 0.3) break;
+                await sleep(30);
+            }
+
             bot.clearControlStates();
-            await sleep(100);
 
-            // Check if item was picked up
-            const stillExists = Object.values(bot.entities).some(e => e.id === dropId);
-            if (!stillExists) {
-                // Success! Item was picked up
+            const pickedUp = !Object.values(bot.entities).some(e => e.id === dropId);
+            if (pickedUp) {
                 this.lastTargetId = null;
                 this.failedAttemptsAtTarget = 0;
                 this.lastDistanceToTarget = Infinity;
-                return 'success';
             }
-
-            // Still there, will retry next tick
             return 'success';
-        }
-
-        // If close but not very close, wait for auto-pickup briefly
-        if (this.config.closeDistanceThreshold > 0 && dist < this.config.closeDistanceThreshold) {
-            bb.lastAction = this.config.lastActionWaiting;
-            await sleep(this.config.closeDistanceWaitMs);
-
-            // Check if item still exists (was it picked up?)
-            const stillExists = Object.values(bot.entities).some(e => e.id === dropId);
-            if (!stillExists) {
-                // Success! Item was picked up
-                this.lastTargetId = null;
-                this.failedAttemptsAtTarget = 0;
-                this.lastDistanceToTarget = Infinity;
-                return 'success';
-            }
-
-            // Item still there but we're close - continue to pathfind closer
         }
 
         // Move to pickup
@@ -225,14 +212,22 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
                 }
 
                 bot.clearControlStates();
+
+                // Check if item was picked up during walk
+                const pickedUp = !Object.values(bot.entities).some(e => e.id === dropId);
+                if (pickedUp) {
+                    this.lastTargetId = null;
+                    this.failedAttemptsAtTarget = 0;
+                    this.lastDistanceToTarget = Infinity;
+                }
+                return 'success';
             }
 
-            await sleep(this.config.closeDistanceWaitMs);
+            // Pathfinding got us close but not close enough - brief wait for auto-pickup
+            await sleep(100);
 
-            // Check if item was picked up
             const stillExists = Object.values(bot.entities).some(e => e.id === dropId);
             if (!stillExists) {
-                // Success! Reset tracking
                 this.lastTargetId = null;
                 this.failedAttemptsAtTarget = 0;
                 this.lastDistanceToTarget = Infinity;
