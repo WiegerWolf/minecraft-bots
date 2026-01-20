@@ -1,4 +1,5 @@
 import type { Bot } from 'mineflayer';
+import type { Entity } from 'prismarine-entity';
 import { Movements } from 'mineflayer-pathfinder';
 import { GOAPRole, type GOAPRoleConfig } from './GOAPRole';
 import { createBlackboard, updateBlackboard, type FarmingBlackboard } from './farming/Blackboard';
@@ -7,6 +8,7 @@ import { createFarmingGoals } from '../planning/goals/FarmingGoals';
 import { VillageChat } from '../shared/VillageChat';
 import type { GOAPAction } from '../planning/Action';
 import type { Goal } from '../planning/Goal';
+import { ReplanReason } from '../planning/PlanExecutor';
 
 /**
  * Check if the bot is on or near farmland (within 1 block horizontally).
@@ -36,6 +38,7 @@ function isNearFarmland(bot: Bot): boolean {
 export class GOAPFarmingRole extends GOAPRole {
   name = 'goap-farming';
   private farmlandProtectionInterval: NodeJS.Timeout | null = null;
+  private entitySpawnHandler: ((entity: Entity) => void) | null = null;
 
   constructor(config?: GOAPRoleConfig) {
     super(config);
@@ -94,6 +97,20 @@ export class GOAPFarmingRole extends GOAPRole {
         bot.controlState.jump = false;
       }
     }, 50); // Check frequently (20 times per second)
+
+    // Listen for dropped items spawning nearby - trigger immediate replan
+    // This ensures drops interrupt current work without waiting for next blackboard update
+    this.entitySpawnHandler = (entity: Entity) => {
+      if (entity.name !== 'item' || !entity.position) return;
+
+      const dist = bot.entity.position.distanceTo(entity.position);
+      if (dist < 16) {
+        // Dropped item appeared nearby - interrupt current plan to collect it
+        this.log?.debug({ pos: entity.position.floored().toString(), dist: dist.toFixed(1) }, 'Drop spawned nearby, triggering replan');
+        this.executor?.cancel(ReplanReason.WORLD_CHANGED);
+      }
+    };
+    bot.on('entitySpawn', this.entitySpawnHandler);
   }
 
   override stop(bot: Bot): void {
@@ -103,6 +120,12 @@ export class GOAPFarmingRole extends GOAPRole {
     if (this.farmlandProtectionInterval) {
       clearInterval(this.farmlandProtectionInterval);
       this.farmlandProtectionInterval = null;
+    }
+
+    // Clean up entity spawn listener
+    if (this.entitySpawnHandler) {
+      bot.removeListener('entitySpawn', this.entitySpawnHandler);
+      this.entitySpawnHandler = null;
     }
 
     super.stop(bot);
