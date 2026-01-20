@@ -79,6 +79,8 @@ export class PaperSimulationServer {
   private bot: Bot | null = null;
   private mockWorld: MockWorld | null = null;
   private options: Required<SimulationOptions>;
+  private rconCommandQueue: Promise<void> = Promise.resolve();
+  private rconThrottleMs = 5; // ms between commands to avoid overwhelming RCON
 
   private defaultOptions: Required<SimulationOptions> = {
     botPosition: new Vec3(0, 65, 0),
@@ -153,11 +155,44 @@ export class PaperSimulationServer {
   }
 
   /**
-   * Execute an RCON command.
+   * Execute an RCON command with throttling and auto-reconnect.
    */
   async rconCommand(command: string): Promise<string> {
-    if (!this.rcon) throw new Error('RCON not connected');
-    return await this.rcon.send(command);
+    // Queue commands to prevent overwhelming RCON
+    return new Promise((resolve, reject) => {
+      this.rconCommandQueue = this.rconCommandQueue.then(async () => {
+        try {
+          // Check if connected, reconnect if needed
+          if (!this.rcon) {
+            await this.connectRcon();
+          }
+
+          const result = await this.rcon!.send(command);
+
+          // Small delay to prevent overwhelming RCON
+          await this.delay(this.rconThrottleMs);
+
+          resolve(result);
+        } catch (err) {
+          // Try to reconnect once on connection errors
+          const errorMsg = String(err);
+          if (errorMsg.includes('Not connected') || errorMsg.includes('Connection closed')) {
+            console.log('[PaperSim] RCON disconnected, reconnecting...');
+            try {
+              this.rcon = null;
+              await this.connectRcon();
+              const result = await this.rcon!.send(command);
+              await this.delay(this.rconThrottleMs);
+              resolve(result);
+            } catch (retryErr) {
+              reject(retryErr);
+            }
+          } else {
+            reject(err);
+          }
+        }
+      });
+    });
   }
 
   /**
@@ -217,9 +252,20 @@ export class PaperSimulationServer {
 
   /**
    * Stop the simulation and clean up.
+   * By default keeps the server running for faster subsequent tests.
    */
-  async stop(): Promise<void> {
+  async stop(options?: { killServer?: boolean }): Promise<void> {
     console.log('[PaperSim] Stopping...');
+
+    // Wait for any pending RCON commands to complete
+    try {
+      await this.rconCommandQueue;
+    } catch {
+      // Ignore errors from pending commands
+    }
+
+    // Reset the command queue
+    this.rconCommandQueue = Promise.resolve();
 
     if (this.bot) {
       this.bot.quit();
@@ -227,11 +273,16 @@ export class PaperSimulationServer {
     }
 
     if (this.rcon) {
-      await this.rcon.end();
+      try {
+        await this.rcon.end();
+      } catch {
+        // Ignore errors when closing RCON
+      }
       this.rcon = null;
     }
 
-    if (this.serverProcess) {
+    // Only kill server if explicitly requested
+    if (options?.killServer && this.serverProcess) {
       this.serverProcess.kill();
       this.serverProcess = null;
     }
@@ -311,6 +362,16 @@ export class PaperSimulationServer {
   }
 
   private async connectRcon(): Promise<void> {
+    // Clean up existing connection if any
+    if (this.rcon) {
+      try {
+        await this.rcon.end();
+      } catch {
+        // Ignore errors when closing old connection
+      }
+      this.rcon = null;
+    }
+
     let retries = 10;
     while (retries > 0) {
       try {
@@ -333,55 +394,67 @@ export class PaperSimulationServer {
 
   private async clearWorldArea(): Promise<void> {
     const r = this.options.clearRadius;
-    const pos = this.options.botPosition;
 
-    // Fill area with air first
-    console.log(`[PaperSim] Clearing ${r * 2}x${r * 2} area...`);
+    console.log(`[PaperSim] Clearing ${r * 2}x${r * 2} area centered at origin...`);
 
-    // Clear in chunks to avoid command length limits
+    // Max fill volume is 32768 blocks
+    // With y range of 20 blocks: chunkSize^2 * 20 <= 32768 → chunkSize <= 40
+    // Use 32 for safety
     const chunkSize = 32;
-    for (let x = -r; x < r; x += chunkSize) {
-      for (let z = -r; z < r; z += chunkSize) {
-        const x1 = Math.floor(pos.x) + x;
-        const z1 = Math.floor(pos.z) + z;
-        const x2 = Math.min(x1 + chunkSize - 1, Math.floor(pos.x) + r - 1);
-        const z2 = Math.min(z1 + chunkSize - 1, Math.floor(pos.z) + r - 1);
+    const yRanges = [[60, 79], [80, 100]]; // Split Y to stay under block limit
 
-        // Clear from y=60 to y=80
-        await this.rconCommand(`fill ${x1} 60 ${z1} ${x2} 80 ${z2} minecraft:air replace`);
+    for (const [y1, y2] of yRanges) {
+      for (let x = -r; x < r; x += chunkSize) {
+        for (let z = -r; z < r; z += chunkSize) {
+          const x1 = x;
+          const z1 = z;
+          const x2 = Math.min(x + chunkSize - 1, r - 1);
+          const z2 = Math.min(z + chunkSize - 1, r - 1);
+
+          await this.rconCommand(`fill ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} minecraft:air replace`);
+        }
       }
     }
 
-    // Set bedrock floor at y=62
+    // Set bedrock floor at y=62 and grass at y=63 (common base for most test worlds)
     for (let x = -r; x < r; x += chunkSize) {
       for (let z = -r; z < r; z += chunkSize) {
-        const x1 = Math.floor(pos.x) + x;
-        const z1 = Math.floor(pos.z) + z;
-        const x2 = Math.min(x1 + chunkSize - 1, Math.floor(pos.x) + r - 1);
-        const z2 = Math.min(z1 + chunkSize - 1, Math.floor(pos.z) + r - 1);
+        const x1 = x;
+        const z1 = z;
+        const x2 = Math.min(x + chunkSize - 1, r - 1);
+        const z2 = Math.min(z + chunkSize - 1, r - 1);
 
         await this.rconCommand(`fill ${x1} 62 ${z1} ${x2} 62 ${z2} minecraft:bedrock replace`);
+        await this.rconCommand(`fill ${x1} 63 ${z1} ${x2} 63 ${z2} minecraft:grass_block replace`);
       }
     }
+
+    // Kill any dropped items from previous tests
+    await this.rconCommand('kill @e[type=item]');
   }
 
   private async buildWorld(): Promise<void> {
     if (!this.mockWorld || !this.rcon) return;
 
     const blocks = this.mockWorld.getAllBlocks();
-    const nonAirBlocks = blocks.filter(b => b.name !== 'air');
-    console.log(`[PaperSim] Placing ${nonAirBlocks.length} blocks...`);
+    // Skip air blocks and grass_block at y=63 (already placed by clearWorldArea)
+    const blocksToPlace = blocks.filter(b => {
+      if (b.name === 'air') return false;
+      if (b.name === 'grass_block' && b.position.y === 63) return false;
+      return true;
+    });
+    console.log(`[PaperSim] Placing ${blocksToPlace.length} blocks...`);
 
     // Place blocks individually to preserve metadata (like signText)
     let placed = 0;
-    for (const block of nonAirBlocks) {
+    for (const block of blocksToPlace) {
       try {
         await this.setBlock(block.position, block.name, { signText: block.signText });
         placed++;
 
         // Progress update every 100 blocks
         if (placed % 100 === 0) {
-          console.log(`[PaperSim] Placed ${placed}/${nonAirBlocks.length} blocks...`);
+          console.log(`[PaperSim] Placed ${placed}/${blocksToPlace.length} blocks...`);
         }
       } catch (err) {
         console.warn(`[PaperSim] Failed to place ${block.name} at ${block.position}: ${err}`);
@@ -445,6 +518,9 @@ export class PaperSimulationServer {
     if (!this.bot || !this.rcon) return;
 
     const pos = this.options.botPosition;
+
+    // Clear any existing inventory (important between tests!)
+    await this.rconCommand('clear SimBot');
 
     // Teleport bot
     await this.rconCommand(`tp SimBot ${pos.x} ${pos.y} ${pos.z}`);

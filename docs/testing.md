@@ -24,6 +24,11 @@ tests/
       ...
     landscaper/
       ...
+  simulation/          # Integration tests with real Paper server
+    PaperSimulationServer.ts  # Server management, world sync
+    SimulationTest.ts         # Test framework with assertions
+    lumberjack.test.sim.ts    # Lumberjack integration tests
+    run-lumberjack-paper.sim.ts # Interactive simulation runner
   mocks/
     world-state/       # WorldState presets by role
     MockWorld.ts       # 3D block grid for world simulation
