@@ -85,6 +85,7 @@ export class TerraformArea implements BehaviorNode {
             blocksToFill: [],       // Regular fills AFTER digging
             pathBlocksToClear: [],  // Blocks to remove for 1-block path
             pathBlocksToFill: [],   // Holes to fill in the path
+            pathBlocksToConvert: [], // Dirt/grass to convert to dirt_path with shovel
             progress: 0
         };
         bb.lastAction = 'terraform_start';
@@ -105,7 +106,9 @@ export class TerraformArea implements BehaviorNode {
             case 'filling':
                 return this.fillBlocks(bot, bb);
             case 'clearing_path':
-                return this.clearPath(bot, bb);  // Create 1-block path around farm
+                return this.clearPath(bot, bb);  // Clear obstacles and fill holes in path
+            case 'creating_paths':
+                return this.createPaths(bot, bb);  // Use shovel to convert dirt to dirt_path
             case 'finishing':
                 return this.finishTask(bot, bb);
             case 'done':
@@ -223,6 +226,7 @@ export class TerraformArea implements BehaviorNode {
         const pathRadius = 5; // Just outside the 9x9 farm (radius 4)
         const pathBlocksToClear: Vec3[] = [];
         const pathBlocksToFill: Vec3[] = [];
+        const pathBlocksToConvert: Vec3[] = [];  // Dirt/grass to convert to dirt_path
 
         // Scan the path ring (blocks at exactly distance 5 in X or Z)
         for (let dx = -pathRadius; dx <= pathRadius; dx++) {
@@ -258,8 +262,11 @@ export class TerraformArea implements BehaviorNode {
                 } else if (pathBlock.name === 'water' || pathBlock.name === 'flowing_water') {
                     // Water in path - needs filling
                     pathBlocksToFill.push(pathPos.clone());
+                } else if (pathBlock.name === 'dirt' || pathBlock.name === 'grass_block') {
+                    // Dirt/grass can be converted to dirt_path using a shovel
+                    pathBlocksToConvert.push(pathPos.clone());
                 }
-                // If it's a solid block, path surface is OK
+                // If it's already dirt_path or other solid block, path surface is OK
 
                 // Check below path surface - need support
                 const belowPath = new Vec3(x, targetY - 1, z);
@@ -282,8 +289,9 @@ export class TerraformArea implements BehaviorNode {
         }
         task.pathBlocksToClear = pathBlocksToClear;
         task.pathBlocksToFill = Array.from(uniquePathFills.values()).sort((a, b) => a.y - b.y);
+        task.pathBlocksToConvert = pathBlocksToConvert;
 
-        // Determine next phase - SEAL WATER FIRST, then dig, then fill, then path
+        // Determine next phase - SEAL WATER FIRST, then dig, then fill, then path, then convert
         if (task.waterBlocksToFill.length > 0) {
             task.phase = 'sealing_water';
         } else if (blocksToRemove.length > 0) {
@@ -292,15 +300,17 @@ export class TerraformArea implements BehaviorNode {
             task.phase = 'filling';
         } else if (task.pathBlocksToClear.length > 0 || task.pathBlocksToFill.length > 0) {
             task.phase = 'clearing_path';
+        } else if (task.pathBlocksToConvert.length > 0) {
+            task.phase = 'creating_paths';
         } else {
             task.phase = 'finishing';
         }
 
         // Log summary
         const totalWork = blocksToRemove.length + task.waterBlocksToFill.length + task.blocksToFill.length;
-        const pathWork = task.pathBlocksToClear.length + task.pathBlocksToFill.length;
+        const pathWork = task.pathBlocksToClear.length + task.pathBlocksToFill.length + task.pathBlocksToConvert.length;
         if (totalWork > 0 || pathWork > 0) {
-            bb.log?.debug(`[Landscaper] Work needed: ${task.waterBlocksToFill.length} water to seal, ${blocksToRemove.length} to dig, ${task.blocksToFill.length} to fill, path: ${task.pathBlocksToClear.length} clear + ${task.pathBlocksToFill.length} fill`);
+            bb.log?.debug(`[Landscaper] Work needed: ${task.waterBlocksToFill.length} water to seal, ${blocksToRemove.length} to dig, ${task.blocksToFill.length} to fill, path: ${task.pathBlocksToClear.length} clear + ${task.pathBlocksToFill.length} fill + ${task.pathBlocksToConvert.length} convert`);
         } else {
             bb.log?.debug(`[Landscaper] Area already suitable - 9x9 dirt with water center and path`);
         }
@@ -386,6 +396,41 @@ export class TerraformArea implements BehaviorNode {
             );
             if (!result.success) {
                 // Try placing anyway if we're somewhat close
+            }
+        }
+
+        // Check if bot is standing in the position where we want to place a block
+        const botBlockPos = bot.entity.position.floored();
+        const fillBlockPos = fillPos.floored();
+        if (botBlockPos.x === fillBlockPos.x && botBlockPos.z === fillBlockPos.z &&
+            (botBlockPos.y === fillBlockPos.y || botBlockPos.y === fillBlockPos.y + 1)) {
+            bb.log?.debug(`[Landscaper] Standing in water fill position ${fillPos.floored()}, moving away first`);
+            const safeOffsets = [
+                new Vec3(2, 0, 0), new Vec3(-2, 0, 0),
+                new Vec3(0, 0, 2), new Vec3(0, 0, -2),
+            ];
+            let moved = false;
+            for (const offset of safeOffsets) {
+                const safePos = fillPos.plus(offset);
+                const groundBelow = bot.blockAt(safePos.offset(0, -1, 0));
+                const blockAtSafe = bot.blockAt(safePos);
+                if (groundBelow && groundBelow.boundingBox === 'block' &&
+                    blockAtSafe && (blockAtSafe.name === 'air' || blockAtSafe.transparent)) {
+                    const result = await smartPathfinderGoto(
+                        bot,
+                        new GoalNear(safePos.x, safePos.y, safePos.z, 1),
+                        { timeoutMs: 10000 }
+                    );
+                    if (result.success) {
+                        moved = true;
+                        break;
+                    }
+                }
+            }
+            if (!moved) {
+                bb.log?.debug(`[Landscaper] Could not move away from water fill position, skipping`);
+                task.waterBlocksToFill.shift();
+                return 'running';
             }
         }
 
@@ -625,6 +670,43 @@ export class TerraformArea implements BehaviorNode {
             );
             if (!result.success) {
                 // Try placing anyway
+            }
+        }
+
+        // Check if bot is standing in the position where we want to place a block
+        // If so, move away first to avoid placing block inside ourselves
+        const botBlockPos = bot.entity.position.floored();
+        const fillBlockPos = fillPos.floored();
+        if (botBlockPos.x === fillBlockPos.x && botBlockPos.z === fillBlockPos.z &&
+            (botBlockPos.y === fillBlockPos.y || botBlockPos.y === fillBlockPos.y + 1)) {
+            bb.log?.debug(`[Landscaper] Standing in fill position ${fillPos.floored()}, moving away first`);
+            // Find a safe spot to stand - try adjacent positions
+            const safeOffsets = [
+                new Vec3(2, 0, 0), new Vec3(-2, 0, 0),
+                new Vec3(0, 0, 2), new Vec3(0, 0, -2),
+            ];
+            let moved = false;
+            for (const offset of safeOffsets) {
+                const safePos = fillPos.plus(offset);
+                const groundBelow = bot.blockAt(safePos.offset(0, -1, 0));
+                const blockAtSafe = bot.blockAt(safePos);
+                if (groundBelow && groundBelow.boundingBox === 'block' &&
+                    blockAtSafe && (blockAtSafe.name === 'air' || blockAtSafe.transparent)) {
+                    const result = await smartPathfinderGoto(
+                        bot,
+                        new GoalNear(safePos.x, safePos.y, safePos.z, 1),
+                        { timeoutMs: 10000 }
+                    );
+                    if (result.success) {
+                        moved = true;
+                        break;
+                    }
+                }
+            }
+            if (!moved) {
+                bb.log?.debug(`[Landscaper] Could not move away from fill position, skipping`);
+                task.blocksToFill.shift();
+                return 'running';
             }
         }
 
@@ -967,6 +1049,41 @@ export class TerraformArea implements BehaviorNode {
                 }
             }
 
+            // Check if bot is standing in the position where we want to place a block
+            const botBlockPos = bot.entity.position.floored();
+            const fillBlockPos = fillPos.floored();
+            if (botBlockPos.x === fillBlockPos.x && botBlockPos.z === fillBlockPos.z &&
+                (botBlockPos.y === fillBlockPos.y || botBlockPos.y === fillBlockPos.y + 1)) {
+                bb.log?.debug(`[Landscaper] Standing in path fill position ${fillPos.floored()}, moving away first`);
+                const safeOffsets = [
+                    new Vec3(2, 0, 0), new Vec3(-2, 0, 0),
+                    new Vec3(0, 0, 2), new Vec3(0, 0, -2),
+                ];
+                let moved = false;
+                for (const offset of safeOffsets) {
+                    const safePos = fillPos.plus(offset);
+                    const groundBelow = bot.blockAt(safePos.offset(0, -1, 0));
+                    const blockAtSafe = bot.blockAt(safePos);
+                    if (groundBelow && groundBelow.boundingBox === 'block' &&
+                        blockAtSafe && (blockAtSafe.name === 'air' || blockAtSafe.transparent)) {
+                        const result = await smartPathfinderGoto(
+                            bot,
+                            new GoalNear(safePos.x, safePos.y, safePos.z, 1),
+                            { timeoutMs: 10000 }
+                        );
+                        if (result.success) {
+                            moved = true;
+                            break;
+                        }
+                    }
+                }
+                if (!moved) {
+                    bb.log?.debug(`[Landscaper] Could not move away from path fill position, skipping`);
+                    task.pathBlocksToFill.shift();
+                    return 'running';
+                }
+            }
+
             // Equip and place dirt
             const dirtToPlace = bot.inventory.items().find(i => i.name === 'dirt');
             if (!dirtToPlace) {
@@ -990,9 +1107,90 @@ export class TerraformArea implements BehaviorNode {
             return 'running';
         }
 
-        // Path complete, move to finishing
-        bb.log?.debug(`[Landscaper] Path clearing complete`);
-        task.phase = 'finishing';
+        // Path clearing complete, move to path conversion or finishing
+        if (task.pathBlocksToConvert.length > 0) {
+            bb.log?.debug(`[Landscaper] Path clearing complete, moving to path conversion`);
+            task.phase = 'creating_paths';
+        } else {
+            bb.log?.debug(`[Landscaper] Path clearing complete`);
+            task.phase = 'finishing';
+        }
+        return 'running';
+    }
+
+    /**
+     * Use shovel to convert dirt/grass blocks to dirt_path blocks.
+     * In Minecraft, right-clicking dirt/grass with a shovel creates a dirt_path.
+     */
+    private async createPaths(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
+        const task = bb.currentTerraformTask!;
+        bb.lastAction = 'terraform_creating_paths';
+
+        if (task.pathBlocksToConvert.length === 0) {
+            bb.log?.debug(`[Landscaper] Path conversion complete`);
+            task.phase = 'finishing';
+            return 'running';
+        }
+
+        // Check if we have a shovel
+        if (!bb.hasShovel) {
+            bb.log?.debug(`[Landscaper] No shovel available for path creation, skipping`);
+            task.pathBlocksToConvert = [];
+            task.phase = 'finishing';
+            return 'running';
+        }
+
+        const convertPos = task.pathBlocksToConvert[0]!;
+        const block = bot.blockAt(convertPos);
+
+        // Check if already converted or no longer dirt/grass
+        if (!block || (block.name !== 'dirt' && block.name !== 'grass_block')) {
+            task.pathBlocksToConvert.shift();
+            task.progress++;
+            return 'running';
+        }
+
+        // Move close to the block
+        const dist = bot.entity.position.distanceTo(convertPos);
+        if (dist > 4) {
+            const result = await smartPathfinderGoto(
+                bot,
+                new GoalNear(convertPos.x, convertPos.y, convertPos.z, 3),
+                { timeoutMs: 15000 }
+            );
+            if (!result.success && dist > 6) {
+                bb.log?.debug(`[Landscaper] Could not reach block at ${convertPos.floored()} for path conversion`);
+                task.pathBlocksToConvert.shift();
+                return 'running';
+            }
+        }
+
+        // Equip shovel
+        const shovel = bot.inventory.items().find(i => i.name.includes('shovel'));
+        if (!shovel) {
+            bb.log?.debug(`[Landscaper] Lost shovel during path creation, skipping remaining`);
+            task.pathBlocksToConvert = [];
+            task.phase = 'finishing';
+            return 'running';
+        }
+
+        try {
+            await bot.equip(shovel, 'hand');
+            await sleep(50);
+
+            // Use activateBlock to right-click the block with the shovel
+            // This converts dirt/grass to dirt_path
+            await bot.activateBlock(block);
+
+            bb.log?.debug(`[Landscaper] Converted ${block.name} to dirt_path at ${convertPos.floored()}`);
+            task.pathBlocksToConvert.shift();
+            task.progress++;
+            await sleep(100);
+        } catch (error) {
+            bb.log?.debug(`[Landscaper] Path conversion failed at ${convertPos.floored()}: ${error instanceof Error ? error.message : 'unknown'}`);
+            task.pathBlocksToConvert.shift();
+        }
+
         return 'running';
     }
 

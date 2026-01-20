@@ -49,6 +49,7 @@ export interface LumberjackBlackboard {
     // Multiple chests support
     knownChests: Vec3[];                   // All known chest positions (from signs, chat, discovery)
     knownForests: Vec3[];                  // Known good forest/tree areas (from signs)
+    knownFarms: Vec3[];                    // Known farm locations (from FARM signs) - avoid planting saplings here
     hasKnownForest: boolean;               // Whether bot knows about a valid forest
 
     // Village communication (set by role)
@@ -134,6 +135,7 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         // Multiple chests/landmarks
         knownChests: [],
         knownForests: [],
+        knownFarms: [],
         hasKnownForest: false,
 
         villageChat: null,

@@ -11,6 +11,10 @@ const { GoalNear } = goals;
 // Minimum spacing between saplings to allow trees to grow
 const SAPLING_SPACING = 5;
 
+// Minimum distance from farmland to avoid planting saplings
+// Trees can block sunlight and drop leaves on crops
+const MIN_FARM_DISTANCE = 10;
+
 /**
  * PlantSaplings - Plant saplings from inventory when not actively harvesting a tree
  *
@@ -72,6 +76,21 @@ export class PlantSaplings implements BehaviorNode {
                 planted => planted.distanceTo(surfacePos) < SAPLING_SPACING
             );
             if (tooClose) continue;
+
+            // Avoid planting near known farms (trees can block sunlight and drop leaves)
+            const tooCloseToFarm = bb.knownFarms.some(
+                farm => surfacePos.distanceTo(farm) < MIN_FARM_DISTANCE
+            );
+            if (tooCloseToFarm) continue;
+
+            // Also check for nearby farmland blocks directly (in case farms aren't in sign system)
+            const nearbyFarmland = bot.findBlocks({
+                point: surfacePos,
+                maxDistance: MIN_FARM_DISTANCE - 1,
+                count: 1,
+                matching: b => b.name === 'farmland' || b.name === 'water'
+            });
+            if (nearbyFarmland.length > 0) continue;
 
             // Also check for existing saplings/trees nearby
             const nearbyBlocks = bot.findBlocks({

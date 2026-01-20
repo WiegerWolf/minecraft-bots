@@ -160,9 +160,17 @@ export class StudySpawnSigns implements BehaviorNode {
                     bb.hasKnownForest = true;
                     break;
 
+                case 'FARM':
+                    // Add to known farms - we avoid planting saplings near these!
+                    const farmExists = bb.knownFarms.some(f => f.distanceTo(entry.pos) < 20);
+                    if (!farmExists) {
+                        bb.knownFarms.push(entry.pos);
+                        bb.log?.info({ pos: entry.pos.toString() }, 'Learned farm location - will avoid planting saplings nearby');
+                    }
+                    break;
+
                 // Other landmarks noted but not acted on yet
                 case 'MINE':
-                case 'FARM':
                 case 'WATER':
                     bb.log?.debug({ type: entry.type, pos: entry.pos.toString() }, 'Noted landmark');
                     break;

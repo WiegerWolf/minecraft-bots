@@ -16,12 +16,13 @@ export interface ExplorationMemory {
 export interface TerraformTask {
     waterCenter: Vec3;        // The water block at the center of the 9x9 farm
     targetY: number;          // Y level for the farm surface (same as water Y)
-    phase: 'analyzing' | 'sealing_water' | 'digging' | 'filling' | 'clearing_path' | 'finishing' | 'done';
+    phase: 'analyzing' | 'sealing_water' | 'digging' | 'filling' | 'clearing_path' | 'creating_paths' | 'finishing' | 'done';
     blocksToRemove: Vec3[];   // Blocks above target level
     waterBlocksToFill: Vec3[]; // Water blocks to fill FIRST (before digging)
     blocksToFill: Vec3[];     // Regular holes to fill (after digging)
     pathBlocksToClear: Vec3[]; // Blocks to remove for 1-block path around farm
     pathBlocksToFill: Vec3[];  // Holes to fill in the path
+    pathBlocksToConvert: Vec3[]; // Dirt/grass blocks to convert to dirt_path using shovel
     progress: number;
 }
 

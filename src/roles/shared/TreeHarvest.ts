@@ -55,6 +55,10 @@ export const SAPLING_NAMES = Object.values(SAPLING_MAP);
 // Max consecutive pathfinding failures before giving up on replanting
 const MAX_REPLANT_FAILURES = 3;
 
+// Minimum distance from farmland to avoid planting saplings
+// Trees can block sunlight and drop leaves on crops
+const MIN_FARM_DISTANCE = 10;
+
 // Blocks that can be cleared to make room for sapling
 export const CLEARABLE_VEGETATION = [
     'short_grass', 'grass', 'tall_grass', 'fern', 'large_fern',
@@ -370,6 +374,15 @@ export async function replantSapling(
             planted => planted.distanceTo(surfacePos) < saplingSpacing
         );
         if (tooCloseToPlanted) continue;
+
+        // Avoid planting near farmland (trees can block sunlight and drop leaves on crops)
+        const nearbyFarmland = bot.findBlocks({
+            point: surfacePos,
+            maxDistance: MIN_FARM_DISTANCE - 1,
+            count: 1,
+            matching: b => b.name === 'farmland' || b.name === 'water'
+        });
+        if (nearbyFarmland.length > 0) continue;
 
         // Check surface - air is best, but we can clear vegetation
         if (surfaceBlock.name === 'air') {

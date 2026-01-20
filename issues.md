@@ -1,3 +1,0 @@
-- [ ] When landscaper is placing blocks, she sometimes tries to place a block into the place she's standing. she should not do that, she should realize that she's standing in a spot she tries to place a block into and move to another spot before placing the block.
-- [ ] the landscaper should create a 1 block wide path around the farmland to make it easier to access it. she should use a shovel to create the path on dirt blocks. not break the blocks with shovel but USE the shovel to turn dirt blocks into path blocks.
-- [ ] lumberjack should not plant saplings near farmland. she should avoid planting saplings in the area of the farmland and surrounding blocks (3-4 blocks radius at minimum from the farm).
