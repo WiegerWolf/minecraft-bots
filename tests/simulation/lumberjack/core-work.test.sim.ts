@@ -1,54 +1,51 @@
 #!/usr/bin/env bun
 /**
- * Lumberjack Simulation Tests
+ * Lumberjack Core Work Simulation Tests
  *
- * Automated integration tests that verify lumberjack bot behavior
- * against a real Paper server with actual Minecraft physics.
+ * SPECIFICATION: Lumberjack Core Work
  *
- * Usage:
- *   bun run tests/simulation/lumberjack.test.sim.ts
+ * The lumberjack's primary responsibilities:
+ * - Chop trees to gather logs
+ * - Prefer forest clusters over isolated trees
+ * - Ignore stumps (logs without leaves)
+ * - Plant saplings for sustainability
  */
 
 import { Vec3 } from 'vec3';
 import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
-import { SimulationTest, runSimulationTests } from './SimulationTest';
-import { MockWorld, createOakTree, createStump } from '../mocks/MockWorld';
-import { LumberjackRole } from '../../src/roles/lumberjack/LumberjackRole';
+import { SimulationTest, runSimulationTests } from '../SimulationTest';
+import { MockWorld, createOakTree, createStump } from '../../mocks/MockWorld';
+import { LumberjackRole } from '../../../src/roles/lumberjack/LumberjackRole';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST: Lumberjack finds and chops a nearby tree
+// TEST: Chops trees in a forest
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function testChopsNearbyTree() {
-  const test = new SimulationTest('Lumberjack chops trees in a forest');
+async function testChopsTreesInForest() {
+  const test = new SimulationTest('Chops trees in a forest');
 
-  // Create a simple world with a small forest cluster
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
 
-  // Small forest cluster (lumberjack prefers forests over isolated trees)
+  // Forest cluster
   const forestCenter = new Vec3(12, 64, 12);
   createOakTree(world, forestCenter.offset(0, 0, 0), 5);
   createOakTree(world, forestCenter.offset(3, 0, 2), 5);
   createOakTree(world, forestCenter.offset(-2, 0, 3), 4);
 
-  // Village center sign so bot knows where it is
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
-    botPosition: new Vec3(3, 65, 3),  // Offset from sign
+    botPosition: new Vec3(3, 65, 3),
     botInventory: [{ name: 'iron_axe', count: 1 }],
   });
 
-  // Load pathfinder
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  // Start the lumberjack role
   const role = new LumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
-  // Wait for bot to collect some logs
   await test.waitForInventory('oak_log', 1, {
     timeout: 60000,
     message: 'Bot should collect at least 1 oak log',
@@ -61,32 +58,29 @@ async function testChopsNearbyTree() {
     'Bot should have moved closer to the forest'
   );
 
-  // Cleanup
   role.stop(test.bot);
   return test.cleanup();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST: Lumberjack ignores stumps (logs without leaves)
+// TEST: Ignores stumps (logs without leaves)
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function testIgnoresStumps() {
-  const test = new SimulationTest('Lumberjack ignores stumps');
+  const test = new SimulationTest('Ignores stumps');
 
-  // Create world with only stumps (no real trees)
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
 
-  // Several stumps
+  // Only stumps, no real trees
   createStump(world, new Vec3(5, 64, 5));
   createStump(world, new Vec3(-5, 64, 8));
   createStump(world, new Vec3(8, 64, -5));
 
-  // Village sign
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
-    botPosition: new Vec3(3, 65, 3),  // Offset from sign
+    botPosition: new Vec3(3, 65, 3),
     botInventory: [{ name: 'iron_axe', count: 1 }],
   });
 
@@ -96,10 +90,9 @@ async function testIgnoresStumps() {
   const role = new LumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
-  // Wait some time - bot should NOT collect logs from stumps
-  await test.wait(15000, 'Waiting to verify bot ignores stumps');
+  // Wait - bot should NOT collect logs from stumps
+  await test.wait(15000, 'Verifying bot ignores stumps');
 
-  // Bot should have 0 logs (stumps have no leaves, so they're not "real" trees)
   test.assertEqual(
     test.botInventoryCount('oak_log'),
     0,
@@ -111,11 +104,11 @@ async function testIgnoresStumps() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST: Lumberjack prefers forest clusters over isolated trees
+// TEST: Prefers forest clusters over isolated trees
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function testPrefersForest() {
-  const test = new SimulationTest('Lumberjack prefers forest clusters');
+async function testPrefersForestsOverIsolated() {
+  const test = new SimulationTest('Prefers forest clusters over isolated trees');
 
   const world = new MockWorld();
   world.fill(new Vec3(-40, 63, -40), new Vec3(40, 63, 40), 'grass_block');
@@ -134,7 +127,7 @@ async function testPrefersForest() {
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
-    botPosition: new Vec3(3, 65, 3),  // Offset from sign
+    botPosition: new Vec3(3, 65, 3),
     botInventory: [{ name: 'iron_axe', count: 1 }],
     clearRadius: 50,
   });
@@ -148,13 +141,12 @@ async function testPrefersForest() {
   // Wait for bot to start moving
   await test.wait(10000, 'Letting bot decide where to go');
 
-  // Check if bot is heading toward forest (closer to forestCenter than to isolated tree)
+  // Check if bot is heading toward forest
   const distToForest = test.botDistanceTo(forestCenter);
   const distToIsolated = test.botDistanceTo(new Vec3(10, 64, 0));
 
-  // Bot should either be closer to forest or have collected logs
   const hasLogs = test.botInventoryCount('oak_log') > 0;
-  const headingToForest = distToForest < distToIsolated + 5; // Some tolerance
+  const headingToForest = distToForest < distToIsolated + 5;
 
   test.assert(
     hasLogs || headingToForest,
@@ -166,11 +158,11 @@ async function testPrefersForest() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST: Lumberjack collects dropped items
+// TEST: Collects dropped items
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function testCollectsDrops() {
-  const test = new SimulationTest('Lumberjack collects dropped items');
+  const test = new SimulationTest('Collects dropped items');
 
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
@@ -178,20 +170,19 @@ async function testCollectsDrops() {
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
-    botPosition: new Vec3(3, 65, 3),  // Offset from sign
+    botPosition: new Vec3(3, 65, 3),
     botInventory: [{ name: 'iron_axe', count: 1 }],
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  // Spawn some oak logs as items near the bot
+  // Spawn logs near the bot
   await test.rcon('summon item 2 65 2 {Item:{id:"minecraft:oak_log",count:3}}');
 
   const role = new LumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
-  // Bot should pick up the dropped logs
   await test.waitForInventory('oak_log', 3, {
     timeout: 30000,
     message: 'Bot should collect dropped oak logs',
@@ -202,17 +193,81 @@ async function testCollectsDrops() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MAIN - Run all tests
+// TEST: Plants saplings for sustainability
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function main() {
-  const { passed, failed } = await runSimulationTests([
-    testChopsNearbyTree,
-    testIgnoresStumps,
-    testPrefersForest,
-    testCollectsDrops,
-  ]);
+async function testPlantsSaplings() {
+  const test = new SimulationTest('Plants saplings');
 
+  const world = new MockWorld();
+  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+
+  // One tree to chop
+  createOakTree(world, new Vec3(10, 64, 10), 5);
+
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+
+  await test.setup(world, {
+    botPosition: new Vec3(3, 65, 3),
+    botInventory: [
+      { name: 'iron_axe', count: 1 },
+      { name: 'oak_sapling', count: 8 },
+    ],
+  });
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  const initialSaplings = test.botInventoryCount('oak_sapling');
+
+  const role = new LumberjackRole();
+  role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
+
+  // Wait for bot to chop tree and plant saplings
+  await test.waitUntil(
+    () => test.botInventoryCount('oak_sapling') < initialSaplings,
+    {
+      timeout: 120000,
+      message: 'Bot should plant saplings after chopping',
+    }
+  );
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ALL_TESTS: Record<string, () => Promise<any>> = {
+  'chop': testChopsTreesInForest,
+  'stumps': testIgnoresStumps,
+  'forest': testPrefersForestsOverIsolated,
+  'drops': testCollectsDrops,
+  'saplings': testPlantsSaplings,
+};
+
+async function main() {
+  const testName = process.argv[2];
+
+  if (testName === '--list' || testName === '-l') {
+    console.log('Available tests:', Object.keys(ALL_TESTS).join(', '));
+    process.exit(0);
+  }
+
+  let testsToRun: Array<() => Promise<any>>;
+
+  if (testName && ALL_TESTS[testName]) {
+    testsToRun = [ALL_TESTS[testName]];
+  } else if (testName) {
+    console.error(`Unknown test: ${testName}`);
+    process.exit(1);
+  } else {
+    testsToRun = Object.values(ALL_TESTS);
+  }
+
+  const { passed, failed } = await runSimulationTests(testsToRun);
   process.exit(failed > 0 ? 1 : 0);
 }
 

@@ -2,7 +2,7 @@
 /**
  * Run All Simulation Tests
  *
- * Executes all simulation test suites in sequence.
+ * Executes all simulation test suites organized by role.
  * Each test suite manages its own server/bot lifecycle.
  *
  * Usage:
@@ -38,10 +38,26 @@ interface SuiteResult {
   output: string;
 }
 
+// Test suites organized by role
 const TEST_SUITES: TestSuite[] = [
-  { name: 'Lumberjack', file: 'lumberjack.test.sim.ts' },
-  { name: 'Farmer', file: 'farmer.test.sim.ts' },
-  { name: 'Landscaper', file: 'landscaper.test.sim.ts' },
+  // Farmer tests
+  { name: 'Farmer - Startup', file: 'farmer/startup.test.sim.ts' },
+  { name: 'Farmer - Core Work', file: 'farmer/core-work.test.sim.ts' },
+  { name: 'Farmer - Inventory', file: 'farmer/inventory.test.sim.ts' },
+  { name: 'Farmer - Tools', file: 'farmer/tools.test.sim.ts' },
+  { name: 'Farmer - Knowledge', file: 'farmer/knowledge.test.sim.ts' },
+
+  // Lumberjack tests
+  { name: 'Lumberjack - Startup', file: 'lumberjack/startup.test.sim.ts' },
+  { name: 'Lumberjack - Core Work', file: 'lumberjack/core-work.test.sim.ts' },
+  { name: 'Lumberjack - Inventory', file: 'lumberjack/inventory.test.sim.ts' },
+
+  // Landscaper tests
+  { name: 'Landscaper - Startup', file: 'landscaper/startup.test.sim.ts' },
+  { name: 'Landscaper - Core Work', file: 'landscaper/core-work.test.sim.ts' },
+  { name: 'Landscaper - Inventory', file: 'landscaper/inventory.test.sim.ts' },
+
+  // Multi-bot coordination tests
   { name: 'Multi-Bot Coordination', file: 'multi-bot.test.sim.ts' },
 ];
 
@@ -88,7 +104,7 @@ async function runTestSuite(suite: TestSuite): Promise<SuiteResult> {
   const testPath = path.join(TEST_DIR, suite.file);
 
   console.log(`\n${'═'.repeat(70)}`);
-  console.log(`RUNNING: ${suite.name} Tests`);
+  console.log(`RUNNING: ${suite.name}`);
   console.log(`File: ${suite.file}`);
   console.log(`${'═'.repeat(70)}\n`);
 
@@ -108,7 +124,7 @@ async function runTestSuite(suite: TestSuite): Promise<SuiteResult> {
     });
 
     // Stream output to console while also capturing it
-    const readStream = async (stream: ReadableStream<Uint8Array>, isStderr = false) => {
+    const readStream = async (stream: ReadableStream<Uint8Array>, _isStderr = false) => {
       const reader = stream.getReader();
       while (true) {
         const { done, value } = await reader.read();
@@ -177,23 +193,33 @@ async function main() {
   console.log('█' + ' '.repeat(68) + '█');
   console.log('█'.repeat(70) + '\n');
 
-  for (const result of results) {
-    const status = result.passed ? '✅ PASSED' : '❌ FAILED';
-    console.log(`  ${status}  ${result.name}`);
+  // Group results by role
+  const roles = ['Farmer', 'Lumberjack', 'Landscaper', 'Multi-Bot'];
+  for (const role of roles) {
+    const roleResults = results.filter(r => r.name.startsWith(role));
+    if (roleResults.length === 0) continue;
 
-    // Show failures for failed suites
-    if (!result.passed && result.failures.length > 0) {
-      for (const failure of result.failures) {
-        const testInfo = failure.test ? ` [${failure.test}]` : '';
-        console.log(`           ✗ ${failure.assertion}${testInfo}`);
-        if (failure.error) {
-          console.log(`             └─ ${failure.error}`);
+    console.log(`  ${role}:`);
+    for (const result of roleResults) {
+      const testName = result.name.replace(`${role} - `, '').replace(role, 'All');
+      const status = result.passed ? '✅' : '❌';
+      console.log(`    ${status} ${testName}`);
+
+      // Show failures
+      if (!result.passed && result.failures.length > 0) {
+        for (const failure of result.failures) {
+          const testInfo = failure.test ? ` [${failure.test}]` : '';
+          console.log(`       ✗ ${failure.assertion}${testInfo}`);
+          if (failure.error) {
+            console.log(`         └─ ${failure.error}`);
+          }
         }
       }
     }
+    console.log('');
   }
 
-  console.log('\n' + '─'.repeat(70));
+  console.log('─'.repeat(70));
   console.log(`  Total: ${results.length} suites | Passed: ${passedCount} | Failed: ${failedCount}`);
   console.log(`  Duration: ${duration.toFixed(1)}s`);
   console.log(`  Logs: logs/${SESSION_ID}/`);

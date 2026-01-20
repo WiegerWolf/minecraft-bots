@@ -25,13 +25,25 @@ tests/
     landscaper/
       ...
   simulation/          # Integration tests with real Paper server
+    farmer/              # Farmer role tests
+      startup.test.sim.ts      # Sign study, farm establishment
+      core-work.test.sim.ts    # Harvest, plant, till, gather seeds
+      inventory.test.sim.ts    # Drop collection, deposits
+      tools.test.sim.ts        # Hoe crafting
+      knowledge.test.sim.ts    # Sign reading
+    lumberjack/          # Lumberjack role tests
+      startup.test.sim.ts      # Sign study, storage check
+      core-work.test.sim.ts    # Tree chopping, forest detection
+      inventory.test.sim.ts    # Drop collection, deposits
+    landscaper/          # Landscaper role tests
+      startup.test.sim.ts      # Sign study, tool acquisition
+      core-work.test.sim.ts    # Terraform, fill holes
+      inventory.test.sim.ts    # Drop collection, deposits
+    shared/              # Multi-bot and shared tests
+    multi-bot.test.sim.ts     # Multi-bot coordination tests
     PaperSimulationServer.ts  # Server management, world sync
     SimulationTest.ts         # Test framework with assertions
     ScenarioBuilder.ts        # Fluent API for building test worlds
-    lumberjack.test.sim.ts    # Lumberjack integration tests
-    farmer.test.sim.ts        # Farmer integration tests
-    landscaper.test.sim.ts    # Landscaper integration tests
-    multi-bot.test.sim.ts     # Multi-bot coordination tests
     run-all-tests.ts          # Run all simulation test suites
   mocks/
     world-state/       # WorldState presets by role

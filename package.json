@@ -23,9 +23,9 @@
     "visualize": "bun run tests/mocks/visualize-world.ts",
     "test:visual": "bun run tests/visual/run-visual.ts",
     "sim:test": "bun run tests/simulation/run-all-tests.ts",
-    "sim:test:lumberjack": "bun run tests/simulation/lumberjack.test.sim.ts",
-    "sim:test:farmer": "bun run tests/simulation/farmer.test.sim.ts",
-    "sim:test:landscaper": "bun run tests/simulation/landscaper.test.sim.ts",
+    "sim:test:farmer": "bun run tests/simulation/farmer/startup.test.sim.ts && bun run tests/simulation/farmer/core-work.test.sim.ts && bun run tests/simulation/farmer/inventory.test.sim.ts && bun run tests/simulation/farmer/tools.test.sim.ts && bun run tests/simulation/farmer/knowledge.test.sim.ts",
+    "sim:test:lumberjack": "bun run tests/simulation/lumberjack/startup.test.sim.ts && bun run tests/simulation/lumberjack/core-work.test.sim.ts && bun run tests/simulation/lumberjack/inventory.test.sim.ts",
+    "sim:test:landscaper": "bun run tests/simulation/landscaper/startup.test.sim.ts && bun run tests/simulation/landscaper/core-work.test.sim.ts && bun run tests/simulation/landscaper/inventory.test.sim.ts",
     "sim:test:multibot": "bun run tests/simulation/multi-bot.test.sim.ts",
     "server:start": "cd server && ./start.sh",
     "postinstall": "patch-package"
