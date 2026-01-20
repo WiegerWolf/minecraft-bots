@@ -45,7 +45,7 @@ import { mineflayer as mineflayerViewer } from 'prismarine-viewer';
 import mcData from 'minecraft-data';
 
 // Use a well-tested version for stability
-const VERSION = '1.20.4';
+const VERSION = '1.21.4';
 // Tested versions: 1.8.8 - 1.21.4 (see flying-squid/src/lib/version.js)
 const data = mcData(VERSION);
 
