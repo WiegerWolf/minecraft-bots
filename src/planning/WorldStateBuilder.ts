@@ -234,6 +234,9 @@ export class WorldStateBuilder {
     ws.set('state.knownFarmCount', bb.knownFarms.length);
     ws.set('state.farmsNeedingCheck', bb.farmsNeedingCheck.length);
 
+    // Dirtpit - dedicated dirt gathering location
+    ws.set('has.dirtpit', bb.hasDirtpit);
+
     // Farm maintenance state - ISSUE-BASED, not time-based
     // Maintenance is needed if any farm has actual detected issues
     const farmMaintenanceNeeded = bb.farmsWithIssues.length > 0;

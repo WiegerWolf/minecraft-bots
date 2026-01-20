@@ -20,6 +20,7 @@ import {
   BroadcastOffer,
   RespondToOffer,
   CompleteTrade,
+  EstablishDirtpit,
 } from '../../roles/landscaper/behaviors/actions';
 
 /**
@@ -418,6 +419,34 @@ export class CheckFarmForTerraformNeedsAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Establish a dedicated dirtpit location
+ */
+export class EstablishDirtpitAction extends BaseGOAPAction {
+  name = 'EstablishDirtpit';
+  private impl = new EstablishDirtpit();
+
+  preconditions = [
+    booleanPrecondition('has.dirtpit', false, 'no dirtpit yet'),
+    booleanPrecondition('has.studiedSigns', true, 'has studied signs'),
+    booleanPrecondition('has.shovel', true, 'has shovel'),
+  ];
+
+  effects = [
+    setEffect('has.dirtpit', true, 'established dirtpit'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    // Moderate cost - finding a good location takes time
+    return 5.0;
+  }
+
+  override async execute(bot: Bot, bb: LandscaperBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * GOAP Action: Gather dirt proactively when idle
  */
 export class GatherDirtAction extends BaseGOAPAction {
@@ -668,6 +697,7 @@ export function createLandscaperActions(): BaseGOAPAction[] {
     new DepositItemsAction(),
     new CheckSharedChestAction(),
     new BroadcastNeedAction(),    // Request tools from lumberjack when chest empty
+    new EstablishDirtpitAction(), // Establish dirtpit before gathering
     new GatherDirtAction(),
     new CraftSlabsAction(),
     new ReadUnknownSignAction(),  // Curious bot - read unknown signs

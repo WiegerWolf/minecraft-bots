@@ -9,6 +9,7 @@ export { BroadcastNeed } from './BroadcastNeed';
 export { StudySpawnSigns } from './StudySpawnSigns';
 export { CheckFarmForTerraformNeeds } from './CheckFarmForTerraformNeeds';
 export { GatherDirt } from './GatherDirt';
+export { EstablishDirtpit } from './EstablishDirtpit';
 export { CraftSlabs } from './CraftSlabs';
 export { MaintainFarm } from './MaintainFarm';
 export { ReadUnknownSign } from './ReadUnknownSign';

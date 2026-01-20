@@ -39,8 +39,9 @@ export class GatherDirt implements BehaviorNode {
             return 'failure';
         }
 
-        const searchCenter = bb.villageCenter || bot.entity.position;
-        const searchRadius = 40;
+        // Prefer gathering from established dirtpit, otherwise use village center
+        const searchCenter = bb.dirtpit || bb.villageCenter || bot.entity.position;
+        const searchRadius = bb.dirtpit ? 30 : 40; // Smaller radius if gathering at dirtpit
 
         // Find dirt/grass blocks to dig
         const candidates = this.findDirtCandidates(bot, searchCenter, searchRadius);

@@ -94,6 +94,14 @@ export class StudySpawnSigns implements BehaviorNode {
                         bb.log?.debug({ pos: entry.pos.floored().toString() }, 'Learned crafting table from sign');
                     }
                     break;
+
+                case 'DIRTPIT':
+                    if (!bb.dirtpit) {
+                        bb.dirtpit = entry.pos.clone();
+                        bb.hasDirtpit = true;
+                        bb.log?.info({ pos: entry.pos.floored().toString() }, 'Learned dirtpit location from sign');
+                    }
+                    break;
             }
         }
 

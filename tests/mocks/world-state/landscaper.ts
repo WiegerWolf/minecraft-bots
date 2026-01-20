@@ -33,6 +33,7 @@ export function freshSpawnLandscaperState(): WorldState {
     'derived.hasStorageAccess': false,
 
     'has.studiedSigns': false,
+    'has.dirtpit': false,  // Dirtpit - dedicated dirt gathering location
     'state.farmsNeedingCheck': 0,
     'state.farmsWithIssues': 0,
     'state.farmMaintenanceNeeded': false,
@@ -55,6 +56,7 @@ export function landscaperWithTerraformRequestState(): WorldState {
   ws.set('derived.hasAnyTool', true);
   ws.set('has.pendingTerraformRequest', true);
   ws.set('has.studiedSigns', true);
+  ws.set('has.dirtpit', true);  // Dirtpit already established
   return ws;
 }
 
@@ -64,6 +66,7 @@ export function landscaperWithTerraformRequestState(): WorldState {
 export function landscaperReadyToWorkState(): WorldState {
   const ws = freshSpawnLandscaperState();
   ws.set('has.studiedSigns', true);
+  ws.set('has.dirtpit', true);  // Dirtpit already established
   ws.set('has.shovel', true);
   ws.set('has.pickaxe', true);
   ws.set('derived.hasAnyTool', true);
@@ -87,6 +90,7 @@ export function landscaperActiveTerraformState(): WorldState {
 export function landscaperMissingShovelState(): WorldState {
   const ws = freshSpawnLandscaperState();
   ws.set('has.studiedSigns', true);
+  ws.set('has.dirtpit', true);  // Dirtpit already established
   ws.set('has.shovel', false);
   ws.set('has.pickaxe', true);
   ws.set('derived.hasAnyTool', true);
@@ -100,6 +104,7 @@ export function landscaperMissingShovelState(): WorldState {
 export function landscaperMissingPickaxeState(): WorldState {
   const ws = freshSpawnLandscaperState();
   ws.set('has.studiedSigns', true);
+  ws.set('has.dirtpit', true);  // Dirtpit already established
   ws.set('has.shovel', true);
   ws.set('has.pickaxe', false);
   ws.set('derived.hasAnyTool', true);
@@ -113,6 +118,7 @@ export function landscaperMissingPickaxeState(): WorldState {
 export function landscaperWithMaterialsState(): WorldState {
   const ws = freshSpawnLandscaperState();
   ws.set('has.studiedSigns', true);
+  ws.set('has.dirtpit', true);  // Dirtpit already established
   ws.set('has.shovel', false);
   ws.set('has.pickaxe', false);
   ws.set('inv.logs', 3);

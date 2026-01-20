@@ -358,6 +358,55 @@ export class CraftSlabsGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Establish a dirtpit - dedicated dirt gathering location.
+ * MEDIUM priority when no dirtpit exists and landscaper is idle.
+ *
+ * A dirtpit is a designated area with high dirt density, away from
+ * the village center, farms, and forests. Once established, the landscaper
+ * will preferentially gather dirt from this location and mark it with a sign.
+ */
+export class EstablishDirtpitGoal extends BaseGoal {
+  name = 'EstablishDirtpit';
+  description = 'Establish a dedicated dirt gathering location';
+
+  conditions = [
+    booleanGoalCondition('has.dirtpit', true, 'has established dirtpit'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    // Already have a dirtpit
+    if (ws.getBool('has.dirtpit')) return 0;
+
+    // Need village center first (to know where to avoid)
+    const hasStudied = ws.getBool('has.studiedSigns');
+    if (!hasStudied) return 0;
+
+    // Don't establish if we have pending terraform work
+    const hasPendingRequest = ws.getBool('has.pendingTerraformRequest');
+    if (hasPendingRequest) return 0;
+
+    // Don't establish if actively terraforming
+    const terraformActive = ws.getBool('terraform.active');
+    if (terraformActive) return 0;
+
+    // Need shovel to actually gather dirt from the dirtpit
+    const hasShovel = ws.getBool('has.shovel');
+    if (!hasShovel) return 0;
+
+    // Medium priority - do this before gathering random dirt
+    // Higher than GatherDirt (30-50) to ensure we establish first
+    return 55;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const hasDirtpit = ws.getBool('has.dirtpit');
+    const hasStudied = ws.getBool('has.studiedSigns');
+    const hasShovel = ws.getBool('has.shovel');
+    return !hasDirtpit && hasStudied && hasShovel;
+  }
+}
+
+/**
  * Goal: Gather dirt proactively when idle.
  * LOW-MEDIUM priority - better than idling, ensures readiness.
  *
@@ -629,6 +678,7 @@ export function createLandscaperGoals(): BaseGoal[] {
     new ObtainToolsGoal(),
     new DepositItemsGoal(),
     new CollectDropsGoal(),
+    new EstablishDirtpitGoal(),   // Establish dirtpit before gathering
     new GatherDirtGoal(),         // Proactive dirt gathering when idle
     new CraftSlabsGoal(),         // Craft slabs for navigation scaffolding
     new BroadcastTradeOfferGoal(),// Offer unwanted items when idle

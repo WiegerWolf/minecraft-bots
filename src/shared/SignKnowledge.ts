@@ -46,10 +46,10 @@ import type { Logger } from './logger';
  * - FARM: Farming area
  * - WATER: Water source
  */
-export type SignKnowledgeType = 'VILLAGE' | 'CRAFT' | 'CHEST' | 'FOREST' | 'MINE' | 'FARM' | 'WATER';
+export type SignKnowledgeType = 'VILLAGE' | 'CRAFT' | 'CHEST' | 'FOREST' | 'MINE' | 'FARM' | 'WATER' | 'DIRTPIT';
 
 /** Types that are landmarks (informational, not critical infrastructure) */
-export const LANDMARK_TYPES: SignKnowledgeType[] = ['FOREST', 'MINE', 'FARM', 'WATER'];
+export const LANDMARK_TYPES: SignKnowledgeType[] = ['FOREST', 'MINE', 'FARM', 'WATER', 'DIRTPIT'];
 
 /** Search radius for finding signs near spawn (blocks) */
 export const SIGN_SEARCH_RADIUS = 25;
@@ -73,7 +73,7 @@ export function formatSignText(type: SignKnowledgeType, pos: Vec3): string[] {
 }
 
 /** All valid type names for regex matching */
-const TYPE_PATTERN = 'VILLAGE|CRAFT|CHEST|FOREST|MINE|FARM|WATER';
+const TYPE_PATTERN = 'VILLAGE|CRAFT|CHEST|FOREST|MINE|FARM|WATER|DIRTPIT';
 
 /**
  * Parse sign text back to a knowledge entry.
@@ -124,6 +124,7 @@ export function getTypeName(type: SignKnowledgeType): string {
         MINE: 'mine',
         FARM: 'farm',
         WATER: 'water source',
+        DIRTPIT: 'dirtpit',
     };
     return names[type] || type.toLowerCase();
 }

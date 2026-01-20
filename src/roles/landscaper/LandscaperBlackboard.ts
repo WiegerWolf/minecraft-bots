@@ -103,6 +103,10 @@ export interface LandscaperBlackboard {
     unknownSigns: Vec3[];                 // Signs spotted but not yet read
     readSignPositions: Set<string>;       // Sign positions we've read (stringified: "x,y,z")
 
+    // Dirtpit - dedicated dirt gathering location
+    dirtpit: Vec3 | null;                 // Established dirtpit location (from sign or discovered)
+    hasDirtpit: boolean;                  // Whether a dirtpit has been established
+
     // ═══════════════════════════════════════════════════════════════
     // TRADE STATE
     // ═══════════════════════════════════════════════════════════════
@@ -169,6 +173,10 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
         // Curiosity - wild sign reading
         unknownSigns: [],
         readSignPositions: new Set(),
+
+        // Dirtpit - dedicated dirt gathering location
+        dirtpit: null,
+        hasDirtpit: false,
 
         // Trade state
         tradeableItems: [],
