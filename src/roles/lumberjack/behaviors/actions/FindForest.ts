@@ -112,6 +112,10 @@ export class FindForest implements BehaviorNode {
             recordExploredPosition(bb, pos, 'no_valid_directions');
 
             if (this.attemptCount >= MAX_EXPLORE_ATTEMPTS) {
+                // Set backoff: 60 seconds before trying again
+                const FOREST_SEARCH_BACKOFF_MS = 60000;
+                bb.forestSearchFailedUntil = Date.now() + FOREST_SEARCH_BACKOFF_MS;
+                bb.log?.warn(`Could not find a forest after ${MAX_EXPLORE_ATTEMPTS} attempts, backing off for ${FOREST_SEARCH_BACKOFF_MS / 1000}s`);
                 this.attemptCount = 0;
                 return 'failure';
             }
@@ -141,6 +145,10 @@ export class FindForest implements BehaviorNode {
                 recordExploredPosition(bb, target.pos, 'unreachable');
 
                 if (this.attemptCount >= MAX_EXPLORE_ATTEMPTS) {
+                    // Set backoff: 60 seconds before trying again
+                    const FOREST_SEARCH_BACKOFF_MS = 60000;
+                    bb.forestSearchFailedUntil = Date.now() + FOREST_SEARCH_BACKOFF_MS;
+                    bb.log?.warn(`Could not find a forest after ${MAX_EXPLORE_ATTEMPTS} attempts, backing off for ${FOREST_SEARCH_BACKOFF_MS / 1000}s`);
                     this.attemptCount = 0;
                     return 'failure';
                 }
@@ -169,7 +177,10 @@ export class FindForest implements BehaviorNode {
 
             // Not enough trees here, keep looking
             if (this.attemptCount >= MAX_EXPLORE_ATTEMPTS) {
-                bb.log?.warn('Could not find a forest after maximum exploration attempts');
+                // Set backoff: 60 seconds before trying again
+                const FOREST_SEARCH_BACKOFF_MS = 60000;
+                bb.forestSearchFailedUntil = Date.now() + FOREST_SEARCH_BACKOFF_MS;
+                bb.log?.warn(`Could not find a forest after ${MAX_EXPLORE_ATTEMPTS} attempts, backing off for ${FOREST_SEARCH_BACKOFF_MS / 1000}s`);
                 this.attemptCount = 0;
                 return 'failure';
             }
@@ -180,6 +191,10 @@ export class FindForest implements BehaviorNode {
             recordExploredPosition(bb, target.pos, 'error');
 
             if (this.attemptCount >= MAX_EXPLORE_ATTEMPTS) {
+                // Set backoff: 60 seconds before trying again
+                const FOREST_SEARCH_BACKOFF_MS = 60000;
+                bb.forestSearchFailedUntil = Date.now() + FOREST_SEARCH_BACKOFF_MS;
+                bb.log?.warn(`Could not find a forest after ${MAX_EXPLORE_ATTEMPTS} attempts (error), backing off for ${FOREST_SEARCH_BACKOFF_MS / 1000}s`);
                 this.attemptCount = 0;
                 return 'failure';
             }

@@ -182,14 +182,19 @@ export class CheckSharedChest {
 
             if (totalWithdrawn > 0) {
                 bb.log?.info(`[Farmer] Withdrew ${totalWithdrawn} items from chest`);
+                // Reset backoff on successful withdrawal
+                bb.chestEmptyUntil = 0;
                 return 'success';
             } else {
-                // Chest was empty - request materials from lumberjack
-                bb.log?.debug('[Farmer] Chest empty, requesting materials');
-                if (this.requestMaterialsIfNeeded(bb)) {
-                    return 'running';  // Wait for lumberjack to deposit
-                }
-                return 'failure';
+                // Chest was empty - set backoff to prevent immediate re-checking
+                // Backoff: 30 seconds before checking again
+                const CHEST_EMPTY_BACKOFF_MS = 30000;
+                bb.chestEmptyUntil = Date.now() + CHEST_EMPTY_BACKOFF_MS;
+                bb.log?.debug(`[Farmer] Chest empty, backing off for ${CHEST_EMPTY_BACKOFF_MS / 1000}s`);
+
+                // Request materials from lumberjack
+                this.requestMaterialsIfNeeded(bb);
+                return 'failure';  // Return failure so goal can try other actions
             }
         } catch (error) {
             bb.log?.warn({ err: error }, '[Farmer] Error checking chest');

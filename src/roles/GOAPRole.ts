@@ -88,6 +88,8 @@ export abstract class GOAPRole implements Role {
   // Track consecutive planning failures for hole escape detection
   private consecutivePlanningFailures: number = 0;
   private lastPlanningFailureTime: number = 0;
+  private lastHoleEscapeAttempt: number = 0;  // Cooldown for hole escape attempts
+  private static readonly HOLE_ESCAPE_COOLDOWN = 15000;  // 15 seconds between attempts
 
   // State reporting for TUI
   private actionHistory: ActionHistoryEntry[] = [];
@@ -669,7 +671,14 @@ export abstract class GOAPRole implements Role {
 
     // After 3 consecutive planning failures, check if we're in a hole
     if (this.consecutivePlanningFailures >= 3) {
+      // Check cooldown to avoid repeated escape spam
+      if (now - this.lastHoleEscapeAttempt < GOAPRole.HOLE_ESCAPE_COOLDOWN) {
+        this.log?.debug('Skipping hole escape check (on cooldown)');
+        return;
+      }
+
       if (isInHole(this.bot)) {
+        this.lastHoleEscapeAttempt = now;
         this.log?.warn(
           { failures: this.consecutivePlanningFailures },
           'Bot stuck in hole (planning failures), attempting escape'
@@ -703,13 +712,18 @@ export abstract class GOAPRole implements Role {
 
     // Check for hole escape on action failures
     if (this.bot && hadFailures && this.blackboard?.stuckTracker) {
+      const now = Date.now();
       const shouldAttemptEscape = recordPathfindingFailure(
         this.blackboard.stuckTracker,
         this.bot.entity.position,
         3 // threshold
       );
 
-      if (shouldAttemptEscape && isInHole(this.bot)) {
+      // Check cooldown to avoid repeated escape spam
+      const canAttemptEscape = now - this.lastHoleEscapeAttempt >= GOAPRole.HOLE_ESCAPE_COOLDOWN;
+
+      if (shouldAttemptEscape && canAttemptEscape && isInHole(this.bot)) {
+        this.lastHoleEscapeAttempt = now;
         this.log?.warn('Bot appears stuck in a hole, attempting escape');
         // Attempt escape asynchronously (don't block replan)
         escapeFromHole(this.bot, this.log).then(escaped => {

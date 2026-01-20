@@ -583,7 +583,54 @@ export async function escapeFromHole(bot: Bot, log?: Logger | null): Promise<boo
         }
     }
 
-    // Step 3: If still stuck, try jumping repeatedly while breaking above
+    // Step 3: Try placing blocks to make stairs out (if we have blocks)
+    log?.debug('Trying block placement escape');
+    const placeableBlocks = bot.inventory.items().filter(i =>
+        i.name.includes('cobblestone') || i.name.includes('dirt') ||
+        i.name.includes('_planks') || i.name.includes('stone') ||
+        i.name.includes('netherrack')
+    );
+
+    if (placeableBlocks.length > 0) {
+        const placeableItem = placeableBlocks[0]!;
+        try {
+            // Equip the block
+            await bot.equip(placeableItem, 'hand');
+
+            // Look down and place block under ourselves while jumping
+            await bot.look(0, Math.PI / 2); // Look straight down
+            await sleep(100);
+
+            for (let i = 0; i < 3; i++) {
+                bot.setControlState('jump', true);
+                await sleep(200);
+
+                // Try to place block at feet while in air
+                const groundPos = bot.entity.position.offset(0, -1, 0).floored();
+                const groundBlock = bot.blockAt(groundPos);
+
+                if (groundBlock && groundBlock.name !== 'air') {
+                    try {
+                        await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
+                        log?.debug('Placed block to escape');
+                    } catch { /* ignore placement errors */ }
+                }
+
+                bot.setControlState('jump', false);
+                await sleep(200);
+
+                // Check if we escaped
+                if (bot.entity.position.distanceTo(startPos) > 1) {
+                    log?.info('Escaped from hole via block placement');
+                    return true;
+                }
+            }
+        } catch (err) {
+            log?.debug({ err }, 'Block placement escape failed');
+        }
+    }
+
+    // Step 4: If still stuck, try jumping repeatedly while breaking above
     log?.debug('Still stuck, trying jump escape');
     for (let attempt = 0; attempt < 3; attempt++) {
         // Break block above

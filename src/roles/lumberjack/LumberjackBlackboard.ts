@@ -99,6 +99,7 @@ export interface LumberjackBlackboard {
     // ═══════════════════════════════════════════════════════════════
     hasBoat: boolean;              // Has a boat in inventory
     maxWaterAhead: number;         // Maximum water distance in exploration directions
+    forestSearchFailedUntil: number; // Backoff timestamp after max forest search attempts
 
     // ═══════════════════════════════════════════════════════════════
     // TRADE STATE
@@ -108,6 +109,7 @@ export interface LumberjackBlackboard {
     pendingTradeOffers: TradeOffer[];           // Active offers from other bots we might want
     activeTrade: ActiveTrade | null;            // Current trade state (if any)
     lastOfferTime: number;                      // When we last broadcast an offer (cooldown)
+    consecutiveNoTakers: number;                // Consecutive "no takers" for trade backoff
 }
 
 export function createLumberjackBlackboard(): LumberjackBlackboard {
@@ -175,6 +177,7 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         // Exploration state
         hasBoat: false,
         maxWaterAhead: 0,
+        forestSearchFailedUntil: 0,
 
         // Trade state
         tradeableItems: [],
@@ -182,6 +185,7 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         pendingTradeOffers: [],
         activeTrade: null,
         lastOfferTime: 0,
+        consecutiveNoTakers: 0,
     };
 }
 
@@ -459,8 +463,8 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
             .filter(o => isWantedByRole(o.item, 'lumberjack')); // Only offers for items we want
         bb.activeTrade = bb.villageChat.getActiveTrade();
 
-        // Clean up stale offers
-        bb.villageChat.cleanupOldTradeOffers();
+        // Clean up stale trade offers, needs, terraform requests
+        bb.villageChat.periodicCleanup();
     }
 }
 

@@ -35,6 +35,7 @@ export interface TradeBlackboard {
     pendingTradeOffers: TradeOffer[];
     activeTrade: ActiveTrade | null;
     lastOfferTime: number;
+    consecutiveNoTakers: number;  // Consecutive "no takers" results for exponential backoff
     spawnPosition: Vec3 | null;
     villageCenter?: Vec3 | null;
     log?: Logger | null;
@@ -83,13 +84,23 @@ export abstract class BaseBroadcastOffer<TBlackboard extends TradeBlackboard> {
 
     /**
      * Check if we should broadcast an offer.
+     * Uses exponential backoff based on consecutive "no takers" results.
      */
     canOffer(bb: TBlackboard): boolean {
         if (!bb.villageChat) return false;
         if (bb.villageChat.isInTrade()) return false;
 
         const now = Date.now();
-        if (now - bb.lastOfferTime < this.config.offerCooldown) return false;
+
+        // Calculate effective cooldown with exponential backoff
+        // Base: 30s, then 60s, 120s, 240s... up to 10 minutes max
+        const backoffMultiplier = Math.pow(2, Math.min(bb.consecutiveNoTakers, 5));
+        const effectiveCooldown = Math.min(
+            this.config.offerCooldown * backoffMultiplier,
+            10 * 60 * 1000  // Max 10 minutes
+        );
+
+        if (now - bb.lastOfferTime < effectiveCooldown) return false;
 
         return bb.tradeableItemCount >= this.config.minTradeableItems;
     }
@@ -131,10 +142,22 @@ export abstract class BaseBroadcastOffer<TBlackboard extends TradeBlackboard> {
             // Time's up - select the neediest bot
             const neediest = bb.villageChat.selectNeediestBot();
             if (!neediest) {
-                bb.log?.debug(`[${this.config.roleLabel}] No takers for trade offer`);
+                // Track consecutive "no takers" for exponential backoff
+                bb.consecutiveNoTakers = (bb.consecutiveNoTakers || 0) + 1;
+                const backoffTime = Math.min(
+                    this.config.offerCooldown * Math.pow(2, Math.min(bb.consecutiveNoTakers, 5)),
+                    10 * 60 * 1000
+                );
+                bb.log?.debug({
+                    consecutiveNoTakers: bb.consecutiveNoTakers,
+                    nextAttemptIn: `${Math.round(backoffTime / 1000)}s`
+                }, `[${this.config.roleLabel}] No takers for trade offer, backing off`);
                 bb.villageChat.clearActiveTrade();
                 return 'failure';
             }
+
+            // Reset consecutive failures on successful trade initiation
+            bb.consecutiveNoTakers = 0;
 
             // Accept the trade
             bb.villageChat.acceptTrade(neediest.from);

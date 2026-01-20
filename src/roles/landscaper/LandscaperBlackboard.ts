@@ -115,6 +115,7 @@ export interface LandscaperBlackboard {
     pendingTradeOffers: TradeOffer[];           // Active offers from other bots we might want
     activeTrade: ActiveTrade | null;            // Current trade state (if any)
     lastOfferTime: number;                      // When we last broadcast an offer (cooldown)
+    consecutiveNoTakers: number;                // Consecutive "no takers" for trade backoff
 
     // Chest checking cooldown (prevent loop when chest is empty)
     lastChestCheckTime: number;                 // When we last checked chest (for cooldown)
@@ -184,6 +185,7 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
         pendingTradeOffers: [],
         activeTrade: null,
         lastOfferTime: 0,
+        consecutiveNoTakers: 0,
 
         // Chest checking cooldown
         lastChestCheckTime: 0,
@@ -364,8 +366,8 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
             .filter(o => isWantedByRole(o.item, 'landscaper')); // Only offers for items we want
         bb.activeTrade = bb.villageChat.getActiveTrade();
 
-        // Clean up stale offers
-        bb.villageChat.cleanupOldTradeOffers();
+        // Clean up stale trade offers, needs, terraform requests
+        bb.villageChat.periodicCleanup();
     }
 }
 

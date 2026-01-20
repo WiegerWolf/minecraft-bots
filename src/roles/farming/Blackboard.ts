@@ -105,6 +105,11 @@ export interface FarmingBlackboard {
     farmSignWritten: boolean;                   // Has farm center sign been written?
 
     // ═══════════════════════════════════════════════════════════════
+    // CHEST BACKOFF (prevent spam checking empty chest)
+    // ═══════════════════════════════════════════════════════════════
+    chestEmptyUntil: number;                    // Timestamp when chest backoff expires
+
+    // ═══════════════════════════════════════════════════════════════
     // TRADE STATE
     // ═══════════════════════════════════════════════════════════════
     tradeableItems: InventoryItem[];            // Items we can offer for trade
@@ -112,6 +117,7 @@ export interface FarmingBlackboard {
     pendingTradeOffers: TradeOffer[];           // Active offers from other bots we might want
     activeTrade: ActiveTrade | null;            // Current trade state (if any)
     lastOfferTime: number;                      // When we last broadcast an offer (cooldown)
+    consecutiveNoTakers: number;                // Consecutive "no takers" for trade backoff
 
     // ═══════════════════════════════════════════════════════════════
     // LUMBERJACK TRACKING (for following during exploration)
@@ -185,12 +191,16 @@ export function createBlackboard(): FarmingBlackboard {
         signPositions: new Map(),
         farmSignWritten: false,
 
+        // Chest backoff
+        chestEmptyUntil: 0,
+
         // Trade state
         tradeableItems: [],
         tradeableItemCount: 0,
         pendingTradeOffers: [],
         activeTrade: null,
         lastOfferTime: 0,
+        consecutiveNoTakers: 0,
 
         // Lumberjack tracking
         lumberjackPosition: null,
@@ -510,8 +520,8 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
             .filter(o => isWantedByRole(o.item, 'farmer')); // Only offers for items we want
         bb.activeTrade = bb.villageChat.getActiveTrade();
 
-        // Clean up stale offers
-        bb.villageChat.cleanupOldTradeOffers();
+        // Clean up stale trade offers, needs, terraform requests
+        bb.villageChat.periodicCleanup();
     }
 
     // ═══════════════════════════════════════════════

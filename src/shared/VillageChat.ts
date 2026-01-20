@@ -161,14 +161,69 @@ export class VillageChat {
     private onNeedFulfilledCallback: ((needId: string) => void) | null = null;
     private onNeedExpiredCallback: ((needId: string) => void) | null = null;
 
+    // Store reference to chat handler for cleanup
+    private chatHandler: ((username: string, message: string) => void) | null = null;
+
     constructor(bot: Bot, logger?: Logger) {
         this.bot = bot;
         this.log = logger ?? null;
         this.setupChatListener();
     }
 
+    /**
+     * Clean up event listeners and state.
+     * Call this when the role stops to prevent memory leaks.
+     */
+    cleanup(): void {
+        if (this.chatHandler) {
+            this.bot.removeListener('chat', this.chatHandler);
+            this.chatHandler = null;
+        }
+        // Clear all state
+        this.state = {
+            villageCenter: null,
+            sharedChest: null,
+            sharedCraftingTable: null,
+            pendingRequests: [],
+            lastDepositNotification: null,
+            pendingTerraformRequests: [],
+            activeOffers: [],
+            activeTrade: null,
+            activeNeeds: [],
+            incomingNeeds: [],
+        };
+        // Clear callbacks
+        this.onRequestCallback = null;
+        this.onTerraformRequestCallback = null;
+        this.onTerraformDoneCallback = null;
+        this.onTradeOfferCallback = null;
+        this.onTradeAcceptCallback = null;
+        this.onTradeMeetingPointCallback = null;
+        this.onTradePartnerReadyCallback = null;
+        this.onTradeDroppedCallback = null;
+        this.onTradeDoneCallback = null;
+        this.onTradeCancelCallback = null;
+        this.onNeedCallback = null;
+        this.onNeedOfferCallback = null;
+        this.onNeedAcceptedCallback = null;
+        this.onProvideAtCallback = null;
+        this.onNeedFulfilledCallback = null;
+        this.onNeedExpiredCallback = null;
+        this.log?.info('VillageChat cleaned up');
+    }
+
+    /**
+     * Perform periodic maintenance - call this during blackboard updates.
+     * Cleans up old trade offers, needs, terraform requests.
+     */
+    periodicCleanup(): void {
+        this.cleanupOldTradeOffers();
+        this.cleanupOldNeeds();
+        this.cleanupOldTerraformRequests();
+    }
+
     private setupChatListener() {
-        this.bot.on('chat', (username: string, message: string) => {
+        this.chatHandler = (username: string, message: string) => {
             // Ignore own messages
             if (username === this.bot.username) return;
 
@@ -633,7 +688,8 @@ export class VillageChat {
                     this.state.incomingNeeds = this.state.incomingNeeds.filter(n => n.id !== needId);
                 }
             }
-        });
+        };
+        this.bot.on('chat', this.chatHandler);
     }
 
     // Called when another bot makes a resource request

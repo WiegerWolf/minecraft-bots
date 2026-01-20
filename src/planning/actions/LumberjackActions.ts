@@ -677,6 +677,7 @@ export class FindForestAction extends BaseGOAPAction {
   preconditions = [
     booleanPrecondition('has.studiedSigns', true, 'has studied signs'),
     booleanPrecondition('has.knownForest', false, 'no known forest yet'),
+    booleanPrecondition('derived.forestSearchRecentlyFailed', false, 'forest search not recently failed'),
   ];
 
   effects = [

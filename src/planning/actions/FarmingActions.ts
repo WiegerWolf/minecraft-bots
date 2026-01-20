@@ -253,6 +253,7 @@ export class CheckSharedChestAction extends BaseGOAPAction {
   preconditions = [
     booleanPrecondition('needs.tools', true, 'needs tools'),
     booleanPrecondition('derived.hasStorageAccess', true, 'has chest access'),
+    booleanPrecondition('derived.chestRecentlyEmpty', false, 'chest not recently empty'),
   ];
 
   effects = [

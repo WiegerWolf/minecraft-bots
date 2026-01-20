@@ -168,6 +168,7 @@ export class WorldStateBuilder {
     ws.set('derived.hasFarmEstablished', bb.farmCenter !== null);
     ws.set('derived.hasStorageAccess', bb.sharedChest !== null || bb.nearbyChests.length > 0);
     ws.set('derived.hasVillage', bb.villageCenter !== null);  // Village center from lumberjack
+    ws.set('derived.chestRecentlyEmpty', Date.now() < bb.chestEmptyUntil);  // Backoff for empty chest
 
     // Sign-based persistent knowledge
     ws.set('has.studiedSigns', bb.hasStudiedSigns);
@@ -303,6 +304,7 @@ export class WorldStateBuilder {
     // Exploration state - boat and water detection
     ws.set('has.boat', bb.hasBoat);
     ws.set('exploration.waterAhead', bb.maxWaterAhead);
+    ws.set('derived.forestSearchRecentlyFailed', Date.now() < bb.forestSearchFailedUntil);
   }
 
   /**
