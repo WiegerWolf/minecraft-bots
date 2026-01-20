@@ -190,11 +190,12 @@ async function testTillsGround() {
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
   world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 10\nY: 63\nZ: 10' });
 
+  const seedCount = 20;
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),
     botInventory: [
       { name: 'iron_hoe', count: 1 },
-      { name: 'wheat_seeds', count: 20 },
+      { name: 'wheat_seeds', count: seedCount },
     ],
   });
 
@@ -204,21 +205,35 @@ async function testTillsGround() {
   const role = new GOAPFarmingRole();
   role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
-  await test.waitUntil(
-    () => {
-      for (let dx = -4; dx <= 4; dx++) {
-        for (let dz = -4; dz <= 4; dz++) {
-          if (dx === 0 && dz === 0) continue;
-          const block = test.blockAt(new Vec3(10 + dx, 63, 10 + dz));
-          if (block === 'farmland') return true;
-        }
+  // Helper to count farmland in the area around water
+  const countFarmland = () => {
+    let count = 0;
+    for (let dx = -4; dx <= 4; dx++) {
+      for (let dz = -4; dz <= 4; dz++) {
+        if (dx === 0 && dz === 0) continue;
+        const block = test.blockAt(new Vec3(10 + dx, 63, 10 + dz));
+        if (block === 'farmland') count++;
       }
-      return false;
-    },
+    }
+    return count;
+  };
+
+  // Bot has seeds, so it should till enough ground to plant them (expect 80%+)
+  const expectedMinFarmland = Math.floor(seedCount * 0.8);
+
+  await test.waitUntil(
+    () => countFarmland() >= expectedMinFarmland,
     {
       timeout: 90000,
-      message: 'Bot should till ground into farmland near water',
+      message: `Bot should till at least ${expectedMinFarmland} farmland blocks (has ${seedCount} seeds)`,
     }
+  );
+
+  const farmlandCount = countFarmland();
+  test.assertGreater(
+    farmlandCount,
+    expectedMinFarmland - 1,
+    `Bot should have tilled enough ground for seeds (${farmlandCount} farmland created)`
   );
 
   role.stop(test.bot);
