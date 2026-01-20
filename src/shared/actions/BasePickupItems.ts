@@ -205,7 +205,7 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
 
             // After pathfinding, try to walk into the item
             const newDist = bot.entity.position.distanceTo(drop.position);
-            if (newDist < 2) {
+            if (newDist < goalRadius + 1) {
                 const direction = drop.position.minus(bot.entity.position);
                 const yaw = Math.atan2(-direction.x, -direction.z);
                 await bot.look(yaw, 0);
