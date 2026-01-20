@@ -1,13 +1,63 @@
 import type { Bot } from 'mineflayer';
 import type { Entity } from 'prismarine-entity';
 import { goals } from 'mineflayer-pathfinder';
-import { smartPathfinderGoto, sleep } from '../PathfindingUtils';
+import { smartPathfinderGoto } from '../PathfindingUtils';
 import type { Logger } from '../logger';
 
 const { GoalNear } = goals;
 
 // Cooldown for unreachable items - long enough that they might despawn (5 minutes)
 const UNREACHABLE_COOLDOWN = 5 * 60 * 1000;
+
+/**
+ * Walk toward an item and wait for pickup using event-driven approach.
+ * Resolves immediately when item is collected, or after timeout.
+ */
+function walkTowardAndCollect(
+    bot: Bot,
+    drop: Entity,
+    maxWalkTimeMs: number
+): Promise<boolean> {
+    return new Promise(resolve => {
+        const dropId = drop.id;
+        let resolved = false;
+        let timeoutHandle: ReturnType<typeof setTimeout>;
+
+        const cleanup = () => {
+            if (resolved) return;
+            resolved = true;
+            bot.clearControlStates();
+            bot.removeListener('playerCollect', onCollect);
+            clearTimeout(timeoutHandle);
+        };
+
+        const onCollect = (collector: Entity, collected: Entity) => {
+            if (collected.id === dropId) {
+                cleanup();
+                resolve(true);
+            }
+        };
+
+        bot.on('playerCollect', onCollect);
+
+        // Look at item and walk forward
+        const direction = drop.position.minus(bot.entity.position);
+        const yaw = Math.atan2(-direction.x, -direction.z);
+        bot.look(yaw, 0).then(() => {
+            if (!resolved) {
+                bot.setControlState('forward', true);
+            }
+        });
+
+        // Timeout fallback
+        timeoutHandle = setTimeout(() => {
+            cleanup();
+            // Check if item still exists
+            const stillExists = Object.values(bot.entities).some(e => e.id === dropId);
+            resolve(!stillExists);
+        }, maxWalkTimeMs);
+    });
+}
 
 export type BehaviorStatus = 'success' | 'failure' | 'running';
 
@@ -138,26 +188,11 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
         // If close enough, walk directly into the item
         if (dist < this.config.closeDistanceThreshold) {
             bb.lastAction = this.config.lastActionWaiting;
-            const direction = drop.position.minus(bot.entity.position);
-            const yaw = Math.atan2(-direction.x, -direction.z);
-            await bot.look(yaw, 0);
 
-            // Walk toward item until picked up or close enough
-            bot.setControlState('forward', true);
-            const startTime = Date.now();
-            const maxWalkTime = 400;
+            // Event-driven: walk toward item, resolve on playerCollect
+            const walkTime = Math.min(600, Math.max(200, dist * 150));
+            const pickedUp = await walkTowardAndCollect(bot, drop, walkTime);
 
-            while (Date.now() - startTime < maxWalkTime) {
-                const exists = Object.values(bot.entities).some(e => e.id === dropId);
-                if (!exists) break;
-                const currentDist = bot.entity.position.distanceTo(drop.position);
-                if (currentDist < 0.3) break;
-                await sleep(30);
-            }
-
-            bot.clearControlStates();
-
-            const pickedUp = !Object.values(bot.entities).some(e => e.id === dropId);
             if (pickedUp) {
                 this.lastTargetId = null;
                 this.failedAttemptsAtTarget = 0;
@@ -193,28 +228,10 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
             // After pathfinding, walk directly into the item
             const newDist = bot.entity.position.distanceTo(drop.position);
             if (newDist < goalRadius + 1) {
-                const direction = drop.position.minus(bot.entity.position);
-                const yaw = Math.atan2(-direction.x, -direction.z);
-                await bot.look(yaw, 0);
+                // Event-driven: walk toward item, resolve on playerCollect
+                const walkTime = Math.min(800, Math.max(200, newDist * 200));
+                const pickedUp = await walkTowardAndCollect(bot, drop, walkTime);
 
-                // Walk toward item, stopping when close enough or item picked up
-                bot.setControlState('forward', true);
-                const startTime = Date.now();
-                const maxWalkTime = 800;
-
-                while (Date.now() - startTime < maxWalkTime) {
-                    const currentDist = bot.entity.position.distanceTo(drop.position);
-                    if (currentDist < 0.5) break; // Close enough for pickup
-                    // Check if item was already picked up
-                    const exists = Object.values(bot.entities).some(e => e.id === dropId);
-                    if (!exists) break;
-                    await sleep(50);
-                }
-
-                bot.clearControlStates();
-
-                // Check if item was picked up during walk
-                const pickedUp = !Object.values(bot.entities).some(e => e.id === dropId);
                 if (pickedUp) {
                     this.lastTargetId = null;
                     this.failedAttemptsAtTarget = 0;
@@ -223,16 +240,7 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
                 return 'success';
             }
 
-            // Pathfinding got us close but not close enough - brief wait for auto-pickup
-            await sleep(100);
-
-            const stillExists = Object.values(bot.entities).some(e => e.id === dropId);
-            if (!stillExists) {
-                this.lastTargetId = null;
-                this.failedAttemptsAtTarget = 0;
-                this.lastDistanceToTarget = Infinity;
-            }
-
+            // Pathfinding didn't get us close enough - will retry next tick
             return 'success';
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'unknown';
