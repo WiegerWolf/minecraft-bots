@@ -299,6 +299,44 @@ bun run sim:lumberjack
 
 The Paper server starts automatically if not running. A superflat world is used for consistent test isolation.
 
+### Simulation Test Logging
+
+All simulation tests write structured JSON logs to the `logs/` directory:
+
+```
+logs/
+  test-2026-01-20_18-52-39/              # Single directory per test run
+    all.log                               # Combined log from all tests
+    lumberjack-chops-trees-in-a-forest.log
+    lumberjack-ignores-stumps.log
+    farmer-harvests-mature-wheat.log
+    farmer-plants-seeds-on-farmland.log
+    landscaper-collects-dropped-items.log
+    ...
+  latest -> test-2026-01-20_18-52-39/    # Symlink to most recent
+```
+
+**Key features:**
+- **One directory per run**: Running `bun run sim:test` creates a single session directory for all test suites
+- **Per-test log files**: Each test case gets its own log file (named from test name, kebab-cased)
+- **Combined all.log**: Aggregates all test output for easy searching across tests
+- **Session ID sharing**: Parent process generates session ID and passes to child processes via `SIM_TEST_SESSION_ID` env var
+
+**Searching logs:**
+```bash
+# View combined log for latest run
+cat logs/latest/all.log | jq .
+
+# Find errors across all tests
+cat logs/latest/all.log | jq 'select(.level >= 50)'
+
+# Search specific test
+cat logs/latest/farmer-harvests-mature-wheat.log | jq '.msg'
+
+# Find goal selections
+grep "Goal selected" logs/latest/all.log | jq '.goal, .utility'
+```
+
 ### Available Simulation Test Suites
 
 | Suite | Command | Tests |
