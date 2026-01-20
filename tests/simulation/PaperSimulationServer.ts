@@ -59,11 +59,11 @@ export interface SimulationOptions {
   rconPassword?: string;
   /** Viewer port (default: 3000) */
   viewerPort?: number;
-  /** Enable prismarine-viewer (default: true) */
+  /** Enable prismarine-viewer (default: false) */
   enableViewer?: boolean;
   /** First-person view (default: false = bird's eye) */
   firstPerson?: boolean;
-  /** Auto-open browser (default: true) */
+  /** Auto-open browser (default: false) */
   openBrowser?: boolean;
   /** Start server automatically (default: true) */
   autoStartServer?: boolean;
@@ -71,6 +71,8 @@ export interface SimulationOptions {
   clearWorld?: boolean;
   /** World clear radius (default: 50) */
   clearRadius?: number;
+  /** Wait for a player to join before proceeding (default: true) */
+  waitForPlayer?: boolean;
 }
 
 export class PaperSimulationServer {
@@ -90,12 +92,13 @@ export class PaperSimulationServer {
     rconPort: 25575,
     rconPassword: 'simulation',
     viewerPort: 3000,
-    enableViewer: true,
+    enableViewer: false,
     firstPerson: false,
-    openBrowser: true,
+    openBrowser: false,
     autoStartServer: true,
     clearWorld: true,
     clearRadius: 50,
+    waitForPlayer: true,
   };
 
   /**
@@ -136,14 +139,117 @@ export class PaperSimulationServer {
     console.log('[PaperSim] Setting up bot state...');
     await this.setupBotState();
 
-    // Start viewer
+    // Start viewer (if enabled)
     if (this.options.enableViewer) {
       console.log('[PaperSim] Starting viewer...');
       await this.startViewer();
     }
 
+    // Wait for player to join before proceeding
+    if (this.options.waitForPlayer) {
+      await this.waitForPlayerJoin();
+    }
+
     console.log('[PaperSim] Ready!');
     return this.bot!;
+  }
+
+  /**
+   * Wait for a real player (not a bot) to join the server.
+   * Returns immediately if a player is already connected.
+   * Sets player to spectator mode and teleports them above the test area.
+   */
+  async waitForPlayerJoin(): Promise<string> {
+    let playerName: string | null = null;
+
+    // First check if a player is already connected
+    try {
+      const result = await this.rconCommand('list');
+      const playersMatch = result.match(/online: (.+)$/);
+      if (playersMatch) {
+        const players = playersMatch[1].split(', ').map(p => p.trim()).filter(p => p);
+        const realPlayers = players.filter(p => p !== 'SimBot');
+        if (realPlayers.length > 0) {
+          console.log(`[PaperSim] Player already connected: ${realPlayers.join(', ')}`);
+          playerName = realPlayers[0];
+        }
+      }
+    } catch {
+      // RCON error, continue to wait
+    }
+
+    if (!playerName) {
+      console.log('[PaperSim] ════════════════════════════════════════════════════');
+      console.log('[PaperSim] Waiting for player to join...');
+      console.log('[PaperSim] Connect to: localhost:' + this.options.serverPort);
+      console.log('[PaperSim] ════════════════════════════════════════════════════');
+
+      playerName = await new Promise<string>((resolve) => {
+        let resolved = false;
+
+        const checkPlayers = async () => {
+          if (resolved) return;
+          try {
+            const result = await this.rconCommand('list');
+            const playersMatch = result.match(/online: (.+)$/);
+            if (playersMatch) {
+              const players = playersMatch[1].split(', ').map(p => p.trim()).filter(p => p);
+              const realPlayers = players.filter(p => p !== 'SimBot');
+              if (realPlayers.length > 0) {
+                resolved = true;
+                console.log(`[PaperSim] Player joined: ${realPlayers.join(', ')}`);
+                resolve(realPlayers[0]);
+                return;
+              }
+            }
+          } catch {
+            // RCON error, keep waiting
+          }
+          if (!resolved) {
+            setTimeout(checkPlayers, 1000);
+          }
+        };
+
+        const onPlayerJoined = (player: any) => {
+          if (resolved) return;
+          if (player.username !== 'SimBot') {
+            resolved = true;
+            console.log(`[PaperSim] Player joined: ${player.username}`);
+            this.bot?.off('playerJoined', onPlayerJoined);
+            resolve(player.username);
+          }
+        };
+
+        this.bot?.on('playerJoined', onPlayerJoined);
+        checkPlayers();
+      });
+    }
+
+    // Set up spectator view for the player
+    await this.setupSpectatorView(playerName);
+    return playerName;
+  }
+
+  /**
+   * Set up spectator mode and teleport player above the test area.
+   */
+  private async setupSpectatorView(playerName: string): Promise<void> {
+    console.log(`[PaperSim] Setting up spectator view for ${playerName}...`);
+
+    // Set spectator mode
+    await this.rconCommand(`gamemode spectator ${playerName}`);
+
+    // Teleport above the test area, looking down
+    // Position: above origin at y=90, looking down (pitch 90 = straight down)
+    const viewX = 0;
+    const viewY = 90;
+    const viewZ = 0;
+    const yaw = 0;    // Facing south
+    const pitch = 50; // Looking down at an angle (90 = straight down)
+
+    await this.rconCommand(`tp ${playerName} ${viewX} ${viewY} ${viewZ} ${yaw} ${pitch}`);
+
+    await this.delay(200);
   }
 
   /**

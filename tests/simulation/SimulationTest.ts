@@ -99,8 +99,9 @@ export class SimulationTest {
 
     this.server = new PaperSimulationServer();
     this._bot = await this.server.start(world, {
-      openBrowser: false, // Don't open browser for automated tests
-      enableViewer: true, // But keep viewer available if needed
+      enableViewer: false,  // Use Minecraft client instead
+      openBrowser: false,
+      waitForPlayer: true,  // Wait for player to join before starting test
       ...options,
     });
   }

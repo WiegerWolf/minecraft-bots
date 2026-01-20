@@ -24,8 +24,11 @@
     "test:visual": "bun run tests/visual/run-visual.ts",
     "sim": "bun run tests/simulation/run-simulation.ts",
     "sim:lumberjack": "bun run tests/simulation/run-lumberjack-paper.sim.ts",
-    "sim:test": "bun run tests/simulation/lumberjack.test.sim.ts",
+    "sim:test": "bun run tests/simulation/run-all-tests.ts",
     "sim:test:lumberjack": "bun run tests/simulation/lumberjack.test.sim.ts",
+    "sim:test:farmer": "bun run tests/simulation/farmer.test.sim.ts",
+    "sim:test:landscaper": "bun run tests/simulation/landscaper.test.sim.ts",
+    "sim:test:multibot": "bun run tests/simulation/multi-bot.test.sim.ts",
     "server:start": "cd server && ./start.sh",
     "postinstall": "patch-package"
   },

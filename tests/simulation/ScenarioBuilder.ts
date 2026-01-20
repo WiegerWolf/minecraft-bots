@@ -175,6 +175,8 @@ export class ScenarioBuilder {
     this.world.setBlock(new Vec3(centerX, corner.y - 1, centerZ), 'water');
 
     // Farmland and crops
+    // Mature age for each crop type: wheat=7, carrots=7, potatoes=7
+    const maxAge = 7;
     for (let dx = 0; dx < width; dx++) {
       for (let dz = 0; dz < length; dz++) {
         const x = corner.x + dx;
@@ -182,7 +184,7 @@ export class ScenarioBuilder {
         if (x === centerX && z === centerZ) continue; // Skip water
 
         this.world.setBlock(new Vec3(x, corner.y, z), 'farmland');
-        const cropBlock = mature ? crop : `${crop}`; // Mature crops
+        const cropBlock = mature ? `${crop}[age=${maxAge}]` : crop;
         this.world.setBlock(new Vec3(x, corner.y + 1, z), cropBlock);
       }
     }
@@ -358,6 +360,84 @@ export function mixedScenario(): ScenarioResult {
     .craftingTable(new Vec3(5, 64, -7))
     // Structure to avoid
     .structure('hut', new Vec3(-10, 64, -20))
+    .bot({
+      position: new Vec3(0, 65, 0),
+      inventory: [],
+      gameMode: 'survival',
+    })
+    .build();
+}
+
+/**
+ * Landscaper scenario: terraform area, dirt sources, tools.
+ */
+export function landscaperScenario(): ScenarioResult {
+  return new ScenarioBuilder()
+    .ground('grass_block', 35)
+    .villageSign(new Vec3(0, 64, 0))
+    // Uneven terrain that needs terraforming
+    .fill(new Vec3(15, 64, 15), new Vec3(20, 65, 20), 'dirt')
+    .fill(new Vec3(15, 63, 15), new Vec3(20, 63, 20), 'dirt') // Support layer
+    // Water for farm center
+    .block(new Vec3(17, 63, 17), 'water')
+    .farmSign(new Vec3(2, 64, 0), new Vec3(17, 63, 17))
+    // Dirtpit sign for gathering
+    .block(new Vec3(4, 64, 0), 'oak_sign', { signText: 'DIRTPIT\n-20, 63, -20' })
+    .fill(new Vec3(-25, 63, -25), new Vec3(-15, 63, -15), 'dirt') // Dirtpit area
+    // Storage and crafting
+    .chest(new Vec3(-5, 64, 0))
+    .craftingTable(new Vec3(-5, 64, 2))
+    .bot({
+      position: new Vec3(0, 65, 0),
+      inventory: [
+        { name: 'iron_shovel', count: 1 },
+        { name: 'iron_pickaxe', count: 1 },
+        { name: 'dirt', count: 32 },
+      ],
+      gameMode: 'survival',
+    })
+    .build();
+}
+
+/**
+ * Multi-bot trading scenario: shared infrastructure and trading items.
+ */
+export function tradingScenario(): ScenarioResult {
+  return new ScenarioBuilder()
+    .ground('grass_block', 40)
+    .villageSign(new Vec3(0, 64, 0))
+    // Shared storage
+    .chest(new Vec3(5, 64, 0))
+    .craftingTable(new Vec3(5, 64, 2))
+    .block(new Vec3(2, 64, 0), 'oak_sign', { signText: 'CHEST\n5, 64, 0' })
+    .block(new Vec3(4, 64, 0), 'oak_sign', { signText: 'CRAFT\n5, 64, 2' })
+    // Forest for lumberjack
+    .forest({ center: new Vec3(25, 64, 0), trees: 5 })
+    // Farm for farmer
+    .block(new Vec3(-15, 63, 15), 'water')
+    .farmSign(new Vec3(6, 64, 0), new Vec3(-15, 63, 15))
+    .bot({
+      position: new Vec3(0, 65, 0),
+      inventory: [],
+      gameMode: 'survival',
+    })
+    .build();
+}
+
+/**
+ * Fresh spawn scenario: minimal infrastructure, bot must build everything.
+ */
+export function freshSpawnScenario(): ScenarioResult {
+  return new ScenarioBuilder()
+    .ground('grass_block', 50)
+    // Just a village center, no other infrastructure
+    .villageSign(new Vec3(0, 64, 0))
+    // Scatter some grass for seeds
+    .fill(new Vec3(-10, 64, -10), new Vec3(10, 64, 10), 'short_grass')
+    // One water source
+    .block(new Vec3(20, 63, 20), 'water')
+    // Small forest
+    .forest({ center: new Vec3(-25, 64, -25), trees: 4 })
     .bot({
       position: new Vec3(0, 65, 0),
       inventory: [],
