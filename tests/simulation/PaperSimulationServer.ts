@@ -75,6 +75,9 @@ export interface SimulationOptions {
   waitForPlayer?: boolean;
 }
 
+// Track players we've already set up spectator view for (persists across test runs)
+const spectatorSetupDone = new Set<string>();
+
 export class PaperSimulationServer {
   private serverProcess: Subprocess | null = null;
   private rcon: Rcon | null = null;
@@ -225,8 +228,13 @@ export class PaperSimulationServer {
       });
     }
 
-    // Set up spectator view for the player
-    await this.setupSpectatorView(playerName);
+    // Set up spectator view only on first join
+    if (!spectatorSetupDone.has(playerName)) {
+      await this.setupSpectatorView(playerName);
+      spectatorSetupDone.add(playerName);
+    } else {
+      console.log(`[PaperSim] Player ${playerName} ready (spectator view already set)`);
+    }
     return playerName;
   }
 
