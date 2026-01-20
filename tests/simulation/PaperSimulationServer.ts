@@ -619,6 +619,14 @@ export class PaperSimulationServer {
   }
 
   private async connectBot(): Promise<void> {
+    // Kick any existing SimBot first to prevent duplicate_login errors
+    try {
+      await this.rconCommand('kick SimBot');
+      await this.delay(500); // Wait for server to process the kick
+    } catch {
+      // Ignore errors if SimBot wasn't online
+    }
+
     return new Promise((resolve, reject) => {
       this.bot = mineflayer.createBot({
         host: 'localhost',
