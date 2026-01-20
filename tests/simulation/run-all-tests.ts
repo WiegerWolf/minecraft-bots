@@ -12,8 +12,12 @@
 
 import { spawn } from 'bun';
 import path from 'path';
+import { generateSessionId } from '../../src/shared/logger';
 
 const TEST_DIR = import.meta.dir;
+
+// Generate a single session ID for all test suites
+const SESSION_ID = `test-${generateSessionId()}`;
 
 interface TestSuite {
   name: string;
@@ -96,6 +100,11 @@ async function runTestSuite(suite: TestSuite): Promise<SuiteResult> {
       stdout: 'pipe',
       stderr: 'pipe',
       cwd: path.join(TEST_DIR, '../..'),
+      env: {
+        ...process.env,
+        // Pass session ID to child processes so all tests use same log directory
+        SIM_TEST_SESSION_ID: SESSION_ID,
+      },
     });
 
     // Stream output to console while also capturing it
@@ -135,7 +144,8 @@ async function main() {
   console.log('█' + ' '.repeat(68) + '█');
   console.log('█' + '     MINECRAFT BOT SIMULATION TEST SUITE     '.padStart(45).padEnd(68) + '█');
   console.log('█' + ' '.repeat(68) + '█');
-  console.log('█'.repeat(70) + '\n');
+  console.log('█'.repeat(70));
+  console.log(`\nSession: ${SESSION_ID}\n`);
 
   const results: SuiteResult[] = [];
   const startTime = Date.now();
@@ -186,6 +196,7 @@ async function main() {
   console.log('\n' + '─'.repeat(70));
   console.log(`  Total: ${results.length} suites | Passed: ${passedCount} | Failed: ${failedCount}`);
   console.log(`  Duration: ${duration.toFixed(1)}s`);
+  console.log(`  Logs: logs/${SESSION_ID}/`);
   console.log('─'.repeat(70) + '\n');
 
   process.exit(failedCount > 0 ? 1 : 0);

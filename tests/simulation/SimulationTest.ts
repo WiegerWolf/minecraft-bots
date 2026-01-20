@@ -66,10 +66,14 @@ let currentTestSessionId: string | null = null;
  * Initialize a test session with a shared session ID.
  * Called automatically by runSimulationTests(), but can be called
  * manually for standalone tests.
+ *
+ * If SIM_TEST_SESSION_ID env var is set (from run-all-tests.ts parent process),
+ * uses that to ensure all test suites share the same log directory.
  */
 export function initTestSession(): string {
   if (!currentTestSessionId) {
-    currentTestSessionId = `test-${generateSessionId()}`;
+    // Check for parent-provided session ID (from run-all-tests.ts)
+    currentTestSessionId = process.env.SIM_TEST_SESSION_ID || `test-${generateSessionId()}`;
     // Suppress TUI state emission during tests
     process.env.SUPPRESS_TUI_STATE = 'true';
   }
