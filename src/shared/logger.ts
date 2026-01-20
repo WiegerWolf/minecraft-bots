@@ -354,12 +354,29 @@ export interface TestLoggerOptions {
   forcePretty?: boolean;
 }
 
+// Track combined log stream per session to avoid creating multiple streams
+const sessionCombinedStreams = new Map<string, fs.WriteStream>();
+
+/**
+ * Get or create a combined log stream for the session.
+ */
+function getCombinedLogStream(sessionId: string): fs.WriteStream {
+  if (!sessionCombinedStreams.has(sessionId)) {
+    const logDir = getLogDir(sessionId);
+    const combinedLogFile = path.join(logDir, 'all.log');
+    const stream = fs.createWriteStream(combinedLogFile, { flags: 'a' });
+    sessionCombinedStreams.set(sessionId, stream);
+  }
+  return sessionCombinedStreams.get(sessionId)!;
+}
+
 /**
  * Create a logger for simulation tests.
  *
  * Similar to createBotLogger but:
  * - Always uses pretty printing by default (tests should be readable)
  * - Session ID defaults to 'test-SESSION_TIMESTAMP'
+ * - Writes to both per-test log file AND combined session log (all.log)
  * - Suitable for use in SimulationTest
  *
  * Returns both the logger and the log file path for assertions.
@@ -377,8 +394,11 @@ export function createTestLogger(options: TestLoggerOptions): { logger: Logger; 
   const logDir = getLogDir(sessionId);
   const logFile = path.join(logDir, `${roleLabel}.log`);
 
-  // Create file stream for JSON logs
+  // Create file stream for per-test JSON logs
   const fileStream = fs.createWriteStream(logFile, { flags: 'a' });
+
+  // Get combined session log stream
+  const combinedStream = getCombinedLogStream(sessionId);
 
   // Create multi-destination transport
   const streams: pino.StreamEntry[] = [];
@@ -396,10 +416,16 @@ export function createTestLogger(options: TestLoggerOptions): { logger: Logger; 
     });
   }
 
-  // Always write JSON to file
+  // Write JSON to per-test log file
   streams.push({
     level: logLevel as pino.Level,
     stream: fileStream,
+  });
+
+  // Write JSON to combined session log (all.log)
+  streams.push({
+    level: logLevel as pino.Level,
+    stream: combinedStream,
   });
 
   const logger = pino(

@@ -134,13 +134,16 @@ export class SimulationTest {
 
   /**
    * Create a logger for a specific role in this test.
-   * Useful when testing multiple roles or creating role-specific loggers.
+   * The logger writes to the test's own log file (based on test name),
+   * not a generic role-named file like 'landscaper.log'.
    */
-  createRoleLogger(roleName: string, roleLabel?: string): Logger {
+  createRoleLogger(roleName: string, _roleLabel?: string): Logger {
+    // Use test name (kebab-cased) for the log file so each test gets its own logs
+    const testNameKebab = this.name.replace(/\s+/g, '-').toLowerCase();
     const result = createTestLogger({
       botName: 'SimBot',
       role: roleName,
-      roleLabel: roleLabel || roleName,
+      roleLabel: testNameKebab,
       sessionId: this._sessionId,
     });
     return result.logger;

@@ -51,12 +51,16 @@ class MultiBotTest {
 
   /**
    * Create a logger for a specific role in this test.
+   * The logger writes to the test's own log file (based on test name),
+   * not a generic role-named file.
    */
-  createRoleLogger(roleName: string, roleLabel?: string) {
+  createRoleLogger(roleName: string, _roleLabel?: string) {
+    // Use test name (kebab-cased) for the log file so each test gets its own logs
+    const testNameKebab = this.name.replace(/\s+/g, '-').toLowerCase();
     const result = createTestLogger({
       botName: roleName,
       role: roleName.toLowerCase(),
-      roleLabel: roleLabel || roleName,
+      roleLabel: testNameKebab,
       sessionId: this._sessionId,
     });
     return result.logger;
