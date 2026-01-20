@@ -9,11 +9,33 @@ import type { GOAPAction } from '../planning/Action';
 import type { Goal } from '../planning/Goal';
 
 /**
+ * Check if the bot is on or near farmland (within 1 block horizontally).
+ * Used to prevent jumping which tramples crops.
+ */
+function isNearFarmland(bot: Bot): boolean {
+  const pos = bot.entity.position.floored();
+
+  // Check the block at feet level and 1 below (in case standing on edge)
+  for (let dy = -1; dy <= 0; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const block = bot.blockAt(pos.offset(dx, dy, dz));
+        if (block && block.name === 'farmland') {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * GOAP-based farming role.
  * Uses Goal-Oriented Action Planning to autonomously farm crops.
  */
 export class GOAPFarmingRole extends GOAPRole {
   name = 'goap-farming';
+  private farmlandProtectionInterval: NodeJS.Timeout | null = null;
 
   constructor(config?: GOAPRoleConfig) {
     super(config);
@@ -64,10 +86,25 @@ export class GOAPFarmingRole extends GOAPRole {
         this.log?.info({ spawnPosition: options.spawnPosition.toString() }, 'Stored spawn position');
       }
     }
+
+    // Set up farmland protection - prevent jumping when near farmland to avoid trampling crops
+    this.farmlandProtectionInterval = setInterval(() => {
+      if (isNearFarmland(bot)) {
+        // Clear jump control state to prevent trampling
+        bot.controlState.jump = false;
+      }
+    }, 50); // Check frequently (20 times per second)
   }
 
   override stop(bot: Bot): void {
     this.log?.info('Stopping GOAP farming bot');
+
+    // Clean up farmland protection interval
+    if (this.farmlandProtectionInterval) {
+      clearInterval(this.farmlandProtectionInterval);
+      this.farmlandProtectionInterval = null;
+    }
+
     super.stop(bot);
   }
 

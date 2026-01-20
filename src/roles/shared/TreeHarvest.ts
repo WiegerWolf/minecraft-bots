@@ -193,12 +193,9 @@ export async function chopLogs(bot: Bot, state: TreeHarvestState): Promise<TreeH
 }
 
 /**
- * Clear leaves around a harvested tree
+ * Find all leaves reachable from current position (within dig range)
  */
-export async function clearLeaves(bot: Bot, state: TreeHarvestState): Promise<TreeHarvestResult> {
-    // Find leaves near where the tree was - search higher up where the canopy was
-    const searchCenter = state.basePos.offset(0, 5, 0);
-
+function findReachableLeavesFromPosition(bot: Bot, searchCenter: Vec3): Vec3[] {
     const leaves = bot.findBlocks({
         point: searchCenter,
         maxDistance: 7,
@@ -206,28 +203,88 @@ export async function clearLeaves(bot: Bot, state: TreeHarvestState): Promise<Tr
         matching: b => LEAF_NAMES.includes(b.name)
     });
 
-    // Sort by distance and height - prefer lower, closer leaves
-    const sortedLeaves = leaves
+    const botPos = bot.entity.position;
+    const reachable: Vec3[] = [];
+
+    for (const pos of leaves) {
+        const dist = botPos.distanceTo(pos);
+        const heightAbove = pos.y - botPos.y;
+
+        // Can reach blocks within ~4.5 blocks and up to 5 blocks above
+        if (dist <= 4.5 && heightAbove <= 5 && heightAbove >= -2) {
+            reachable.push(pos);
+        }
+    }
+
+    // Sort by height (lower first) to clear systematically
+    return reachable.sort((a, b) => a.y - b.y);
+}
+
+/**
+ * Clear leaves around a harvested tree
+ * Prioritizes breaking all reachable leaves from current position before moving
+ */
+export async function clearLeaves(bot: Bot, state: TreeHarvestState): Promise<TreeHarvestResult> {
+    // Find leaves near where the tree was - search higher up where the canopy was
+    const searchCenter = state.basePos.offset(0, 5, 0);
+
+    // First, try to break any leaves reachable from current position
+    const reachableFromHere = findReachableLeavesFromPosition(bot, searchCenter);
+
+    if (reachableFromHere.length > 0) {
+        // Break all reachable leaves from current position before moving
+        state.busy = true;
+        let brokenCount = 0;
+
+        for (const leafPos of reachableFromHere) {
+            const leafBlock = bot.blockAt(leafPos);
+            if (!leafBlock || !LEAF_NAMES.includes(leafBlock.name)) continue;
+
+            try {
+                await bot.dig(leafBlock);
+                brokenCount++;
+                await sleep(50); // Small delay between breaks
+            } catch {
+                // Skip this leaf if we can't break it
+                continue;
+            }
+        }
+
+        state.busy = false;
+
+        if (brokenCount > 0) {
+            moduleLog?.debug({ count: brokenCount }, 'Broke leaves from current position');
+            return 'success';
+        }
+    }
+
+    // No leaves reachable from here - find leaves that need movement
+    const allLeaves = bot.findBlocks({
+        point: searchCenter,
+        maxDistance: 7,
+        count: 50,
+        matching: b => LEAF_NAMES.includes(b.name)
+    });
+
+    // Filter to leaves we can potentially reach (not too high)
+    const reachableLeaves = allLeaves
         .map(pos => ({
             pos,
             dist: bot.entity.position.distanceTo(pos),
             heightAbove: pos.y - bot.entity.position.y
         }))
-        .filter(l => l.heightAbove <= 5) // Can reach up to 5 blocks above
-        .sort((a, b) => {
-            // Prefer closer leaves, then lower ones
-            if (Math.abs(a.dist - b.dist) > 2) return a.dist - b.dist;
-            return a.heightAbove - b.heightAbove;
-        });
+        .filter(l => l.heightAbove <= 5 && l.heightAbove >= -2);
 
-    if (sortedLeaves.length === 0) {
+    if (reachableLeaves.length === 0) {
         // No more reachable leaves, move to replanting
         moduleLog?.debug('Leaves cleared, checking for sapling to replant');
         state.phase = 'replanting';
         return 'success';
     }
 
-    const leafData = sortedLeaves[0];
+    // Find the best position to move to (position that can reach the most leaves)
+    // Group leaves by potential standing positions
+    const leafData = reachableLeaves[0];
     if (!leafData) {
         state.phase = 'replanting';
         return 'success';
@@ -239,12 +296,12 @@ export async function clearLeaves(bot: Bot, state: TreeHarvestState): Promise<Tr
         return 'success';
     }
 
-    moduleLog?.debug({ pos: leafBlock.position.toString() }, 'Breaking leaves');
+    moduleLog?.debug({ pos: leafBlock.position.toString() }, 'Moving to break more leaves');
 
     // Mark as busy before starting async operations
     state.busy = true;
     try {
-        const goal = new GoalLookAtBlock(leafBlock.position, bot.world, { reach: 5 });
+        const goal = new GoalLookAtBlock(leafBlock.position, bot.world, { reach: 4 });
         const success = await pathfinderGotoWithRetry(bot, goal);
         if (!success) {
             moduleLog?.warn('Failed to reach leaf after retries');
@@ -252,23 +309,12 @@ export async function clearLeaves(bot: Bot, state: TreeHarvestState): Promise<Tr
             state.busy = false;
             return 'success';
         }
-        await bot.dig(leafBlock);
-        await sleep(100);
+        // Don't break the leaf here - let the next tick break all reachable leaves
         state.busy = false;
         return 'success';
     } catch {
         state.busy = false;
-        // Try from current position
-        const dist = bot.entity.position.distanceTo(leafBlock.position);
-        if (dist < 6) {
-            try {
-                await bot.dig(leafBlock);
-                return 'success';
-            } catch {
-                // Skip this leaf
-            }
-        }
-        // Move on after a few failures
+        // Move on after failure
         state.phase = 'replanting';
         return 'success';
     }

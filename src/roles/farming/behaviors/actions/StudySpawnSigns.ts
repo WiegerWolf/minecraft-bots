@@ -117,8 +117,11 @@ export class StudySpawnSigns implements BehaviorNode {
         for (const entry of learned) {
             switch (entry.type) {
                 case 'VILLAGE':
-                    // Note village center but farmer doesn't use it directly
-                    bb.log?.debug({ pos: entry.pos.toString() }, 'Noted village center');
+                    if (!bb.villageCenter) {
+                        bb.villageCenter = entry.pos;
+                        bb.villageChat?.setVillageCenter(entry.pos);
+                        bb.log?.info({ pos: entry.pos.toString() }, 'Learned village center from sign');
+                    }
                     break;
 
                 case 'CRAFT':
