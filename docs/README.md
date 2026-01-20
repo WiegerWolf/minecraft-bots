@@ -224,6 +224,11 @@ Press Enter on a bot to see full details:
 | CompleteTrade utility | 150 | Very high - finish active trades first |
 | RespondToTrade utility | 120 | High priority - can preempt RUNNING actions (120 > 80 + 30) |
 | BroadcastTrade utility | 30-50 | Low priority, when idle with clutter |
+| Simulation clear radius | 50 blocks | 100x100 area cleared between tests |
+| Simulation clear height | y=60-100 | Clears tall trees |
+| Simulation server port | 25566 | Paper server game port |
+| Simulation RCON port | 25575 | RCON for world sync |
+| RCON throttle | 5ms | Delay between commands to prevent disconnect |
 
 ### File Locations
 
@@ -248,6 +253,8 @@ Press Enter on a bot to see full details:
 | MockWorld | `tests/mocks/MockWorld.ts` |
 | BotMock | `tests/mocks/BotMock.ts` |
 | World Visualizer | `tests/mocks/visualize-world.ts` |
+| PaperSimulationServer | `tests/simulation/PaperSimulationServer.ts` |
+| SimulationTest | `tests/simulation/SimulationTest.ts` |
 
 ### Debug Commands
 
@@ -287,6 +294,12 @@ bun run visualize forest       # 5 oak trees
 bun run visualize stump-field  # Only stumps
 bun run visualize mixed        # Stumps nearby, forest far
 bun run visualize structure    # Wooden building + tree
+```
+
+Run simulation tests (real Paper server):
+```bash
+bun run sim:test        # Automated integration tests
+bun run sim:lumberjack  # Interactive - watch in browser or Minecraft client
 ```
 
 ## Contributing to Docs
