@@ -94,13 +94,17 @@ export class GatherDirt implements BehaviorNode {
 
             // Dig the block
             try {
+                const digPos = block.position.clone();
                 await bot.dig(block);
                 gathered++;
                 bb.log?.debug(
                     { pos: candidate.pos.floored().toString(), gathered, needed: neededDirt },
-                    'Gathered dirt'
+                    'Dug dirt block'
                 );
-                await sleep(100);
+
+                // Wait for item to spawn and collect it
+                await sleep(150);
+                await this.collectNearbyDrops(bot, bb, digPos);
             } catch (error) {
                 // Skip this block
             }
@@ -112,6 +116,49 @@ export class GatherDirt implements BehaviorNode {
         }
 
         return 'failure';
+    }
+
+    /**
+     * Collect dropped items near a position (after digging).
+     * Walks over items to pick them up.
+     */
+    private async collectNearbyDrops(bot: Bot, bb: LandscaperBlackboard, digPos: Vec3): Promise<void> {
+        // Find item entities near where we dug
+        const nearbyItems = Object.values(bot.entities).filter(e =>
+            e.name === 'item' &&
+            e.position &&
+            e.position.distanceTo(digPos) < 3
+        );
+
+        if (nearbyItems.length === 0) {
+            return; // No items to collect
+        }
+
+        for (const item of nearbyItems) {
+            const itemPos = item.position;
+            const dist = bot.entity.position.distanceTo(itemPos);
+
+            // If already very close, wait for auto-pickup
+            if (dist < 1.5) {
+                await sleep(200);
+                continue;
+            }
+
+            // Walk over the item to collect it
+            try {
+                const result = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(itemPos.x, itemPos.y, itemPos.z, 0.5),
+                    { timeoutMs: 3000 }
+                );
+                if (result.success) {
+                    await sleep(100); // Wait for pickup
+                    bb.log?.debug({ pos: itemPos.floored().toString() }, 'Collected dropped dirt');
+                }
+            } catch {
+                // Continue if we can't reach this item
+            }
+        }
     }
 
     /**

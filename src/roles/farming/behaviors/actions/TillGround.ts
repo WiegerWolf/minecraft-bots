@@ -7,6 +7,29 @@ import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils'
 
 const { GoalNear } = goals;
 
+// Track unreachable positions temporarily (cleared after 5 minutes)
+const unreachableTillPositions = new Map<string, number>();
+const UNREACHABLE_COOLDOWN_MS = 5 * 60 * 1000;
+
+function posKey(pos: Vec3): string {
+    return `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
+}
+
+function isUnreachable(pos: Vec3): boolean {
+    const key = posKey(pos);
+    const markedTime = unreachableTillPositions.get(key);
+    if (!markedTime) return false;
+    if (Date.now() - markedTime > UNREACHABLE_COOLDOWN_MS) {
+        unreachableTillPositions.delete(key);
+        return false;
+    }
+    return true;
+}
+
+function markUnreachable(pos: Vec3): void {
+    unreachableTillPositions.set(posKey(pos), Date.now());
+}
+
 export class TillGround implements BehaviorNode {
     name = 'TillGround';
 
@@ -14,11 +37,11 @@ export class TillGround implements BehaviorNode {
         if (!bb.canTill) return 'failure';
         if (!bb.farmCenter) return 'failure';
 
-        // Find tillable block near water
+        // Find all tillable blocks near water
         // IMPORTANT: In Minecraft, water ONLY hydrates farmland at the SAME Y level
         // Farmland at Y+1 above water will NOT be hydrated!
         // Only search at Y=0 (same level as water)
-        let target: { position: Vec3 } | null = null;
+        const candidates: Vec3[] = [];
 
         for (let x = -4; x <= 4; x++) {
             for (let z = -4; z <= 4; z++) {
@@ -26,64 +49,78 @@ export class TillGround implements BehaviorNode {
                 if (x === 0 && z === 0) continue;
 
                 const pos = bb.farmCenter.offset(x, 0, z);  // Y=0 only - same level as water
+
+                // Skip positions marked as unreachable
+                if (isUnreachable(pos)) continue;
+
                 const block = bot.blockAt(pos);
                 if (block && ['grass_block', 'dirt'].includes(block.name)) {
                     const above = bot.blockAt(pos.offset(0, 1, 0));
                     if (above && above.name === 'air') {
-                        target = { position: pos };
-                        break;
+                        candidates.push(pos.clone());
                     }
                 }
             }
-            if (target) break;
         }
 
-        if (!target) {
+        if (candidates.length === 0) {
             bb.log?.debug({ farmCenter: bb.farmCenter?.toString() }, 'No tillable blocks found near farm center');
             return 'failure';
         }
 
+        // Sort by distance to bot (closest first)
+        const botPos = bot.entity.position;
+        candidates.sort((a, b) => a.distanceTo(botPos) - b.distanceTo(botPos));
+
         const hoe = bot.inventory.items().find(i => i.name.includes('hoe'));
         if (!hoe) return 'failure';
 
-        bb.log?.debug({ pos: target.position.toString() }, 'Tilling ground');
         bb.lastAction = 'till';
 
-        try {
-            // Check if we are already close enough to till
-            if (bot.entity.position.distanceTo(target.position) > 4.5) {
-                const result = await smartPathfinderGoto(
-                    bot,
-                    new GoalNear(target.position.x, target.position.y, target.position.z, 4),
-                    { timeoutMs: 15000 }
-                );
-                if (!result.success) {
-                    bb.log?.warn({ reason: result.failureReason }, 'Failed to reach till target');
-                    return 'failure';
-                }
-            } else {
-                bb.log?.debug({ pos: target.position.toString() }, 'Already within reach, skipping movement');
-            }
-            bot.pathfinder.stop();
+        // Try each candidate until one works
+        for (const targetPos of candidates) {
+            bb.log?.debug({ pos: targetPos.toString() }, 'Trying to till ground');
 
-            await bot.equip(hoe, 'hand');
-            const block = bot.blockAt(target.position);
-            if (block) {
-                await bot.lookAt(target.position.offset(0.5, 1, 0.5), true);
-                await bot.activateBlock(block);
-                await sleep(200);
-
-                // Verify tilling worked
-                const afterBlock = bot.blockAt(target.position);
-                if (afterBlock?.name === 'farmland') {
-                    bb.log?.debug({ pos: target.position.toString() }, 'Successfully created farmland');
-                } else {
-                    bb.log?.warn({ pos: target.position.toString(), blockName: afterBlock?.name }, 'Tilling may have failed');
+            try {
+                // Check if we are already close enough to till
+                if (bot.entity.position.distanceTo(targetPos) > 4.5) {
+                    const result = await smartPathfinderGoto(
+                        bot,
+                        new GoalNear(targetPos.x, targetPos.y, targetPos.z, 4),
+                        { timeoutMs: 15000 }
+                    );
+                    if (!result.success) {
+                        bb.log?.debug({ pos: targetPos.toString(), reason: result.failureReason }, 'Cannot reach till target, trying next');
+                        markUnreachable(targetPos);
+                        continue;  // Try next candidate
+                    }
                 }
+                bot.pathfinder.stop();
+
+                await bot.equip(hoe, 'hand');
+                const block = bot.blockAt(targetPos);
+                if (block) {
+                    await bot.lookAt(targetPos.offset(0.5, 1, 0.5), true);
+                    await bot.activateBlock(block);
+                    await sleep(200);
+
+                    // Verify tilling worked
+                    const afterBlock = bot.blockAt(targetPos);
+                    if (afterBlock?.name === 'farmland') {
+                        bb.log?.debug({ pos: targetPos.toString() }, 'Successfully created farmland');
+                    } else {
+                        bb.log?.debug({ pos: targetPos.toString(), blockName: afterBlock?.name }, 'Tilling may have failed');
+                    }
+                }
+                return 'success';
+            } catch (err) {
+                bb.log?.debug({ pos: targetPos.toString(), err }, 'Error tilling, trying next');
+                continue;
             }
-            return 'success';
-        } catch {
-            return 'failure';
         }
+
+        // All candidates failed
+        bb.log?.warn('Failed to till any candidate positions');
+        return 'failure';
     }
 }

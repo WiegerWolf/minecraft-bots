@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import type { FarmingBlackboard } from '../../Blackboard';
 import { goals } from 'mineflayer-pathfinder';
+import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 /**
  * FollowLumberjack - Follow the lumberjack during exploration phase.
@@ -21,6 +22,7 @@ export class FollowLumberjack {
     private lastPathTime = 0;
     private pathCooldown = 2000;       // Don't repath more often than every 2s
     private hasAnnounced = false;      // Track if we've announced following
+    private isPathfinding = false;     // Track if we're currently pathfinding
 
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<'success' | 'failure' | 'running'> {
         // Check if we have a lumberjack to follow
@@ -45,6 +47,11 @@ export class FollowLumberjack {
             return 'success';
         }
 
+        // If we're already pathfinding, let it continue
+        if (this.isPathfinding) {
+            return 'running';
+        }
+
         // Don't repath too often
         const now = Date.now();
         if (now - this.lastPathTime < this.pathCooldown) {
@@ -58,38 +65,42 @@ export class FollowLumberjack {
             this.hasAnnounced = true;
         }
 
-        bb.log?.info({
+        bb.log?.debug({
             lumberjack: bb.lumberjackName,
             distance: distance.toFixed(1),
             target: this.targetDistance
         }, 'Following lumberjack');
 
-        try {
-            // Stop any current movement
-            bot.pathfinder.stop();
+        // Move toward the lumberjack, but stay at target distance
+        // Calculate a position that's targetDistance blocks away from the lumberjack
+        const direction = pos.minus(bb.lumberjackPosition).normalize();
+        const targetPos = bb.lumberjackPosition.plus(direction.scaled(this.targetDistance));
 
-            // Move toward the lumberjack, but stay at target distance
-            // Calculate a position that's targetDistance blocks away from the lumberjack
-            const direction = pos.minus(bb.lumberjackPosition).normalize();
-            const targetPos = bb.lumberjackPosition.plus(direction.scaled(this.targetDistance));
+        // Use GoalNear with a range so we stop when we're in the comfort zone
+        const goal = new goals.GoalNear(
+            targetPos.x,
+            targetPos.y,
+            targetPos.z,
+            5  // Allow some slack
+        );
 
-            // Use GoalNear with a range so we stop when we're in the comfort zone
-            const goal = new goals.GoalNear(
-                targetPos.x,
-                targetPos.y,
-                targetPos.z,
-                5  // Allow some slack
-            );
+        this.isPathfinding = true;
+        const result = await smartPathfinderGoto(bot, goal, { timeoutMs: 10000 });
+        this.isPathfinding = false;
 
-            await bot.pathfinder.goto(goal);
-
+        if (result.success) {
             bb.lastAction = 'followed_lumberjack';
             bb.consecutiveIdleTicks = 0;
-
             return 'success';
-        } catch (error) {
-            bb.log?.warn({ error }, 'Failed to follow lumberjack');
-            return 'failure';
         }
+
+        // PathStopped is expected when lumberjack moves - just retry next tick
+        if (result.failureReason?.includes('PathStopped')) {
+            bb.log?.debug('Path interrupted (lumberjack moved), will retry');
+            return 'running';
+        }
+
+        bb.log?.debug({ reason: result.failureReason }, 'Failed to follow lumberjack');
+        return 'failure';
     }
 }

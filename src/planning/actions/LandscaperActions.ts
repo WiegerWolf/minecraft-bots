@@ -667,6 +667,7 @@ export function createLandscaperActions(): BaseGOAPAction[] {
     new CraftPickaxeFromPlanksAction(),
     new DepositItemsAction(),
     new CheckSharedChestAction(),
+    new BroadcastNeedAction(),    // Request tools from lumberjack when chest empty
     new GatherDirtAction(),
     new CraftSlabsAction(),
     new ReadUnknownSignAction(),  // Curious bot - read unknown signs

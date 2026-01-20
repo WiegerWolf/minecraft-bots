@@ -684,18 +684,24 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                 }
 
                 bb.lastAction = 'trade_traveling';
-                try {
-                    await smartPathfinderGoto(
-                        bot,
-                        new GoalNear(trade.meetingPoint.x, trade.meetingPoint.y, trade.meetingPoint.z, MEETING_POINT_RADIUS),
-                        { timeoutMs: 30000 }
-                    );
+                const pathResult = await smartPathfinderGoto(
+                    bot,
+                    new GoalNear(trade.meetingPoint.x, trade.meetingPoint.y, trade.meetingPoint.z, MEETING_POINT_RADIUS),
+                    { timeoutMs: 30000 }
+                );
+
+                // Only send ready if we actually arrived at the meeting point
+                const finalDist = bot.entity.position.distanceTo(trade.meetingPoint);
+                if (pathResult.success || finalDist <= MEETING_POINT_RADIUS) {
+                    bb.log?.debug({ distance: finalDist.toFixed(1) }, `[${this.config.roleLabel}] Arrived at meeting point`);
                     bb.villageChat.sendTradeReady();
-                } catch (error) {
-                    const msg = error instanceof Error ? error.message : 'unknown';
-                    if (!msg.includes('goal was changed') && !msg.includes('Path was stopped')) {
-                        bb.log?.debug({ err: msg }, `[${this.config.roleLabel}] Travel error`);
-                    }
+                } else {
+                    // Failed to reach meeting point
+                    bb.log?.debug({
+                        reason: pathResult.failureReason,
+                        distance: finalDist.toFixed(1)
+                    }, `[${this.config.roleLabel}] Travel to meeting point failed, retrying`);
+                    // Don't send ready - let the action retry
                 }
                 return 'running';
             }

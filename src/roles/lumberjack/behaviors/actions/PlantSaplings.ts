@@ -55,67 +55,76 @@ export class PlantSaplings implements BehaviorNode {
         }
 
         // Find suitable planting spots (grass_block, dirt, podzol with air above)
-        const groundBlocks = bot.findBlocks({
-            point: bot.entity.position,
-            maxDistance: 24,
-            count: 50,
-            matching: b => b.name === 'grass_block' || b.name === 'dirt' || b.name === 'podzol'
-        });
-
+        // Search in expanding radii to find spots even if nearby area is crowded
+        const searchRadii = [16, 32, 48];
         let plantSpot: Vec3 | null = null;
         let needToClear: any = null;
 
-        for (const groundPos of groundBlocks) {
-            const surfacePos = groundPos.offset(0, 1, 0);
-            const surfaceBlock = bot.blockAt(surfacePos);
-
-            if (!surfaceBlock) continue;
-
-            // Check spacing from recently planted saplings
-            const tooClose = this.plantedPositions.some(
-                planted => planted.distanceTo(surfacePos) < SAPLING_SPACING
-            );
-            if (tooClose) continue;
-
-            // Avoid planting near known farms (trees can block sunlight and drop leaves)
-            const tooCloseToFarm = bb.knownFarms.some(
-                farm => surfacePos.distanceTo(farm) < MIN_FARM_DISTANCE
-            );
-            if (tooCloseToFarm) continue;
-
-            // Also check for nearby farmland blocks directly (in case farms aren't in sign system)
-            const nearbyFarmland = bot.findBlocks({
-                point: surfacePos,
-                maxDistance: MIN_FARM_DISTANCE - 1,
-                count: 1,
-                matching: b => b.name === 'farmland' || b.name === 'water'
+        for (const radius of searchRadii) {
+            const groundBlocks = bot.findBlocks({
+                point: bot.entity.position,
+                maxDistance: radius,
+                count: 100,
+                matching: b => b.name === 'grass_block' || b.name === 'dirt' || b.name === 'podzol'
             });
-            if (nearbyFarmland.length > 0) continue;
 
-            // Also check for existing saplings/trees nearby
-            const nearbyBlocks = bot.findBlocks({
-                point: surfacePos,
-                maxDistance: SAPLING_SPACING - 1,
-                count: 1,
-                matching: b => SAPLING_NAMES.includes(b.name) || b.name.includes('_log')
-            });
-            if (nearbyBlocks.length > 0) continue;
+            // Sort by distance from bot (prefer closer spots)
+            groundBlocks.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
 
-            // Check surface - air is best, but we can clear vegetation
-            if (surfaceBlock.name === 'air') {
-                plantSpot = surfacePos;
-                needToClear = null;
-                break;
-            } else if (CLEARABLE_VEGETATION.includes(surfaceBlock.name)) {
-                if (!plantSpot) {
+            for (const groundPos of groundBlocks) {
+                const surfacePos = groundPos.offset(0, 1, 0);
+                const surfaceBlock = bot.blockAt(surfacePos);
+
+                if (!surfaceBlock) continue;
+
+                // Check spacing from recently planted saplings
+                const tooClose = this.plantedPositions.some(
+                    planted => planted.distanceTo(surfacePos) < SAPLING_SPACING
+                );
+                if (tooClose) continue;
+
+                // Avoid planting near known farms (trees can block sunlight and drop leaves)
+                const tooCloseToFarm = bb.knownFarms.some(
+                    farm => surfacePos.distanceTo(farm) < MIN_FARM_DISTANCE
+                );
+                if (tooCloseToFarm) continue;
+
+                // Also check for nearby farmland blocks directly (in case farms aren't in sign system)
+                const nearbyFarmland = bot.findBlocks({
+                    point: surfacePos,
+                    maxDistance: MIN_FARM_DISTANCE - 1,
+                    count: 1,
+                    matching: b => b.name === 'farmland' || b.name === 'water'
+                });
+                if (nearbyFarmland.length > 0) continue;
+
+                // Also check for existing saplings/trees nearby
+                const nearbyBlocks = bot.findBlocks({
+                    point: surfacePos,
+                    maxDistance: SAPLING_SPACING - 1,
+                    count: 1,
+                    matching: b => SAPLING_NAMES.includes(b.name) || b.name.includes('_log')
+                });
+                if (nearbyBlocks.length > 0) continue;
+
+                // Check surface - air is best, but we can clear vegetation
+                if (surfaceBlock.name === 'air') {
                     plantSpot = surfacePos;
-                    needToClear = surfaceBlock;
+                    needToClear = null;
+                    break;
+                } else if (CLEARABLE_VEGETATION.includes(surfaceBlock.name)) {
+                    if (!plantSpot) {
+                        plantSpot = surfacePos;
+                        needToClear = surfaceBlock;
+                    }
                 }
             }
+
+            if (plantSpot) break;  // Found a spot, stop searching
         }
 
         if (!plantSpot) {
-            bb.log?.debug('[Lumberjack] No suitable spots to plant saplings');
+            bb.log?.debug({ saplings: bb.saplingCount }, '[Lumberjack] No suitable spots to plant saplings within search range');
             return 'failure';
         }
 

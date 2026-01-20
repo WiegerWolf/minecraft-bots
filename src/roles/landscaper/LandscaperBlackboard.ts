@@ -111,6 +111,10 @@ export interface LandscaperBlackboard {
     pendingTradeOffers: TradeOffer[];           // Active offers from other bots we might want
     activeTrade: ActiveTrade | null;            // Current trade state (if any)
     lastOfferTime: number;                      // When we last broadcast an offer (cooldown)
+
+    // Chest checking cooldown (prevent loop when chest is empty)
+    lastChestCheckTime: number;                 // When we last checked chest (for cooldown)
+    lastChestWasEmpty: boolean;                 // Whether last check found no materials
 }
 
 export function createLandscaperBlackboard(): LandscaperBlackboard {
@@ -172,6 +176,10 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
         pendingTradeOffers: [],
         activeTrade: null,
         lastOfferTime: 0,
+
+        // Chest checking cooldown
+        lastChestCheckTime: 0,
+        lastChestWasEmpty: false,
     };
 }
 

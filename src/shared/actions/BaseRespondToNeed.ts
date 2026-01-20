@@ -178,20 +178,33 @@ export abstract class BaseRespondToNeed<TBlackboard extends RespondToNeedBlackbo
         bot: Bot,
         bb: TBlackboard
     ): Promise<BehaviorStatus> {
+        let hasPendingOffers = false;
+
         for (const [needId, state] of this.respondingNeeds) {
+            // Check if the need still exists (might have been fulfilled by someone else)
+            const need = bb.villageChat!.getNeedById(needId);
+            if (!need || need.status === 'fulfilled' || need.status === 'expired') {
+                // Need is gone, clean up our tracking
+                this.respondingNeeds.delete(needId);
+                continue;
+            }
+
             // Check if we're accepted as provider
             const isAccepted = bb.villageChat!.isAcceptedProviderFor(needId);
 
             if (state.status === 'offered' && isAccepted) {
                 // Our offer was accepted!
                 state.status = 'accepted';
-                const need = bb.villageChat!.getNeedById(needId);
-                if (need) {
-                    this.onOfferAccepted(bot, bb, needId, need.from);
-                }
+                this.onOfferAccepted(bot, bb, needId, need.from);
 
                 // Determine delivery method and announce
                 return await this.initiateDelivery(bot, bb, state);
+            }
+
+            if (state.status === 'offered' && !isAccepted) {
+                // Still waiting for acceptance - mark that we have pending work
+                hasPendingOffers = true;
+                bb.lastAction = 'waiting_for_acceptance';
             }
 
             if (state.status === 'accepted' || state.status === 'delivering') {
@@ -204,6 +217,11 @@ export abstract class BaseRespondToNeed<TBlackboard extends RespondToNeedBlackbo
                 this.respondingNeeds.delete(needId);
                 this.onDeliveryComplete(bot, bb, needId);
             }
+        }
+
+        // If we have pending offers, keep running (don't fail immediately)
+        if (hasPendingOffers) {
+            return 'running';
         }
 
         return 'failure';

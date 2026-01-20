@@ -23,6 +23,25 @@ export class CraftAxe implements BehaviorNode {
 
         bb.lastAction = 'craft_axe';
 
+        // Sync blackboard with actual inventory first (blackboard may be out of date)
+        const inv = bot.inventory.items();
+        bb.logCount = inv.filter(i => i.name.includes('_log')).reduce((s, i) => s + i.count, 0);
+        bb.plankCount = inv.filter(i => i.name.endsWith('_planks')).reduce((s, i) => s + i.count, 0);
+        bb.stickCount = inv.filter(i => i.name === 'stick').reduce((s, i) => s + i.count, 0);
+
+        // Calculate total plank-equivalent materials
+        // 1 log = 4 planks, 2 planks = 4 sticks
+        // For axe we need: 3 planks + 2 sticks = 3 planks + 1 plank = 4 planks minimum
+        // Plus crafting table (4 planks) if none exists = 8 planks = 2 logs
+        const plankEquivalent = (bb.logCount * 4) + bb.plankCount + Math.floor(bb.stickCount / 2);
+        if (plankEquivalent < 9) {
+            bb.log?.debug(
+                { logCount: bb.logCount, plankCount: bb.plankCount, stickCount: bb.stickCount, plankEquivalent },
+                '[Lumberjack] CraftAxe: Insufficient materials for axe (need ~9 plank-equivalent)'
+            );
+            return 'failure';
+        }
+
         // First, ensure we have planks
         if (bb.plankCount < 3) {
             // Try to craft planks from logs
@@ -37,6 +56,9 @@ export class CraftAxe implements BehaviorNode {
             // Update counts
             bb.plankCount = bot.inventory.items()
                 .filter(i => i.name.endsWith('_planks'))
+                .reduce((s, i) => s + i.count, 0);
+            bb.logCount = bot.inventory.items()
+                .filter(i => i.name.includes('_log'))
                 .reduce((s, i) => s + i.count, 0);
         }
 
@@ -53,6 +75,9 @@ export class CraftAxe implements BehaviorNode {
             // Update counts
             bb.stickCount = bot.inventory.items()
                 .filter(i => i.name === 'stick')
+                .reduce((s, i) => s + i.count, 0);
+            bb.plankCount = bot.inventory.items()
+                .filter(i => i.name.endsWith('_planks'))
                 .reduce((s, i) => s + i.count, 0);
         }
 
