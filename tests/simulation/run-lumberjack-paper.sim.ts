@@ -89,7 +89,7 @@ async function main() {
   console.log('  🤖 Bot at (0, 65, 0)');
   console.log('  🪓 Inventory: iron_axe x1');
   console.log('  🌐 Viewer: http://localhost:3000');
-  console.log('  🎮 You can also join with Minecraft client on localhost:25566');
+  console.log('  🎮 Join with Minecraft client: localhost:25566 (auto-op enabled)');
   console.log('');
 
   // ═══════════════════════════════════════════════════════════════════════

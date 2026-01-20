@@ -159,11 +159,46 @@ export class PaperSimulationServer {
   /**
    * Set a block via RCON.
    */
-  async setBlock(pos: Vec3, blockName: string): Promise<void> {
+  async setBlock(pos: Vec3, blockName: string, options?: { signText?: string }): Promise<void> {
     const x = Math.floor(pos.x);
     const y = Math.floor(pos.y);
     const z = Math.floor(pos.z);
+
+    // Handle signs with text
+    if (options?.signText && blockName.includes('sign')) {
+      await this.placeSign(pos, blockName, options.signText);
+      return;
+    }
+
     await this.rconCommand(`setblock ${x} ${y} ${z} minecraft:${blockName} replace`);
+  }
+
+  /**
+   * Place a sign with text.
+   */
+  private async placeSign(pos: Vec3, blockName: string, text: string): Promise<void> {
+    const x = Math.floor(pos.x);
+    const y = Math.floor(pos.y);
+    const z = Math.floor(pos.z);
+
+    // First place the sign block
+    await this.rconCommand(`setblock ${x} ${y} ${z} minecraft:${blockName} replace`);
+
+    // Split text into lines (max 4 lines for a sign)
+    const lines = text.split('\n').slice(0, 4);
+    while (lines.length < 4) lines.push('');
+
+    // Set each line individually using /data modify (most reliable)
+    for (let i = 0; i < 4; i++) {
+      const line = lines[i] || '';
+      if (line) {
+        // Escape for JSON string
+        const escaped = line.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        await this.rconCommand(
+          `data modify block ${x} ${y} ${z} front_text.messages[${i}] set value '{"text":"${escaped}"}'`
+        );
+      }
+    }
   }
 
   /**
@@ -330,33 +365,22 @@ export class PaperSimulationServer {
     if (!this.mockWorld || !this.rcon) return;
 
     const blocks = this.mockWorld.getAllBlocks();
-    console.log(`[PaperSim] Placing ${blocks.length} blocks...`);
+    const nonAirBlocks = blocks.filter(b => b.name !== 'air');
+    console.log(`[PaperSim] Placing ${nonAirBlocks.length} blocks...`);
 
-    // Group blocks by type for more efficient /fill commands where possible
-    const blocksByType = new Map<string, Vec3[]>();
-    for (const block of blocks) {
-      if (block.name === 'air') continue;
-
-      const existing = blocksByType.get(block.name) || [];
-      existing.push(block.position);
-      blocksByType.set(block.name, existing);
-    }
-
-    // Place blocks (could be optimized with batching)
+    // Place blocks individually to preserve metadata (like signText)
     let placed = 0;
-    for (const [blockName, positions] of blocksByType) {
-      for (const pos of positions) {
-        try {
-          await this.setBlock(pos, blockName);
-          placed++;
+    for (const block of nonAirBlocks) {
+      try {
+        await this.setBlock(block.position, block.name, { signText: block.signText });
+        placed++;
 
-          // Progress update every 100 blocks
-          if (placed % 100 === 0) {
-            console.log(`[PaperSim] Placed ${placed}/${blocks.length} blocks...`);
-          }
-        } catch (err) {
-          console.warn(`[PaperSim] Failed to place ${blockName} at ${pos}: ${err}`);
+        // Progress update every 100 blocks
+        if (placed % 100 === 0) {
+          console.log(`[PaperSim] Placed ${placed}/${nonAirBlocks.length} blocks...`);
         }
+      } catch (err) {
+        console.warn(`[PaperSim] Failed to place ${block.name} at ${block.position}: ${err}`);
       }
     }
 
@@ -409,7 +433,50 @@ export class PaperSimulationServer {
     // Op the bot for any needed permissions
     await this.rconCommand('op SimBot');
 
+    // Set up auto-op for any player who joins (test server convenience)
+    this.setupAutoOp();
+
     await this.delay(500);
+  }
+
+  /**
+   * Automatically op any player who joins the server.
+   * This makes it easy to use admin commands when testing.
+   */
+  private setupAutoOp(): void {
+    if (!this.bot) return;
+
+    // Listen for player join messages and op them
+    this.bot.on('message', async (message) => {
+      const text = message.toString();
+      // Match "PlayerName joined the game"
+      const joinMatch = text.match(/^(\w+) joined the game$/);
+      if (joinMatch) {
+        const playerName = joinMatch[1];
+        if (playerName !== 'SimBot') {
+          console.log(`[PaperSim] Auto-opping player: ${playerName}`);
+          try {
+            await this.rconCommand(`op ${playerName}`);
+          } catch (err) {
+            // Ignore errors (player might have left)
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * Op a player by username.
+   */
+  async opPlayer(username: string): Promise<void> {
+    await this.rconCommand(`op ${username}`);
+  }
+
+  /**
+   * Deop a player by username.
+   */
+  async deopPlayer(username: string): Promise<void> {
+    await this.rconCommand(`deop ${username}`);
   }
 
   private async startViewer(): Promise<void> {
