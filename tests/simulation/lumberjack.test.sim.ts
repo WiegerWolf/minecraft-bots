@@ -33,7 +33,7 @@ async function testChopsNearbyTree() {
   createOakTree(world, forestCenter.offset(-2, 0, 3), 4);
 
   // Village center sign so bot knows where it is
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),  // Offset from sign
@@ -46,7 +46,7 @@ async function testChopsNearbyTree() {
 
   // Start the lumberjack role
   const role = new LumberjackRole();
-  role.start(test.bot);
+  role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   // Wait for bot to collect some logs
   await test.waitForInventory('oak_log', 1, {
@@ -83,7 +83,7 @@ async function testIgnoresStumps() {
   createStump(world, new Vec3(8, 64, -5));
 
   // Village sign
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),  // Offset from sign
@@ -94,7 +94,7 @@ async function testIgnoresStumps() {
   await test.wait(2000, 'World loading');
 
   const role = new LumberjackRole();
-  role.start(test.bot);
+  role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   // Wait some time - bot should NOT collect logs from stumps
   await test.wait(15000, 'Waiting to verify bot ignores stumps');
@@ -131,7 +131,7 @@ async function testPrefersForest() {
   createOakTree(world, forestCenter.offset(2, 0, -2), 4);
   createOakTree(world, forestCenter.offset(-3, 0, -1), 5);
 
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),  // Offset from sign
@@ -143,7 +143,7 @@ async function testPrefersForest() {
   await test.wait(2000, 'World loading');
 
   const role = new LumberjackRole();
-  role.start(test.bot);
+  role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   // Wait for bot to start moving
   await test.wait(10000, 'Letting bot decide where to go');
@@ -175,7 +175,7 @@ async function testCollectsDrops() {
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
   createOakTree(world, new Vec3(10, 64, 10), 5);
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),  // Offset from sign
@@ -189,7 +189,7 @@ async function testCollectsDrops() {
   await test.rcon('summon item 2 65 2 {Item:{id:"minecraft:oak_log",count:3}}');
 
   const role = new LumberjackRole();
-  role.start(test.bot);
+  role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   // Bot should pick up the dropped logs
   await test.waitForInventory('oak_log', 3, {

@@ -34,7 +34,7 @@ async function main() {
   world.fill(new Vec3(-30, 63, -30), new Vec3(30, 63, 30), 'grass_block');
 
   // === VILLAGE CENTER ===
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   // === FOREST AREA ===
   createOakTree(world, new Vec3(15, 64, 15), 5);

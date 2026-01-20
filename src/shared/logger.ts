@@ -337,6 +337,87 @@ export function createChildLogger(parent: Logger, component: string): Logger {
 }
 
 /**
+ * Options for creating a test logger.
+ */
+export interface TestLoggerOptions {
+  /** Bot/test name for identification */
+  botName: string;
+  /** Role name (e.g., 'farmer', 'lumberjack') */
+  role: string;
+  /** Label for log file (defaults to role) */
+  roleLabel?: string;
+  /** Test session ID (auto-generated if not provided) */
+  sessionId?: string;
+  /** Log level (defaults to 'debug') */
+  logLevel?: string;
+  /** Force pretty printing even if not TTY (default: true for tests) */
+  forcePretty?: boolean;
+}
+
+/**
+ * Create a logger for simulation tests.
+ *
+ * Similar to createBotLogger but:
+ * - Always uses pretty printing by default (tests should be readable)
+ * - Session ID defaults to 'test-SESSION_TIMESTAMP'
+ * - Suitable for use in SimulationTest
+ *
+ * Returns both the logger and the log file path for assertions.
+ */
+export function createTestLogger(options: TestLoggerOptions): { logger: Logger; logFile: string } {
+  const {
+    botName,
+    role,
+    roleLabel = role,
+    sessionId = `test-${generateSessionId()}`,
+    logLevel = process.env.LOG_LEVEL || 'debug',
+    forcePretty = true,
+  } = options;
+
+  const logDir = getLogDir(sessionId);
+  const logFile = path.join(logDir, `${roleLabel}.log`);
+
+  // Create file stream for JSON logs
+  const fileStream = fs.createWriteStream(logFile, { flags: 'a' });
+
+  // Create multi-destination transport
+  const streams: pino.StreamEntry[] = [];
+
+  // Pretty console output (forced for tests, or when TTY)
+  if (forcePretty || process.stdout.isTTY) {
+    streams.push({
+      level: logLevel as pino.Level,
+      stream: createPrettyStream(),
+    });
+  } else {
+    streams.push({
+      level: logLevel as pino.Level,
+      stream: process.stdout,
+    });
+  }
+
+  // Always write JSON to file
+  streams.push({
+    level: logLevel as pino.Level,
+    stream: fileStream,
+  });
+
+  const logger = pino(
+    {
+      level: logLevel,
+      base: {
+        botName,
+        role,
+      },
+      timestamp: pino.stdTimeFunctions.isoTime,
+    },
+    pino.multistream(streams)
+  );
+
+  return { logger, logFile };
+}
+
+/**
  * Create a simple console-only logger for the manager process.
  * This is used by src/index.ts which manages multiple bots.
  */

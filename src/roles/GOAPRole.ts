@@ -435,8 +435,11 @@ export abstract class GOAPRole implements Role {
 
   /**
    * Emit current bot state to stdout for the TUI manager.
+   * Suppressed during tests (when SUPPRESS_TUI_STATE env var is set).
    */
   private emitState(): void {
+    // Skip TUI state emission during tests
+    if (process.env.SUPPRESS_TUI_STATE) return;
     if (!this.arbiter || !this.executor || !this.currentWorldState) return;
 
     const currentGoal = this.arbiter.getCurrentGoal();

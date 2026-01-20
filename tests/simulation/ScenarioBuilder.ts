@@ -123,7 +123,9 @@ export class ScenarioBuilder {
    * Add a village center sign.
    */
   villageSign(pos: Vec3): this {
-    this.world.setBlock(pos, 'oak_sign', { signText: 'VILLAGE CENTER' });
+    this.world.setBlock(pos, 'oak_sign', {
+      signText: `[VILLAGE]\nX: ${pos.x}\nY: ${pos.y}\nZ: ${pos.z}`,
+    });
     this.descriptionLines.push(`Village Sign: at (${pos.x}, ${pos.y}, ${pos.z})`);
     return this;
   }
@@ -133,7 +135,7 @@ export class ScenarioBuilder {
    */
   farmSign(pos: Vec3, farmCenter: Vec3): this {
     this.world.setBlock(pos, 'oak_sign', {
-      signText: `FARM\n${farmCenter.x}, ${farmCenter.y}, ${farmCenter.z}`,
+      signText: `[FARM]\nX: ${farmCenter.x}\nY: ${farmCenter.y}\nZ: ${farmCenter.z}`,
     });
     this.descriptionLines.push(`Farm Sign: at (${pos.x}, ${pos.y}, ${pos.z}) -> (${farmCenter.x}, ${farmCenter.z})`);
     return this;
@@ -382,7 +384,7 @@ export function landscaperScenario(): ScenarioResult {
     .block(new Vec3(17, 63, 17), 'water')
     .farmSign(new Vec3(2, 64, 0), new Vec3(17, 63, 17))
     // Dirtpit sign for gathering
-    .block(new Vec3(4, 64, 0), 'oak_sign', { signText: 'DIRTPIT\n-20, 63, -20' })
+    .block(new Vec3(4, 64, 0), 'oak_sign', { signText: '[DIRTPIT]\nX: -20\nY: 63\nZ: -20' })
     .fill(new Vec3(-25, 63, -25), new Vec3(-15, 63, -15), 'dirt') // Dirtpit area
     // Storage and crafting
     .chest(new Vec3(-5, 64, 0))
@@ -409,8 +411,8 @@ export function tradingScenario(): ScenarioResult {
     // Shared storage
     .chest(new Vec3(5, 64, 0))
     .craftingTable(new Vec3(5, 64, 2))
-    .block(new Vec3(2, 64, 0), 'oak_sign', { signText: 'CHEST\n5, 64, 0' })
-    .block(new Vec3(4, 64, 0), 'oak_sign', { signText: 'CRAFT\n5, 64, 2' })
+    .block(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: 5\nY: 64\nZ: 0' })
+    .block(new Vec3(4, 64, 0), 'oak_sign', { signText: '[CRAFT]\nX: 5\nY: 64\nZ: 2' })
     // Forest for lumberjack
     .forest({ center: new Vec3(25, 64, 0), trees: 5 })
     // Farm for farmer

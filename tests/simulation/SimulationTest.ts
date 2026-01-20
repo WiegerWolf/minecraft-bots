@@ -33,6 +33,7 @@ import { Vec3 } from 'vec3';
 import type { Bot } from 'mineflayer';
 import { PaperSimulationServer, type SimulationOptions } from './PaperSimulationServer';
 import { MockWorld } from '../mocks/MockWorld';
+import { createTestLogger, generateSessionId, type Logger } from '../../src/shared/logger';
 
 export interface WaitOptions {
   /** Timeout in milliseconds (default: 30000) */
@@ -57,6 +58,39 @@ export interface AssertionResult {
   error?: string;
 }
 
+// Shared session ID for all tests in a single run
+// Set by runSimulationTests() or initTestSession()
+let currentTestSessionId: string | null = null;
+
+/**
+ * Initialize a test session with a shared session ID.
+ * Called automatically by runSimulationTests(), but can be called
+ * manually for standalone tests.
+ */
+export function initTestSession(): string {
+  if (!currentTestSessionId) {
+    currentTestSessionId = `test-${generateSessionId()}`;
+    // Suppress TUI state emission during tests
+    process.env.SUPPRESS_TUI_STATE = 'true';
+  }
+  return currentTestSessionId;
+}
+
+/**
+ * Get the current test session ID.
+ */
+export function getTestSessionId(): string {
+  return currentTestSessionId || initTestSession();
+}
+
+/**
+ * Clear the test session (for cleanup between test suite runs).
+ */
+export function clearTestSession(): void {
+  currentTestSessionId = null;
+  delete process.env.SUPPRESS_TUI_STATE;
+}
+
 export class SimulationTest {
   readonly name: string;
   private server: PaperSimulationServer | null = null;
@@ -65,8 +99,51 @@ export class SimulationTest {
   private startTime: number = 0;
   private failed: boolean = false;
 
+  // Logging
+  private _sessionId: string;
+  private _logger: Logger | null = null;
+  private _logFile: string | null = null;
+
   constructor(name: string) {
     this.name = name;
+    // Use shared session ID for all tests in a run
+    this._sessionId = getTestSessionId();
+  }
+
+  /**
+   * Get the test session ID for logs.
+   */
+  get sessionId(): string {
+    return this._sessionId;
+  }
+
+  /**
+   * Get the logger instance for this test.
+   * Use this when starting roles: role.start(test.bot, { logger: test.logger })
+   */
+  get logger(): Logger | null {
+    return this._logger;
+  }
+
+  /**
+   * Get the log file path for verification.
+   */
+  get logFile(): string | null {
+    return this._logFile;
+  }
+
+  /**
+   * Create a logger for a specific role in this test.
+   * Useful when testing multiple roles or creating role-specific loggers.
+   */
+  createRoleLogger(roleName: string, roleLabel?: string): Logger {
+    const result = createTestLogger({
+      botName: 'SimBot',
+      role: roleName,
+      roleLabel: roleLabel || roleName,
+      sessionId: this._sessionId,
+    });
+    return result.logger;
   }
 
   /**
@@ -89,11 +166,21 @@ export class SimulationTest {
    * Set up the test scenario.
    */
   async setup(world: MockWorld, options?: SimulationOptions): Promise<void> {
-    console.log(`\n${'═'.repeat(60)}`);
+    console.log(`\n${'─'.repeat(60)}`);
     console.log(`TEST: ${this.name}`);
-    console.log(`${'═'.repeat(60)}\n`);
+    console.log(`${'─'.repeat(60)}\n`);
 
     this.startTime = Date.now();
+
+    // Create default test logger
+    const logResult = createTestLogger({
+      botName: 'SimBot',
+      role: 'test',
+      roleLabel: this.name.replace(/\s+/g, '-').toLowerCase(),
+      sessionId: this._sessionId,
+    });
+    this._logger = logResult.logger;
+    this._logFile = logResult.logFile;
     this.assertions = [];
     this.failed = false;
 
@@ -424,12 +511,16 @@ export class SimulationTest {
 export async function runSimulationTests(
   tests: Array<() => Promise<TestResult>>
 ): Promise<{ passed: number; failed: number; results: TestResult[] }> {
+  // Initialize shared session for all tests in this run
+  const sessionId = initTestSession();
+
   const results: TestResult[] = [];
   let passed = 0;
   let failed = 0;
 
   console.log('\n' + '═'.repeat(60));
   console.log('SIMULATION TEST SUITE');
+  console.log(`Session: ${sessionId}`);
   console.log('═'.repeat(60) + '\n');
 
   for (const testFn of tests) {
@@ -455,7 +546,11 @@ export async function runSimulationTests(
 
   console.log('\n' + '═'.repeat(60));
   console.log(`SUMMARY: ${passed} passed, ${failed} failed`);
+  console.log(`Logs: logs/${sessionId}/`);
   console.log('═'.repeat(60) + '\n');
+
+  // Clean up session for next run
+  clearTestSession();
 
   return { passed, failed, results };
 }

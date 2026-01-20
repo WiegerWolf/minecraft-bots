@@ -18,6 +18,8 @@ import { PaperSimulationServer } from './PaperSimulationServer';
 import { MockWorld, createOakTree } from '../mocks/MockWorld';
 import { LumberjackRole } from '../../src/roles/lumberjack/LumberjackRole';
 import { GOAPFarmingRole } from '../../src/roles/GOAPFarmingRole';
+import { createTestLogger } from '../../src/shared/logger';
+import { getTestSessionId, initTestSession } from './SimulationTest';
 
 // @ts-ignore
 import mineflayer from 'mineflayer';
@@ -39,18 +41,34 @@ class MultiBotTest {
   private assertions: Array<{ description: string; passed: boolean; error?: string }> = [];
   private startTime: number = 0;
   private failed: boolean = false;
+  private _sessionId: string;
 
   constructor(name: string) {
     this.name = name;
+    // Use shared session ID for all tests in a run
+    this._sessionId = getTestSessionId();
+  }
+
+  /**
+   * Create a logger for a specific role in this test.
+   */
+  createRoleLogger(roleName: string, roleLabel?: string) {
+    const result = createTestLogger({
+      botName: roleName,
+      role: roleName.toLowerCase(),
+      roleLabel: roleLabel || roleName,
+      sessionId: this._sessionId,
+    });
+    return result.logger;
   }
 
   /**
    * Set up the test world (only first bot uses world sync).
    */
   async setup(world: MockWorld): Promise<void> {
-    console.log(`\n${'═'.repeat(60)}`);
+    console.log(`\n${'─'.repeat(60)}`);
     console.log(`TEST: ${this.name}`);
-    console.log(`${'═'.repeat(60)}\n`);
+    console.log(`${'─'.repeat(60)}\n`);
 
     this.startTime = Date.now();
     this.assertions = [];
@@ -257,8 +275,8 @@ async function testSharedChestExchange() {
   createOakTree(world, forestCenter.offset(-2, 0, 3), 4);
 
   // Village infrastructure
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
-  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: 'CHEST\n-5, 64, 0' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: -5\nY: 64\nZ: 0' });
   world.setBlock(new Vec3(-5, 64, 0), 'chest');
 
   // Water for farmer
@@ -275,7 +293,7 @@ async function testSharedChestExchange() {
 
   // Start lumberjack role
   const lumberjackRole = new LumberjackRole();
-  lumberjackRole.start(lumberjackBot);
+  lumberjackRole.start(lumberjackBot, { logger: test.createRoleLogger('lumberjack') });
 
   // Wait for lumberjack to collect some logs
   await test.waitUntil(
@@ -310,7 +328,7 @@ async function testVillageChatCommunication() {
 
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world);
 
@@ -354,7 +372,7 @@ async function testTradeProtocol() {
 
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world);
 
@@ -404,12 +422,16 @@ async function testTradeProtocol() {
 async function runMultiBotTests(
   tests: Array<() => Promise<MultiBotTestResult>>
 ): Promise<{ passed: number; failed: number }> {
+  // Initialize shared session for all tests in this run
+  const sessionId = initTestSession();
+
   const results: MultiBotTestResult[] = [];
   let passed = 0;
   let failed = 0;
 
   console.log('\n' + '═'.repeat(60));
   console.log('MULTI-BOT SIMULATION TEST SUITE');
+  console.log(`Session: ${sessionId}`);
   console.log('═'.repeat(60) + '\n');
 
   for (const testFn of tests) {
@@ -429,6 +451,7 @@ async function runMultiBotTests(
 
   console.log('\n' + '═'.repeat(60));
   console.log(`SUMMARY: ${passed} passed, ${failed} failed`);
+  console.log(`Logs: logs/${sessionId}/`);
   console.log('═'.repeat(60) + '\n');
 
   return { passed, failed };

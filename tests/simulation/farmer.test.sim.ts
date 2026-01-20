@@ -41,10 +41,10 @@ async function testHarvestsMatureWheat() {
   }
 
   // Village sign so bot knows where it is
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   // Farm sign pointing to the farm
-  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: 'FARM\n10, 63, 10' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 10\nY: 63\nZ: 10' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),
@@ -57,7 +57,7 @@ async function testHarvestsMatureWheat() {
 
   // Start the farming role
   const role = new GOAPFarmingRole();
-  role.start(test.bot, { spawnPosition: new Vec3(0, 64, 0) });
+  role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
   // Wait for bot to harvest wheat
   await test.waitForInventory('wheat', 1, {
@@ -96,8 +96,8 @@ async function testPlantsSeeds() {
     }
   }
 
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
-  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: 'FARM\n10, 63, 10' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 10\nY: 63\nZ: 10' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),
@@ -111,7 +111,7 @@ async function testPlantsSeeds() {
   await test.wait(2000, 'World loading');
 
   const role = new GOAPFarmingRole();
-  role.start(test.bot, { spawnPosition: new Vec3(0, 64, 0) });
+  role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
   // Wait for bot to plant seeds (seed count should decrease)
   const initialSeeds = test.botInventoryCount('wheat_seeds');
@@ -148,8 +148,8 @@ async function testTillsGround() {
   world.setBlock(new Vec3(10, 63, 10), 'water');
   // The grass_block fill already created the surrounding area
 
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
-  // No farm sign - bot needs to establish farm center
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 10\nY: 63\nZ: 10' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),
@@ -163,7 +163,7 @@ async function testTillsGround() {
   await test.wait(2000, 'World loading');
 
   const role = new GOAPFarmingRole();
-  role.start(test.bot, { spawnPosition: new Vec3(0, 64, 0) });
+  role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
   // Wait for bot to till some ground (creates farmland)
   // Check for farmland blocks near the water source
@@ -212,7 +212,7 @@ async function testGathersSeeds() {
   // Water source for eventual farm
   world.setBlock(new Vec3(15, 63, 15), 'water');
 
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),
@@ -224,7 +224,7 @@ async function testGathersSeeds() {
   await test.wait(2000, 'World loading');
 
   const role = new GOAPFarmingRole();
-  role.start(test.bot, { spawnPosition: new Vec3(0, 64, 0) });
+  role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
   // Wait for bot to gather at least a few seeds
   await test.waitForInventory('wheat_seeds', 3, {
@@ -245,7 +245,7 @@ async function testCollectsDrops() {
 
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),
@@ -259,7 +259,7 @@ async function testCollectsDrops() {
   await test.rcon('summon item 2 65 2 {Item:{id:"minecraft:wheat_seeds",count:10}}');
 
   const role = new GOAPFarmingRole();
-  role.start(test.bot, { spawnPosition: new Vec3(0, 64, 0) });
+  role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
   // Bot should pick up the dropped seeds
   await test.waitForInventory('wheat_seeds', 10, {
@@ -287,8 +287,8 @@ async function testCraftsHoe() {
   // Crafting table for the bot to use
   world.setBlock(new Vec3(5, 64, 0), 'crafting_table');
 
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
-  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: 'CRAFT\n5, 64, 0' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CRAFT]\nX: 5\nY: 64\nZ: 0' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),
@@ -304,7 +304,7 @@ async function testCraftsHoe() {
   await test.wait(2000, 'World loading');
 
   const role = new GOAPFarmingRole();
-  role.start(test.bot, { spawnPosition: new Vec3(0, 64, 0) });
+  role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
   // Wait for bot to craft a hoe
   await test.waitUntil(
@@ -335,8 +335,8 @@ async function testDepositsToChest() {
   // Chest for deposits
   world.setBlock(new Vec3(-5, 64, 0), 'chest');
 
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: 'VILLAGE CENTER' });
-  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: 'CHEST\n-5, 64, 0' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: -5\nY: 64\nZ: 0' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),
@@ -352,7 +352,7 @@ async function testDepositsToChest() {
   const initialWheat = test.botInventoryCount('wheat');
 
   const role = new GOAPFarmingRole();
-  role.start(test.bot, { spawnPosition: new Vec3(0, 64, 0) });
+  role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
   // Wait for bot to deposit wheat (inventory should decrease)
   await test.waitUntil(
