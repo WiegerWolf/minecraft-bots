@@ -203,14 +203,27 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
                 return 'failure';
             }
 
-            // After pathfinding, try to walk into the item
+            // After pathfinding, walk directly into the item
             const newDist = bot.entity.position.distanceTo(drop.position);
             if (newDist < goalRadius + 1) {
                 const direction = drop.position.minus(bot.entity.position);
                 const yaw = Math.atan2(-direction.x, -direction.z);
                 await bot.look(yaw, 0);
+
+                // Walk toward item, stopping when close enough or item picked up
                 bot.setControlState('forward', true);
-                await sleep(400);
+                const startTime = Date.now();
+                const maxWalkTime = 800;
+
+                while (Date.now() - startTime < maxWalkTime) {
+                    const currentDist = bot.entity.position.distanceTo(drop.position);
+                    if (currentDist < 0.5) break; // Close enough for pickup
+                    // Check if item was already picked up
+                    const exists = Object.values(bot.entities).some(e => e.id === dropId);
+                    if (!exists) break;
+                    await sleep(50);
+                }
+
                 bot.clearControlStates();
             }
 
