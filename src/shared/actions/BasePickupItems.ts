@@ -234,8 +234,9 @@ export abstract class BasePickupItems<TBlackboard extends PickupItemsBlackboard>
                     new GoalNear(drop.position.x, drop.position.y, drop.position.z, goalRadius),
                     {
                         timeoutMs: this.config.pathfindingTimeoutMs,
-                        // Enable knight's move recovery for any significant distance
-                        knightMoveRecovery: dist > 2,
+                        // Disable knight's move recovery for item pickup - drops are usually nearby
+                        // and pathfinding failures are transient. The L-shaped escape is too disruptive.
+                        knightMoveRecovery: false,
                     }
                 );
 
