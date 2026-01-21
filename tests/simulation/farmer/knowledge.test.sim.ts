@@ -195,6 +195,111 @@ async function testPlacesFarmSign() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TEST: Crafts sign from materials before placing FARM sign
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function testCraftsSignFromMaterials() {
+  const test = new SimulationTest('Crafts sign from materials before placing');
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+
+  // Water source where bot will establish farm center
+  const waterPos = new Vec3(10, 63, 10);
+  world.setBlock(waterPos, 'water');
+
+  // Village sign and crafting table sign
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CRAFT]\nX: 5\nY: 64\nZ: 0' });
+
+  // Place the actual crafting table
+  world.setBlock(new Vec3(5, 64, 0), 'crafting_table');
+
+  const spawnPos = new Vec3(0, 64, 0);
+
+  await test.setup(world, {
+    botPosition: spawnPos.clone(),
+    botInventory: [
+      { name: 'iron_hoe', count: 1 },
+      { name: 'wheat_seeds', count: 16 },
+      // Materials for sign crafting (6 planks + 1 stick = 3 signs)
+      { name: 'oak_planks', count: 8 },
+      { name: 'stick', count: 4 },
+      // NO signs - bot must craft them
+    ],
+  });
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  // Collect chat messages from the bot
+  const chatMessages: string[] = [];
+  test.bot.on('chat', (username: string, message: string) => {
+    if (username === test.bot.username) {
+      chatMessages.push(message);
+    }
+  });
+
+  const role = new GOAPFarmingRole();
+  role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: spawnPos.clone() });
+
+  const bb = () => (role as any).blackboard;
+
+  // Wait for bot to study signs first
+  await test.waitUntil(
+    () => bb()?.hasStudiedSigns === true,
+    { timeout: 30000, message: 'Bot should study spawn signs' }
+  );
+
+  // Verify bot learned crafting table location
+  const craftingTable = bb()?.sharedCraftingTable;
+  test.assert(
+    craftingTable?.x === 5 && craftingTable?.y === 64 && craftingTable?.z === 0,
+    'Bot should learn crafting table at (5, 64, 0)'
+  );
+
+  // Wait for farm center to be established
+  await test.waitUntil(
+    () => bb()?.farmCenter !== null,
+    { timeout: 45000, message: 'Bot should establish farm center near water' }
+  );
+
+  // Verify no signs in inventory initially (bot should have used planks to craft)
+  const initialSignCount = test.botInventoryCount('oak_sign');
+  test.assert(initialSignCount === 0, 'Bot should start with no signs in inventory');
+
+  // Wait for FARM sign to be placed (bot must craft sign first)
+  await test.waitUntil(
+    () => {
+      const signWritten = bb()?.farmSignWritten === true;
+      const hasAnnouncement = chatMessages.some(msg =>
+        msg.toLowerCase().includes('placed') && msg.toLowerCase().includes('farm') && msg.toLowerCase().includes('sign')
+      );
+      return signWritten && hasAnnouncement;
+    },
+    { timeout: 90000, message: 'Bot should craft sign and place FARM sign' }
+  );
+
+  // Verify chat announcement
+  const hasSignAnnouncement = chatMessages.some(msg =>
+    msg.includes('Placed a FARM sign')
+  );
+  test.assert(hasSignAnnouncement, 'Bot should announce "Placed a FARM sign at spawn!"');
+
+  // Verify planks were consumed for crafting (started with 8, used 6)
+  const remainingPlanks = test.botInventoryCount('oak_planks');
+  test.assert(remainingPlanks <= 2, `Planks should be consumed for sign crafting (remaining: ${remainingPlanks})`);
+
+  // Verify sign was placed
+  const signPositions = bb()?.signPositions as Map<string, Vec3> | undefined;
+  const farmSignPos = signPositions?.get('FARM');
+  test.assert(farmSignPos !== undefined, 'Blackboard signPositions should have FARM entry');
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TEST: Learns village infrastructure from signs
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -283,6 +388,7 @@ async function testLearnsInfrastructure() {
 const ALL_TESTS: Record<string, () => Promise<any>> = {
   'read-farm': testReadsFarmSign,
   'place-farm-sign': testPlacesFarmSign,
+  'craft-sign': testCraftsSignFromMaterials,
   'infrastructure': testLearnsInfrastructure,
 };
 
