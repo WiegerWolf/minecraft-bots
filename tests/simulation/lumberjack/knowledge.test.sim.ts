@@ -433,10 +433,14 @@ async function testAvoidsFarmWhenPlanting() {
     }
   }
 
+  // Forest is CLOSE to the farm (only 8 blocks away) - this tests that bot
+  // properly avoids farm when planting even when working in nearby forest
+  const forestCenter = new Vec3(18, 64, 10);
+
   // Signs including FARM sign
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
   world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 10\nY: 63\nZ: 10' });
-  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[FOREST]\nX: -15\nY: 64\nZ: -15' });
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[FOREST]\nX: 18\nY: 64\nZ: 10' });
 
   await test.setup(world, {
     botPosition: new Vec3(0, 64, 0),
