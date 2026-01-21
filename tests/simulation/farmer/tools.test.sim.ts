@@ -114,12 +114,66 @@ async function testObtainsHoeFromStorage() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TEST: Crafts hoe from logs in storage
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function testCraftsHoeFromLogs() {
+  const test = new SimulationTest('Crafts hoe from logs in storage');
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+
+  // Water source
+  world.setBlock(new Vec3(10, 63, 10), 'water');
+
+  // Crafting table (needed for hoe recipe)
+  world.setBlock(new Vec3(5, 64, 0), 'crafting_table');
+
+  // Chest that will contain logs
+  world.setBlock(new Vec3(-5, 64, 0), 'chest');
+
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: -5\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[CRAFT]\nX: 5\nY: 64\nZ: 0' });
+
+  await test.setup(world, {
+    botPosition: new Vec3(3, 65, 3),
+    botInventory: [{ name: 'wheat_seeds', count: 20 }],
+  });
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  // Put logs in the chest (2 logs = 8 planks, enough for hoe + sticks)
+  await test.rcon('data merge block -5 64 0 {Items:[{Slot:0b,id:"minecraft:oak_log",count:2}]}');
+
+  const role = new GOAPFarmingRole();
+  role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
+
+  // Bot should: withdraw logs → craft planks → craft sticks → craft hoe
+  await test.waitUntil(
+    () => {
+      const items = test.bot.inventory.items();
+      return items.some(item => item.name.includes('_hoe'));
+    },
+    {
+      timeout: 120000,
+      message: 'Bot should craft hoe from logs',
+    }
+  );
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ALL_TESTS: Record<string, () => Promise<any>> = {
   'craft': testCraftsHoe,
   'storage': testObtainsHoeFromStorage,
+  'logs-to-hoe': testCraftsHoeFromLogs,
 };
 
 async function main() {
