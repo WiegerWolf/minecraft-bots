@@ -31,10 +31,40 @@ async function testCraftingTableOnValidSurface() {
   const test = new SimulationTest('Crafting table placed on valid surface');
 
   const world = new MockWorld();
+
+  // Base layer of grass for walking
   world.fill(new Vec3(-15, 63, -15), new Vec3(15, 63, 15), 'grass_block');
 
-  // Village sign
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 5\nY: 64\nZ: 5' });
+  const villageCenter = new Vec3(5, 64, 5);
+
+  // Fill village area with INVALID surfaces that bot should NOT place on
+  // Water around the village center
+  world.setBlock(new Vec3(4, 63, 5), 'water');   // -1, 0
+  world.setBlock(new Vec3(5, 63, 4), 'water');   // 0, -1
+  world.setBlock(new Vec3(5, 63, 6), 'water');   // 0, +1
+
+  // Leaves (not a valid surface)
+  world.setBlock(new Vec3(6, 63, 5), 'oak_leaves');  // +1, 0
+  world.setBlock(new Vec3(4, 63, 4), 'oak_leaves');  // -1, -1
+  world.setBlock(new Vec3(6, 63, 6), 'oak_leaves');  // +1, +1
+
+  // Leave only a couple valid spots: (4, 64, 6) and (6, 64, 4) on grass
+  // These are at (-1, +1) and (+1, -1) diagonals from village center
+
+  // Track invalid positions to verify bot avoided them
+  const invalidPositions = [
+    new Vec3(4, 64, 5),   // over water
+    new Vec3(5, 64, 4),   // over water
+    new Vec3(5, 64, 6),   // over water
+    new Vec3(6, 64, 5),   // over leaves
+    new Vec3(4, 64, 4),   // over leaves
+    new Vec3(6, 64, 6),   // over leaves
+  ];
+
+  // Village sign at spawn
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', {
+    signText: `[VILLAGE]\nX: ${villageCenter.x}\nY: ${villageCenter.y}\nZ: ${villageCenter.z}`
+  });
 
   const spawnPos = new Vec3(0, 64, 0);
 
@@ -62,6 +92,12 @@ async function testCraftingTableOnValidSurface() {
 
   const craftingTablePos = bb()?.sharedCraftingTable as Vec3;
   test.assert(craftingTablePos !== null, 'Crafting table position should be set');
+
+  // Verify it was NOT placed on an invalid surface
+  const placedOnInvalid = invalidPositions.some(pos =>
+    craftingTablePos.x === pos.x && craftingTablePos.y === pos.y && craftingTablePos.z === pos.z
+  );
+  test.assert(!placedOnInvalid, 'Crafting table should not be placed over water or leaves');
 
   // Verify it's on a valid surface
   const groundBlock = test.blockAt(craftingTablePos.offset(0, -1, 0));
@@ -209,8 +245,33 @@ async function testChestOnValidSurface() {
   const world = new MockWorld();
   world.fill(new Vec3(-15, 63, -15), new Vec3(15, 63, 15), 'grass_block');
 
+  const villageCenter = new Vec3(5, 64, 5);
+
+  // Fill preferred chest positions with INVALID surfaces
+  // Chest prefers corners at (±3, ±3) from village center
+  // Place water and leaves at those positions
+  world.setBlock(new Vec3(8, 63, 8), 'water');     // +3, +3
+  world.setBlock(new Vec3(2, 63, 8), 'water');     // -3, +3
+  world.setBlock(new Vec3(8, 63, 2), 'oak_leaves'); // +3, -3
+  world.setBlock(new Vec3(2, 63, 2), 'oak_leaves'); // -3, -3
+  // Also block cardinal positions at ±4
+  world.setBlock(new Vec3(9, 63, 5), 'water');     // +4, 0
+  world.setBlock(new Vec3(1, 63, 5), 'oak_leaves'); // -4, 0
+
+  // Track invalid positions to verify bot avoided them
+  const invalidPositions = [
+    new Vec3(8, 64, 8),   // over water
+    new Vec3(2, 64, 8),   // over water
+    new Vec3(8, 64, 2),   // over leaves
+    new Vec3(2, 64, 2),   // over leaves
+    new Vec3(9, 64, 5),   // over water
+    new Vec3(1, 64, 5),   // over leaves
+  ];
+
   // Village and forest signs (forest sign prevents bot from wasting time exploring)
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 5\nY: 64\nZ: 5' });
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', {
+    signText: `[VILLAGE]\nX: ${villageCenter.x}\nY: ${villageCenter.y}\nZ: ${villageCenter.z}`
+  });
   world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FOREST]\nX: -10\nY: 64\nZ: -10' });
 
   const spawnPos = new Vec3(0, 64, 0);
@@ -239,6 +300,12 @@ async function testChestOnValidSurface() {
 
   const chestPos = bb()?.sharedChest as Vec3;
   test.assert(chestPos !== null, 'Chest position should be set');
+
+  // Verify it was NOT placed on an invalid surface
+  const placedOnInvalid = invalidPositions.some(pos =>
+    chestPos.x === pos.x && chestPos.y === pos.y && chestPos.z === pos.z
+  );
+  test.assert(!placedOnInvalid, 'Chest should not be placed over water or leaves');
 
   // Verify it's on a valid surface
   const groundBlock = test.blockAt(chestPos.offset(0, -1, 0));
