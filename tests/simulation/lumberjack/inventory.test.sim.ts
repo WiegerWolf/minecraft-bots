@@ -14,7 +14,7 @@ import { Vec3 } from 'vec3';
 import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld, createOakTree } from '../../mocks/MockWorld';
-import { LumberjackRole } from '../../../src/roles/lumberjack/LumberjackRole';
+import { GOAPLumberjackRole } from '../../../src/roles/GOAPLumberjackRole';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEST: Deposits logs to chest
@@ -45,7 +45,7 @@ async function testDepositsToChest() {
 
   const initialLogs = test.botInventoryCount('oak_log');
 
-  const role = new LumberjackRole();
+  const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   await test.waitUntil(
@@ -84,7 +84,7 @@ async function testProcessesWood() {
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  const role = new LumberjackRole();
+  const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   await test.waitUntil(
@@ -122,7 +122,7 @@ async function testDropsInterruptWork() {
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  const role = new LumberjackRole();
+  const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   // Wait for bot to start moving toward tree

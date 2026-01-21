@@ -15,7 +15,7 @@ import { Vec3 } from 'vec3';
 import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld, createOakTree, createStump } from '../../mocks/MockWorld';
-import { LumberjackRole } from '../../../src/roles/lumberjack/LumberjackRole';
+import { GOAPLumberjackRole } from '../../../src/roles/GOAPLumberjackRole';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEST: Chops trees in a forest
@@ -43,7 +43,7 @@ async function testChopsTreesInForest() {
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  const role = new LumberjackRole();
+  const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   await test.waitForInventory('oak_log', 1, {
@@ -87,7 +87,7 @@ async function testIgnoresStumps() {
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  const role = new LumberjackRole();
+  const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   // Wait - bot should NOT collect logs from stumps
@@ -153,7 +153,7 @@ async function testIgnoresStructures() {
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  const role = new LumberjackRole();
+  const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   // Wait - bot should NOT chop the house pillars
@@ -202,7 +202,7 @@ async function testPrefersForestsOverIsolated() {
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  const role = new LumberjackRole();
+  const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   // Wait for bot to collect logs (proves it found and chopped a tree)
@@ -241,26 +241,40 @@ async function testCollectsDrops() {
 
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
-  createOakTree(world, new Vec3(10, 64, 10), 5);
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
 
   await test.setup(world, {
-    botPosition: new Vec3(3, 65, 3),
+    botPosition: new Vec3(0, 64, 0),
     botInventory: [{ name: 'iron_axe', count: 1 }],
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  // Spawn logs near the bot
-  await test.rcon('summon item 2 65 2 {Item:{id:"minecraft:oak_log",count:3}}');
+  // Spread 10 logs across the map at various distances from the bot
+  const logPositions = [
+    { x: 8, z: 0 },    // East
+    { x: -8, z: 0 },   // West
+    { x: 0, z: 8 },    // South
+    { x: 0, z: -8 },   // North
+    { x: 6, z: 6 },    // SE
+    { x: -6, z: 6 },   // SW
+    { x: 6, z: -6 },   // NE
+    { x: -6, z: -6 },  // NW
+    { x: 10, z: 5 },   // Far east
+    { x: -10, z: -5 }, // Far west
+  ];
 
-  const role = new LumberjackRole();
+  for (const pos of logPositions) {
+    await test.rcon(`summon item ${pos.x} 64 ${pos.z} {Item:{id:"minecraft:oak_log",count:1}}`);
+  }
+
+  const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
-  await test.waitForInventory('oak_log', 3, {
-    timeout: 30000,
-    message: 'Bot should collect dropped oak logs',
+  await test.waitForInventory('oak_log', 10, {
+    timeout: 60000,
+    message: 'Bot should collect all 10 scattered oak logs',
   });
 
   role.stop(test.bot);
@@ -295,7 +309,7 @@ async function testPlantsSaplings() {
 
   const initialSaplings = test.botInventoryCount('oak_sapling');
 
-  const role = new LumberjackRole();
+  const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   // Wait for bot to chop tree and plant saplings

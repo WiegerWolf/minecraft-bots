@@ -2,8 +2,6 @@ import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
 import { pathfinder, goals } from 'mineflayer-pathfinder';
 import { faker } from '@faker-js/faker';
 import { Vec3 } from 'vec3';
-import { FarmingRole } from './roles/farming/FarmingRole';
-import { LumberjackRole } from './roles/lumberjack/LumberjackRole';
 import { GOAPFarmingRole } from './roles/GOAPFarmingRole';
 import { GOAPLumberjackRole } from './roles/GOAPLumberjackRole';
 import { GOAPLandscaperRole } from './roles/GOAPLandscaperRole';
@@ -55,14 +53,11 @@ const bot: Bot = mineflayer.createBot(config);
 
 bot.loadPlugin(pathfinder);
 
-// Register all available roles
+// Register all available roles (all using GOAP)
 const roles: Record<string, Role> = {
-    farming: new FarmingRole(),
-    lumberjack: new LumberjackRole(),
+    farmer: new GOAPFarmingRole({ debug: true, logger }),
+    lumberjack: new GOAPLumberjackRole({ debug: true, logger }),
     landscaper: new GOAPLandscaperRole({ debug: true, logger }),
-    'goap-farming': new GOAPFarmingRole({ debug: true, logger }),
-    'goap-lumberjack': new GOAPLumberjackRole({ debug: true, logger }),
-    'goap-landscaper': new GOAPLandscaperRole({ debug: true, logger }),
 };
 
 let currentRole: Role | null = null;

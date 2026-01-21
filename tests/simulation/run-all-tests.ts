@@ -71,23 +71,23 @@ function parseFailures(output: string): FailedAssertion[] {
   let currentTest = '';
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i]!;
 
     // Detect test name from "TEST: Test Name" lines
     const testMatch = line.match(/^TEST:\s*(.+)$/);
     if (testMatch) {
-      currentTest = testMatch[1];
+      currentTest = testMatch[1]!;
       continue;
     }
 
     // Detect failed assertions (lines starting with ✗)
     const failMatch = line.match(/^\s*[✗✖]\s*(.+)$/);
     if (failMatch) {
-      const assertion = failMatch[1];
+      const assertion = failMatch[1]!;
       // Check if next line has error details (starts with └─)
       let error: string | undefined;
       if (i + 1 < lines.length) {
-        const nextLine = lines[i + 1];
+        const nextLine = lines[i + 1]!;
         const errorMatch = nextLine.match(/^\s*└─\s*(.+)$/);
         if (errorMatch) {
           error = errorMatch[1];

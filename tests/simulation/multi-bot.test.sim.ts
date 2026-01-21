@@ -16,7 +16,7 @@ import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
 import type { Bot } from 'mineflayer';
 import { PaperSimulationServer } from './PaperSimulationServer';
 import { MockWorld, createOakTree } from '../mocks/MockWorld';
-import { LumberjackRole } from '../../src/roles/lumberjack/LumberjackRole';
+import { GOAPLumberjackRole } from '../../src/roles/GOAPLumberjackRole';
 import { GOAPFarmingRole } from '../../src/roles/GOAPFarmingRole';
 import { createTestLogger } from '../../src/shared/logger';
 import { getTestSessionId, initTestSession } from './SimulationTest';
@@ -296,7 +296,7 @@ async function testSharedChestExchange() {
   await test.wait(2000, 'Bots loading');
 
   // Start lumberjack role
-  const lumberjackRole = new LumberjackRole();
+  const lumberjackRole = new GOAPLumberjackRole();
   lumberjackRole.start(lumberjackBot, { logger: test.createRoleLogger('lumberjack') });
 
   // Wait for lumberjack to collect some logs

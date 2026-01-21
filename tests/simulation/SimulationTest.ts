@@ -14,7 +14,7 @@
  * });
  *
  * // Start the bot's role
- * const role = new LumberjackRole();
+ * const role = new GOAPLumberjackRole();
  * role.start(test.bot);
  *
  * // Wait for conditions and assert

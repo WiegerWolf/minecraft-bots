@@ -87,7 +87,7 @@ export class PaperSimulationServer {
   private rcon: Rcon | null = null;
   private bot: Bot | null = null;
   private mockWorld: MockWorld | null = null;
-  private options: Required<SimulationOptions>;
+  private options!: Required<SimulationOptions>;
   private rconCommandQueue: Promise<void> = Promise.resolve();
   private rconThrottleMs = 5; // ms between commands to avoid overwhelming RCON
 
@@ -181,11 +181,11 @@ export class PaperSimulationServer {
       const result = await this.rconCommand('list');
       const playersMatch = result.match(/online: (.+)$/);
       if (playersMatch) {
-        const players = playersMatch[1].split(', ').map(p => p.trim()).filter(p => p);
+        const players = playersMatch[1]!.split(', ').map(p => p.trim()).filter(p => p);
         const realPlayers = players.filter(p => p !== 'SimBot');
         if (realPlayers.length > 0) {
           console.log(`[PaperSim] Player already connected: ${realPlayers.join(', ')}`);
-          playerName = realPlayers[0];
+          playerName = realPlayers[0]!;
         }
       }
     } catch {
@@ -207,12 +207,12 @@ export class PaperSimulationServer {
             const result = await this.rconCommand('list');
             const playersMatch = result.match(/online: (.+)$/);
             if (playersMatch) {
-              const players = playersMatch[1].split(', ').map(p => p.trim()).filter(p => p);
+              const players = playersMatch[1]!.split(', ').map(p => p.trim()).filter(p => p);
               const realPlayers = players.filter(p => p !== 'SimBot');
               if (realPlayers.length > 0) {
                 resolved = true;
                 console.log(`[PaperSim] Player joined: ${realPlayers.join(', ')}`);
-                resolve(realPlayers[0]);
+                resolve(realPlayers[0]!);
                 return;
               }
             }
@@ -470,7 +470,12 @@ export class PaperSimulationServer {
       const timeout = setTimeout(() => reject(new Error('Server start timeout')), 120000);
 
       const checkOutput = async () => {
-        const reader = this.serverProcess!.stdout.getReader();
+        const stdout = this.serverProcess!.stdout;
+        if (!stdout || typeof stdout === 'number') {
+          reject(new Error('Server stdout not available'));
+          return;
+        }
+        const reader = stdout.getReader();
         const decoder = new TextDecoder();
 
         while (true) {

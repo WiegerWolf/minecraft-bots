@@ -14,7 +14,7 @@ import { Vec3 } from 'vec3';
 import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld, createOakTree } from '../../mocks/MockWorld';
-import { LumberjackRole } from '../../../src/roles/lumberjack/LumberjackRole';
+import { GOAPLumberjackRole } from '../../../src/roles/GOAPLumberjackRole';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEST: Fresh spawn studies signs first
@@ -41,7 +41,7 @@ async function testStudiesSignsFirst() {
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  const role = new LumberjackRole();
+  const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   // Bot should move toward signs to study them
@@ -83,7 +83,7 @@ async function testChecksStorageAfterSigns() {
   // Put an axe in the chest
   await test.rcon('data merge block -5 64 0 {Items:[{Slot:0b,id:"minecraft:iron_axe",count:1}]}');
 
-  const role = new LumberjackRole();
+  const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   // Bot should get axe from storage
@@ -129,7 +129,7 @@ async function testFullStartupSequence() {
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  const role = new LumberjackRole();
+  const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
   // Bot should complete startup and start collecting logs

@@ -21,7 +21,7 @@ export class HarvestCrops implements BehaviorNode {
         // Find the best cluster of crops to harvest (most crops within reach)
         const clusterRadius = 4;
         let bestCluster: typeof allCrops = [];
-        let bestClusterCenter = allCrops[0];
+        let bestClusterCenter = allCrops[0]!;
 
         for (const crop of allCrops) {
             const nearby = allCrops.filter(c =>
