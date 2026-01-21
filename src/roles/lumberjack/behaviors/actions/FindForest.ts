@@ -380,13 +380,14 @@ export class FindForest implements BehaviorNode {
         if (significantWater) {
             // Path has significant water
             if (hasBoat) {
-                // With a boat, water paths are acceptable but slightly penalized
-                // We can use the boat to cross
+                // With a boat, water paths should be competitive with land paths
+                // Boat travel is actually faster than walking, so give good score
                 bb.log?.debug?.({ waterCount: waterBlockCount, total: checkPoints }, 'Path goes over water - will use boat');
                 requiresBoat = true;
                 waterStartPos = firstWaterPos;
-                // Small penalty for water paths (prefer land if available)
-                score = 60 - waterRatio * 20;
+                // Base score of 110 (competitive with land paths ~115-130)
+                // Small penalty for more water (longer boat ride)
+                score = 110 - waterRatio * 10;
             } else {
                 // Without a boat, this is a no-go
                 bb.log?.trace?.({ waterCount: waterBlockCount, total: checkPoints }, 'Path goes over water - no boat available');
