@@ -337,19 +337,21 @@ async function testPlacesCraftSign() {
   const test = new SimulationTest('Places CRAFT sign after placing crafting table');
 
   const world = new MockWorld();
-  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+  world.fill(new Vec3(-20, 63, -20), new Vec3(30, 63, 30), 'grass_block');
 
   // Forest for lumberjack to work in
-  const forestCenter = new Vec3(15, 64, 15);
+  const forestCenter = new Vec3(20, 64, 20);
   createOakTree(world, forestCenter.offset(0, 0, 0), 5);
   createOakTree(world, forestCenter.offset(4, 0, 2), 5);
   createOakTree(world, forestCenter.offset(-3, 0, 4), 5);
 
-  // Only VILLAGE and FOREST signs - no CRAFT sign
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
-  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FOREST]\nX: 15\nY: 64\nZ: 15' });
-
+  // Spawn at origin, but village center is 15 blocks away
+  // This verifies: crafting table placed near village, sign placed near spawn
   const spawnPos = new Vec3(0, 64, 0);
+  const villageCenter = new Vec3(15, 64, 15);
+
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 15\nY: 64\nZ: 15' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FOREST]\nX: 20\nY: 64\nZ: 20' });
 
   await test.setup(world, {
     botPosition: spawnPos.clone(),
@@ -390,8 +392,22 @@ async function testPlacesCraftSign() {
   test.assert(craftSignPos !== undefined, 'Blackboard signPositions should have CRAFT entry');
 
   // Verify sharedCraftingTable is set
-  const sharedCraftingTable = bb()?.sharedCraftingTable;
+  const sharedCraftingTable = bb()?.sharedCraftingTable as Vec3 | undefined;
   test.assert(sharedCraftingTable !== undefined, 'Bot should have sharedCraftingTable location set');
+
+  // Verify crafting table is near village center (within 5 blocks)
+  const craftingTableDistToVillage = sharedCraftingTable!.distanceTo(villageCenter);
+  test.assert(
+    craftingTableDistToVillage <= 5,
+    `Crafting table should be near village center (dist=${craftingTableDistToVillage.toFixed(1)}, expected <= 5)`
+  );
+
+  // Verify CRAFT sign is near spawn (within 5 blocks)
+  const signDistToSpawn = craftSignPos!.distanceTo(spawnPos);
+  test.assert(
+    signDistToSpawn <= 5,
+    `CRAFT sign should be near spawn (dist=${signDistToSpawn.toFixed(1)}, expected <= 5)`
+  );
 
   role.stop(test.bot);
   return test.cleanup();
