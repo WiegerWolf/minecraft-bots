@@ -31,40 +31,82 @@ export function findNearbyBoat(bot: Bot, maxDistance: number = 5): Entity | null
 
 /**
  * Finds a suitable water block near the bot for placing a boat.
- * Returns the nearest water block that has air above it.
+ * Prefers water blocks that are surrounded by more water (not at shore edge).
+ * Returns water block with air above it.
  */
-export function findNearbyWaterBlock(bot: Bot, searchRadius: number = 5): any | null {
+export function findNearbyWaterBlock(bot: Bot, searchRadius: number = 8): any | null {
   const pos = bot.entity.position;
-  let nearestBlock: any = null;
-  let nearestDist = Infinity;
+  let bestBlock: any = null;
+  let bestScore = -Infinity;
 
-  // Search in a sphere, prioritizing closer blocks
-  for (let dist = 1; dist <= searchRadius; dist++) {
-    for (let dx = -dist; dx <= dist; dx++) {
-      for (let dz = -dist; dz <= dist; dz++) {
-        for (let dy = -2; dy <= 1; dy++) {
-          const checkPos = pos.offset(dx, dy, dz);
-          const block = bot.blockAt(checkPos);
-          if (block && (block.name === 'water' || block.name === 'flowing_water')) {
-            // Verify there's air above for the boat
-            const above = bot.blockAt(checkPos.offset(0, 1, 0));
-            if (above && above.name === 'air') {
-              const blockDist = pos.distanceTo(checkPos);
-              if (blockDist < nearestDist) {
-                nearestDist = blockDist;
-                nearestBlock = block;
+  // Helper to check if a block is water
+  const isWater = (p: Vec3) => {
+    const b = bot.blockAt(p);
+    return b && (b.name === 'water' || b.name === 'flowing_water');
+  };
+
+  // Helper to count water neighbors (more = better for boat placement)
+  const countWaterNeighbors = (p: Vec3): number => {
+    let count = 0;
+    // Check all 4 cardinal directions
+    if (isWater(p.offset(1, 0, 0))) count++;
+    if (isWater(p.offset(-1, 0, 0))) count++;
+    if (isWater(p.offset(0, 0, 1))) count++;
+    if (isWater(p.offset(0, 0, -1))) count++;
+    return count;
+  };
+
+  // Search for water blocks
+  for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+    for (let dz = -searchRadius; dz <= searchRadius; dz++) {
+      for (let dy = -2; dy <= 1; dy++) {
+        const checkPos = pos.offset(dx, dy, dz);
+        const block = bot.blockAt(checkPos);
+
+        if (block && (block.name === 'water' || block.name === 'flowing_water')) {
+          // Verify there's air above for the boat
+          const above = bot.blockAt(checkPos.offset(0, 1, 0));
+          if (above && above.name === 'air') {
+            const dist = pos.distanceTo(checkPos);
+            const waterNeighbors = countWaterNeighbors(checkPos);
+
+            // Score: prefer more water neighbors, but not too far away
+            // Water surrounded by 4 water blocks is ideal (score +40)
+            // Penalize distance slightly (-1 per block)
+            const score = waterNeighbors * 10 - dist;
+
+            // Must have at least 2 water neighbors (not at corner of shore)
+            if (waterNeighbors >= 2 && score > bestScore) {
+              bestScore = score;
+              bestBlock = block;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Fallback: if no good water found, just return nearest water
+  if (!bestBlock) {
+    for (let dist = 1; dist <= searchRadius; dist++) {
+      for (let dx = -dist; dx <= dist; dx++) {
+        for (let dz = -dist; dz <= dist; dz++) {
+          for (let dy = -2; dy <= 1; dy++) {
+            const checkPos = pos.offset(dx, dy, dz);
+            const block = bot.blockAt(checkPos);
+            if (block && (block.name === 'water' || block.name === 'flowing_water')) {
+              const above = bot.blockAt(checkPos.offset(0, 1, 0));
+              if (above && above.name === 'air') {
+                return block;
               }
             }
           }
         }
       }
     }
-    // If we found water at this distance, return it
-    if (nearestBlock) {
-      return nearestBlock;
-    }
   }
-  return null;
+
+  return bestBlock;
 }
 
 /**
@@ -168,11 +210,27 @@ export async function placeBoatOnWater(
   }
   log?.debug({ waterPos: waterBlock.position.toString() }, 'Found water block');
 
-  // Check if there's already a boat nearby (from previous attempt or cleanup failure)
-  const existingBoat = findNearbyBoat(bot, 8);
+  // If there's an existing boat nearby, break it first to avoid confusion
+  // (it might be from a previous failed attempt or cleanup failure)
+  let existingBoat = findNearbyBoat(bot, 8);
   if (existingBoat) {
-    log?.debug({ boatId: existingBoat.id }, 'Found existing boat nearby, using it');
-    return existingBoat;
+    log?.debug({ boatId: existingBoat.id }, 'Found existing boat nearby, breaking it first');
+    // Keep attacking until the boat is gone (boats have 4 health, need multiple hits)
+    for (let i = 0; i < 10 && existingBoat; i++) {
+      try {
+        await bot.attack(existingBoat);
+        await sleep(250);
+        // Check if boat is still there
+        existingBoat = findNearbyBoat(bot, 8);
+      } catch {
+        break; // Boat probably gone
+      }
+    }
+    if (!findNearbyBoat(bot, 8)) {
+      log?.debug('Existing boat destroyed');
+    } else {
+      log?.warn('Could not destroy existing boat');
+    }
   }
 
   // Equip the boat
@@ -456,11 +514,15 @@ export function stopBoat(bot: Bot): void {
 /**
  * Dismounts from the current vehicle (boat).
  */
-export async function dismountBoat(bot: Bot): Promise<void> {
+export async function dismountBoat(bot: Bot, log?: { debug: Function }): Promise<void> {
   const botWithVehicle = bot as Bot & { vehicle?: Entity };
   if (botWithVehicle.vehicle) {
+    log?.debug({ vehicleId: botWithVehicle.vehicle.id }, 'Dismounting from vehicle');
     await bot.dismount();
-    await sleep(300);
+    await sleep(500); // Give more time for dismount to complete
+    log?.debug('Dismount complete');
+  } else {
+    log?.debug('No vehicle to dismount from');
   }
 }
 
@@ -509,7 +571,7 @@ export async function dismountAndBreakBoat(
   bot: Bot,
   log?: { debug: Function }
 ): Promise<void> {
-  await dismountBoat(bot);
+  await dismountBoat(bot, log);
   await breakNearbyBoat(bot, 5, log);
 }
 

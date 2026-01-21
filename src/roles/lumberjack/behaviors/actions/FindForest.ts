@@ -491,14 +491,15 @@ export class FindForest implements BehaviorNode {
         } : undefined;
 
         try {
-            // Step 1: Walk to water's edge
+            // Step 1: Walk to water's edge - need to be within 1 block to place boat
             bb.log?.debug({ pos: waterStartPos.floored().toString() }, 'Walking to water edge');
-            const walkGoal = new GoalNear(waterStartPos.x, waterStartPos.y, waterStartPos.z, 3);
+            const walkGoal = new GoalNear(waterStartPos.x, waterStartPos.y, waterStartPos.z, 1);
             const walkSuccess = await pathfinderGotoWithRetry(bot, walkGoal, 2, 15000);
             if (!walkSuccess) {
                 bb.log?.warn('Could not reach water edge');
                 return false;
             }
+            bb.log?.debug({ botPos: bot.entity.position.floored().toString() }, 'Reached water edge');
 
             // Step 2: Check for boat in inventory
             const boatItem = bot.inventory.items().find(i => i.name.includes('boat'));

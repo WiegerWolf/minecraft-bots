@@ -571,15 +571,27 @@ export class PaperSimulationServer {
       }
     }
 
-    // Kill any dropped items from previous tests
-    await this.rconCommand('kill @e[type=item]');
+    // Kill any dropped items and entities from previous tests
+    console.log('[PaperSim] Killing entities from previous tests...');
+    try {
+      const itemResult = await this.rconCommand('kill @e[type=item]');
+      console.log(`[PaperSim] Kill items result: ${itemResult}`);
+    } catch (err) {
+      console.log(`[PaperSim] Failed to kill items: ${err}`);
+    }
+
     // Kill all boats globally (named by wood type in MC 1.19+)
     const boatTypes = [
       'oak_boat', 'spruce_boat', 'birch_boat', 'jungle_boat',
       'acacia_boat', 'dark_oak_boat', 'mangrove_boat', 'cherry_boat', 'bamboo_raft',
     ];
     for (const boatType of boatTypes) {
-      await this.rconCommand(`kill @e[type=${boatType}]`).catch(() => {});
+      try {
+        const result = await this.rconCommand(`kill @e[type=${boatType}]`);
+        console.log(`[PaperSim] Kill ${boatType}: ${result}`);
+      } catch (err) {
+        console.log(`[PaperSim] Failed to kill ${boatType}: ${err}`);
+      }
     }
   }
 
@@ -676,6 +688,17 @@ export class PaperSimulationServer {
     if (!this.bot || !this.rcon) return;
 
     const pos = this.options.botPosition;
+
+    // Kill any boats that spawned when bot reconnected (Minecraft preserves vehicle state!)
+    // This must happen AFTER bot connects because the server spawns the boat on connect
+    const boatTypes = ['oak_boat', 'spruce_boat', 'birch_boat', 'jungle_boat',
+      'acacia_boat', 'dark_oak_boat', 'mangrove_boat', 'cherry_boat', 'bamboo_raft'];
+    for (const boatType of boatTypes) {
+      const result = await this.rconCommand(`kill @e[type=${boatType}]`).catch(() => '');
+      if (result && !result.includes('No entity')) {
+        console.log(`[PaperSim] Killed reconnect boat: ${result}`);
+      }
+    }
 
     // Clear any existing inventory (important between tests!)
     await this.rconCommand('clear SimBot');
