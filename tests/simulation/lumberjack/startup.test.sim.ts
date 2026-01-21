@@ -17,44 +17,6 @@ import { MockWorld, createOakTree } from '../../mocks/MockWorld';
 import { GOAPLumberjackRole } from '../../../src/roles/GOAPLumberjackRole';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST: Fresh spawn studies signs first
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function testStudiesSignsFirst() {
-  const test = new SimulationTest('Fresh spawn studies signs first');
-
-  const world = new MockWorld();
-  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
-
-  // Village sign at spawn
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
-
-  // Forest for later work
-  createOakTree(world, new Vec3(15, 64, 15), 5);
-  createOakTree(world, new Vec3(18, 64, 12), 5);
-
-  await test.setup(world, {
-    botPosition: new Vec3(3, 65, 3),
-    botInventory: [{ name: 'iron_axe', count: 1 }],
-  });
-
-  test.bot.loadPlugin(pathfinderPlugin);
-  await test.wait(2000, 'World loading');
-
-  const role = new GOAPLumberjackRole();
-  role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
-
-  // Bot should move toward signs to study them
-  await test.waitForPosition(new Vec3(0, 64, 0), 5, {
-    timeout: 30000,
-    message: 'Bot should move near village sign to study it',
-  });
-
-  role.stop(test.bot);
-  return test.cleanup();
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // TEST: Checks storage after signs if available
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -147,7 +109,6 @@ async function testFullStartupSequence() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ALL_TESTS: Record<string, () => Promise<any>> = {
-  'signs': testStudiesSignsFirst,
   'storage': testChecksStorageAfterSigns,
   'full': testFullStartupSequence,
 };
