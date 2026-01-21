@@ -104,6 +104,72 @@ async function testIgnoresStumps() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TEST: Ignores structures with logs (villager houses)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function testIgnoresStructures() {
+  const test = new SimulationTest('Ignores structures with logs');
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+
+  // Build a villager-style house with log pillars (no real trees!)
+  // Corner pillars (vertical logs)
+  for (let y = 0; y < 4; y++) {
+    world.setBlock(new Vec3(5, 64 + y, 5), 'oak_log');
+    world.setBlock(new Vec3(10, 64 + y, 5), 'oak_log');
+    world.setBlock(new Vec3(5, 64 + y, 10), 'oak_log');
+    world.setBlock(new Vec3(10, 64 + y, 10), 'oak_log');
+  }
+
+  // Walls (planks between pillars)
+  for (let x = 6; x < 10; x++) {
+    for (let y = 0; y < 3; y++) {
+      world.setBlock(new Vec3(x, 64 + y, 5), 'oak_planks');
+      world.setBlock(new Vec3(x, 64 + y, 10), 'oak_planks');
+    }
+  }
+  for (let z = 6; z < 10; z++) {
+    for (let y = 0; y < 3; y++) {
+      world.setBlock(new Vec3(5, 64 + y, z), 'oak_planks');
+      world.setBlock(new Vec3(10, 64 + y, z), 'oak_planks');
+    }
+  }
+
+  // Roof (slabs or planks)
+  for (let x = 5; x <= 10; x++) {
+    for (let z = 5; z <= 10; z++) {
+      world.setBlock(new Vec3(x, 68, z), 'oak_planks');
+    }
+  }
+
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+
+  await test.setup(world, {
+    botPosition: new Vec3(3, 65, 3),
+    botInventory: [{ name: 'iron_axe', count: 1 }],
+  });
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  const role = new LumberjackRole();
+  role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
+
+  // Wait - bot should NOT chop the house pillars
+  await test.wait(15000, 'Verifying bot ignores structure');
+
+  test.assertEqual(
+    test.botInventoryCount('oak_log'),
+    0,
+    'Bot should not harvest logs from structures (no leaves = not a tree)'
+  );
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TEST: Prefers forest clusters over isolated trees
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -243,6 +309,7 @@ async function testPlantsSaplings() {
 const ALL_TESTS: Record<string, () => Promise<any>> = {
   'chop': testChopsTreesInForest,
   'stumps': testIgnoresStumps,
+  'structures': testIgnoresStructures,
   'forest': testPrefersForestsOverIsolated,
   'drops': testCollectsDrops,
   'saplings': testPlantsSaplings,
