@@ -13,8 +13,8 @@ export class PlantSeeds implements BehaviorNode {
     async tick(bot: Bot, bb: FarmingBlackboard): Promise<BehaviorStatus> {
         if (!bb.canPlant) return 'failure';
 
-        // Plant multiple farmland blocks in one go (up to 5)
-        const farmlandToPlant = bb.nearbyFarmland.slice(0, 5);
+        // Plant multiple farmland blocks in one go (up to 8)
+        const farmlandToPlant = bb.nearbyFarmland.slice(0, 8);
         if (farmlandToPlant.length === 0) return 'failure';
 
         bb.lastAction = 'plant';
