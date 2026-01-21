@@ -54,6 +54,27 @@ export class PlantSaplings implements BehaviorNode {
             return 'failure';
         }
 
+        // If we know of forests, go to the nearest one before planting
+        // This ensures saplings are planted to regrow/expand forests
+        if (bb.knownForests.length > 0) {
+            const nearestForest = bb.knownForests.reduce((nearest, forest) => {
+                const dist = bot.entity.position.distanceTo(forest);
+                const nearestDist = bot.entity.position.distanceTo(nearest);
+                return dist < nearestDist ? forest : nearest;
+            });
+            const distToForest = bot.entity.position.distanceTo(nearestForest);
+
+            // If we're far from the forest, go there first
+            if (distToForest > 20) {
+                bb.log?.debug({ forest: nearestForest.toString(), dist: Math.round(distToForest) }, '[Lumberjack] Going to forest to plant saplings');
+                const success = await pathfinderGotoWithRetry(bot, new GoalNear(nearestForest.x, nearestForest.y, nearestForest.z, 10));
+                if (!success) {
+                    bb.log?.debug('[Lumberjack] Failed to reach forest for planting');
+                    return 'failure';
+                }
+            }
+        }
+
         // Find suitable planting spots (grass_block, dirt, podzol with air above)
         // Search in expanding radii to find spots even if nearby area is crowded
         const searchRadii = [16, 32, 48];

@@ -286,22 +286,23 @@ async function testCollectsDrops() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function testPlantsSaplings() {
-  const test = new SimulationTest('Plants saplings');
+  const test = new SimulationTest('Plants saplings with proper spacing');
 
   const world = new MockWorld();
-  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+  // Large area for planting multiple saplings with 5-block spacing
+  world.fill(new Vec3(-40, 63, -40), new Vec3(40, 63, 40), 'grass_block');
 
-  // One tree to chop
-  createOakTree(world, new Vec3(10, 64, 10), 5);
-
+  // Signs to establish village and forest location (forest is 25 blocks away)
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(0, 64, 1), 'oak_sign', { signText: '[FOREST]\nX: 25\nY: 64\nZ: 25' });
 
   await test.setup(world, {
-    botPosition: new Vec3(3, 65, 3),
+    botPosition: new Vec3(0, 64, 0),
     botInventory: [
       { name: 'iron_axe', count: 1 },
-      { name: 'oak_sapling', count: 8 },
+      { name: 'oak_sapling', count: 10 },
     ],
+    clearRadius: 80,
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
@@ -312,16 +313,50 @@ async function testPlantsSaplings() {
   const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
-  // Wait for bot to chop tree and plant saplings
+  // Wait for bot to plant at least 5 saplings
+  const minSaplingsToPlant = 5;
   await test.waitUntil(
-    () => test.botInventoryCount('oak_sapling') < initialSaplings,
+    () => test.botInventoryCount('oak_sapling') <= initialSaplings - minSaplingsToPlant,
     {
       timeout: 120000,
-      message: 'Bot should plant saplings after chopping',
+      message: `Bot should plant at least ${minSaplingsToPlant} saplings`,
     }
   );
 
   role.stop(test.bot);
+
+  // Count planted saplings in the world and verify spacing
+  const plantedSaplings: Vec3[] = [];
+  for (let x = -40; x <= 40; x++) {
+    for (let z = -40; z <= 40; z++) {
+      const block = test.blockAt(new Vec3(x, 64, z));
+      if (block && block.includes('sapling')) {
+        plantedSaplings.push(new Vec3(x, 64, z));
+      }
+    }
+  }
+
+  test.assertGreater(
+    plantedSaplings.length,
+    minSaplingsToPlant - 1,
+    `Should have planted at least ${minSaplingsToPlant} saplings in the world (found ${plantedSaplings.length})`
+  );
+
+  // Verify spacing between saplings (minimum 5 blocks apart)
+  const minSpacing = 5;
+  let spacingValid = true;
+  for (let i = 0; i < plantedSaplings.length; i++) {
+    for (let j = i + 1; j < plantedSaplings.length; j++) {
+      const dist = plantedSaplings[i]!.distanceTo(plantedSaplings[j]!);
+      if (dist < minSpacing) {
+        spacingValid = false;
+        console.log(`  ✗ Saplings too close: ${plantedSaplings[i]} and ${plantedSaplings[j]} (${dist.toFixed(1)} blocks)`);
+      }
+    }
+  }
+
+  test.assert(spacingValid, `All saplings should be at least ${minSpacing} blocks apart`);
+
   return test.cleanup();
 }
 
