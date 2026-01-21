@@ -16,7 +16,8 @@ import {
     placeBoatOnWater,
     findNearbyWaterBlock,
     navigateBoatToward,
-    dismountBoat,
+    dismountAndBreakBoat,
+    type BoatNavigationResult,
 } from '../../../../shared/BoatUtils';
 
 // Minimum water distance to warrant using a boat (shorter distances can be swam)
@@ -546,31 +547,35 @@ export class FindForest implements BehaviorNode {
             bb.log?.info('Successfully mounted boat, navigating across water');
 
             // Step 5: Navigate across water toward destination
-            const success = await navigateBoatToward(bot, destination, 30000, log);
+            const navResult = await navigateBoatToward(bot, destination, 30000, log);
 
-            // Step 6: Dismount
-            await dismountBoat(bot);
-            bb.log?.debug('Dismounted from boat');
+            // Step 6: Dismount and try to recover the boat
+            await dismountAndBreakBoat(bot, log);
+            bb.log?.debug({ reason: navResult.reason }, 'Dismounted from boat');
 
-            // Step 7: Continue to destination (swimming if boat navigation failed)
-            const distToTarget = bot.entity.position.xzDistanceTo(destination);
+            // Step 7: Continue to destination based on navigation result
+            const distToTarget = navResult.distanceRemaining;
             if (distToTarget > 10) {
-                if (!success) {
-                    bb.log?.info({ dist: distToTarget.toFixed(1) }, 'Boat navigation failed, swimming to destination');
+                if (navResult.reason === 'land_collision') {
+                    // Hit land - walk across it, may need boat again for more water
+                    bb.log?.info({ dist: distToTarget.toFixed(1) }, 'Hit land while boating, continuing on foot');
+                } else if (navResult.reason === 'no_progress') {
+                    // Paper server - boat controls don't work, swim instead
+                    bb.log?.info({ dist: distToTarget.toFixed(1) }, 'Boat navigation failed (Paper server?), swimming to destination');
                 } else {
                     bb.log?.debug({ dist: distToTarget.toFixed(1) }, 'Continuing to destination on foot');
                 }
                 const finalGoal = new GoalXZ(destination.x, destination.z);
-                // Give more time for swimming (it's slower)
-                const swimSuccess = await pathfinderGotoWithRetry(bot, finalGoal, 2, 45000);
-                return swimSuccess;
+                // Give more time for swimming/walking (it's slower)
+                const continueSuccess = await pathfinderGotoWithRetry(bot, finalGoal, 2, 45000);
+                return continueSuccess;
             }
 
-            return true; // Close enough to destination
+            return navResult.success; // Close enough to destination
         } catch (err) {
             bb.log?.error({ err }, 'Error during boat crossing');
             // Make sure we dismount if something goes wrong
-            await dismountBoat(bot);
+            await dismountAndBreakBoat(bot, log);
             return false;
         }
     }

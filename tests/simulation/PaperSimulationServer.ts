@@ -573,6 +573,14 @@ export class PaperSimulationServer {
 
     // Kill any dropped items from previous tests
     await this.rconCommand('kill @e[type=item]');
+    // Kill all boats globally (named by wood type in MC 1.19+)
+    const boatTypes = [
+      'oak_boat', 'spruce_boat', 'birch_boat', 'jungle_boat',
+      'acacia_boat', 'dark_oak_boat', 'mangrove_boat', 'cherry_boat', 'bamboo_raft',
+    ];
+    for (const boatType of boatTypes) {
+      await this.rconCommand(`kill @e[type=${boatType}]`).catch(() => {});
+    }
   }
 
   private async buildWorld(): Promise<void> {

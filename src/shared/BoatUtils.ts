@@ -135,10 +135,8 @@ export function sendUseItemPacket(bot: Bot, offHand: boolean = false, log?: { de
 /**
  * Places a boat on water and returns the spawned boat entity.
  *
- * Tries multiple methods in order:
- * 1. mineflayer's placeEntity (standard approach)
- * 2. Direct use_item packet (workaround for 1.21+ bug)
- * 3. activateItem while in water
+ * Uses mineflayer's placeEntity with a spawn event listener as backup.
+ * Simplified to avoid placing duplicate boats.
  *
  * @param bot - The bot instance
  * @param waterBlock - Optional specific water block to place on (finds one if not provided)
@@ -170,6 +168,13 @@ export async function placeBoatOnWater(
   }
   log?.debug({ waterPos: waterBlock.position.toString() }, 'Found water block');
 
+  // Check if there's already a boat nearby (from previous attempt or cleanup failure)
+  const existingBoat = findNearbyBoat(bot, 8);
+  if (existingBoat) {
+    log?.debug({ boatId: existingBoat.id }, 'Found existing boat nearby, using it');
+    return existingBoat;
+  }
+
   // Equip the boat
   await bot.equip(boatItem, 'hand');
   await sleep(200);
@@ -181,8 +186,7 @@ export async function placeBoatOnWater(
   }
   log?.debug({ heldItem: bot.heldItem.name }, 'Boat equipped');
 
-  // Look down at the water surface (not above it)
-  // The water block is at Y=63, so we look at Y=63.5 to look slightly down
+  // Look down at the water surface
   const lookTarget = waterBlock.position.offset(0.5, 0.5, 0.5);
   await bot.lookAt(lookTarget);
   await sleep(100);
@@ -194,115 +198,57 @@ export async function placeBoatOnWater(
   }, 'Looking at water');
 
   // Set up listener for boat spawn BEFORE calling placeEntity
-  let spawnedBoat: Entity | null = null;
+  // We race between placeEntity returning and the spawn event firing
+  // This ensures we return immediately when the boat spawns, not waiting for placeEntity timeout
   const boatSpawnPromise = new Promise<Entity | null>((resolve) => {
     const timeoutId = setTimeout(() => {
-      bot.off('entitySpawn', listener);
+      bot.off('entitySpawn', onSpawn);
       resolve(null);
     }, timeout);
 
-    function listener(entity: Entity) {
-      log?.debug({ entityName: entity.name, entityPos: entity.position?.toString() }, 'Entity spawned');
+    function onSpawn(entity: Entity) {
       if (entity.name?.includes('boat')) {
         clearTimeout(timeoutId);
-        bot.off('entitySpawn', listener);
-        spawnedBoat = entity;
-        log?.debug({ boatId: entity.id }, 'Boat entity detected via spawn event!');
+        bot.off('entitySpawn', onSpawn);
+        log?.debug({ boatId: entity.id, entityPos: entity.position?.toString() }, 'Boat spawned via event');
         resolve(entity);
       }
     }
 
-    bot.on('entitySpawn', listener);
+    bot.on('entitySpawn', onSpawn);
   });
 
-  // Method 1: Try mineflayer's placeEntity (now patched to work with 1.21+)
-  // Don't await - let it run while we also listen for the spawn event
-  log?.debug('Method 1: Trying bot.placeEntity...');
-  const placeEntityPromise = bot.placeEntity(waterBlock, new Vec3(0, 1, 0)).catch((err: any) => {
-    log?.debug({ error: err.message }, 'placeEntity failed');
-    return null;
-  });
+  // Start placeEntity but don't await it directly - race with spawn event
+  log?.debug('Placing boat with placeEntity...');
+  const placeEntityPromise = bot.placeEntity(waterBlock, new Vec3(0, 1, 0))
+    .then((entity) => {
+      log?.debug({ boatId: entity?.id }, 'placeEntity returned successfully');
+      return entity;
+    })
+    .catch((err: any) => {
+      // This often fails on Paper servers even though the boat spawned
+      log?.debug({ error: err.message }, 'placeEntity threw error (boat may still have spawned)');
+      return null;
+    });
 
-  // Race: either placeEntity returns the boat, or our spawn listener catches it
-  const result = await Promise.race([
-    placeEntityPromise,
-    boatSpawnPromise,
-  ]);
+  // Race: return as soon as EITHER placeEntity succeeds OR spawn event fires
+  // This is critical - we don't want to wait 5 seconds for placeEntity to timeout
+  const result = await Promise.race([placeEntityPromise, boatSpawnPromise]);
 
   if (result) {
     log?.debug({ boatId: result.id }, 'Got boat from race');
     return result;
   }
 
-  // Wait a bit more for the boat to appear via spawn event
+  // Wait a bit and check for nearby boat (might have spawned but we missed the event)
   await sleep(500);
-  if (spawnedBoat !== null) {
-    log?.debug({ boatId: (spawnedBoat as Entity).id }, 'Got boat from spawn listener');
-    return spawnedBoat;
+  const nearbyBoat = findNearbyBoat(bot, 8);
+  if (nearbyBoat) {
+    log?.debug({ boatId: nearbyBoat.id }, 'Found boat nearby after placement');
+    return nearbyBoat;
   }
 
-  // Check if boat spawned somewhere nearby
-  let boatEntity = findNearbyBoat(bot, 8);
-  if (boatEntity) {
-    log?.debug({ boatId: boatEntity.id }, 'Found boat nearby after placement');
-    return boatEntity;
-  }
-
-  // Re-equip boat if needed
-  const boatItem2 = bot.inventory.items().find(i => i.name.includes('boat'));
-  if (boatItem2 && (!bot.heldItem || !bot.heldItem.name.includes('boat'))) {
-    await bot.equip(boatItem2, 'hand');
-    await sleep(200);
-    await bot.lookAt(waterBlock.position.offset(0.5, 1, 0.5));
-    await sleep(100);
-  }
-
-  // Method 2: Send use_item packet directly (fallback)
-  log?.debug('Method 2: Sending use_item packet...');
-  sendUseItemPacket(bot, false, log);
-  await sleep(1000);
-
-  // Check if boat spawned
-  boatEntity = findNearbyBoat(bot, 8);
-  if (boatEntity) {
-    log?.debug({ boatId: boatEntity.id }, 'Found boat after use_item packet');
-    return boatEntity;
-  }
-
-  // Re-equip boat if needed
-  const boatItem3 = bot.inventory.items().find(i => i.name.includes('boat'));
-  if (boatItem3 && (!bot.heldItem || !bot.heldItem.name.includes('boat'))) {
-    await bot.equip(boatItem3, 'hand');
-    await sleep(200);
-  }
-
-  // Method 3: Step into water and use activateItem
-  log?.debug('Method 3: Stepping into water and using activateItem...');
-  bot.setControlState('forward', true);
-  await sleep(500);
-  bot.setControlState('forward', false);
-  await sleep(100);
-
-  // Look down at the water we're standing in
-  await bot.look(bot.entity.yaw, Math.PI / 4); // Look down 45 degrees
-  await sleep(100);
-
-  try {
-    bot.activateItem(false);
-    log?.debug('activateItem called');
-  } catch (err: any) {
-    log?.debug({ error: err.message }, 'activateItem failed');
-  }
-  await sleep(1000);
-
-  // Final check for boat
-  boatEntity = findNearbyBoat(bot, 8);
-  if (boatEntity) {
-    log?.debug({ boatId: boatEntity.id }, 'Found boat after stepping into water');
-    return boatEntity;
-  }
-
-  log?.debug('All boat placement methods failed');
+  log?.warn('Boat placement failed - no boat entity found');
   return null;
 }
 
@@ -364,6 +310,15 @@ export async function placeAndMountBoat(
 }
 
 /**
+ * Result from boat navigation with more details.
+ */
+export interface BoatNavigationResult {
+  success: boolean;          // True if reached destination
+  reason: 'reached' | 'land_collision' | 'no_progress' | 'timeout';
+  distanceRemaining: number; // Distance to destination when stopped
+}
+
+/**
  * Navigates a boat toward a destination using vehicle controls.
  *
  * NOTE: Boat navigation has limited support on Paper/Spigot servers.
@@ -374,18 +329,19 @@ export async function placeAndMountBoat(
  * @param destination - Target position
  * @param maxTime - Maximum navigation time in ms (default: 30000)
  * @param log - Optional logger
- * @returns True if reached destination area, false if stuck/unsupported
+ * @returns Navigation result with success status and reason
  */
 export async function navigateBoatToward(
   bot: Bot,
   destination: Vec3,
   maxTime: number = 30000,
   log?: { debug: Function }
-): Promise<boolean> {
+): Promise<BoatNavigationResult> {
   const startTime = Date.now();
   const startPos = bot.entity.position.clone();
   let lastProgressTime = startTime;
   let lastDistance = bot.entity.position.xzDistanceTo(destination);
+  let lastLandCheckTime = startTime;
 
   log?.debug({
     startPos: startPos.toString(),
@@ -403,11 +359,28 @@ export async function navigateBoatToward(
       const currentPos = bot.entity.position;
       const distToTarget = currentPos.xzDistanceTo(destination);
 
+      // Calculate direction to target
+      const dx = destination.x - currentPos.x;
+      const dz = destination.z - currentPos.z;
+      const targetYaw = Math.atan2(-dx, dz);
+
       // Check if we're close enough
       if (distToTarget < 15) {
         stopBoat(bot);
         log?.debug({ dist: distToTarget.toFixed(1) }, 'Reached boat destination');
-        return true;
+        return { success: true, reason: 'reached', distanceRemaining: distToTarget };
+      }
+
+      // Check for land ahead every second (not every tick for performance)
+      if (Date.now() - lastLandCheckTime > 1000) {
+        lastLandCheckTime = Date.now();
+        if (hasLandAhead(bot, targetYaw, 3)) {
+          stopBoat(bot);
+          log?.debug({
+            distToTarget: distToTarget.toFixed(1),
+          }, 'Land detected ahead, stopping boat');
+          return { success: false, reason: 'land_collision', distanceRemaining: distToTarget };
+        }
       }
 
       // Check for progress - fail fast after 5 seconds if not moving
@@ -421,13 +394,8 @@ export async function navigateBoatToward(
           distToTarget: distToTarget.toFixed(1),
           elapsed: ((Date.now() - startTime) / 1000).toFixed(1),
         }, 'Boat not responding to controls (Paper server?)');
-        return false;
+        return { success: false, reason: 'no_progress', distanceRemaining: distToTarget };
       }
-
-      // Calculate direction to target
-      const dx = destination.x - currentPos.x;
-      const dz = destination.z - currentPos.z;
-      const targetYaw = Math.atan2(-dx, dz);
 
       // Aim the boat
       bot.look(targetYaw, 0, false).catch(() => {});
@@ -440,12 +408,15 @@ export async function navigateBoatToward(
         });
 
         // vehicle_move with calculated position
+        // Movement: -sin(yaw) moves in X, +cos(yaw) moves in Z (forward direction)
         const speed = 0.2; // conservative speed
         client.write('vehicle_move', {
           x: currentPos.x - Math.sin(targetYaw) * speed,
           y: currentPos.y,
           z: currentPos.z + Math.cos(targetYaw) * speed,
-          yaw: -targetYaw * 180 / Math.PI,
+          // Convert mineflayer radians to Minecraft degrees
+          // Note: NOT negated - mineflayer and Minecraft use same yaw convention
+          yaw: targetYaw * 180 / Math.PI,
           pitch: 0
         });
 
@@ -463,7 +434,8 @@ export async function navigateBoatToward(
 
     stopBoat(bot);
     log?.debug('Boat navigation timed out');
-    return false;
+    const finalDist = bot.entity.position.xzDistanceTo(destination);
+    return { success: false, reason: 'timeout', distanceRemaining: finalDist };
   } finally {
     stopBoat(bot);
   }
@@ -490,4 +462,78 @@ export async function dismountBoat(bot: Bot): Promise<void> {
     await bot.dismount();
     await sleep(300);
   }
+}
+
+/**
+ * Breaks a nearby boat entity to pick it up.
+ *
+ * @param bot - The bot instance
+ * @param maxDistance - Maximum distance to search for boat (default: 5)
+ * @param log - Optional logger
+ * @returns True if a boat was broken, false otherwise
+ */
+export async function breakNearbyBoat(
+  bot: Bot,
+  maxDistance: number = 5,
+  log?: { debug: Function }
+): Promise<boolean> {
+  const boatEntity = findNearbyBoat(bot, maxDistance);
+  if (!boatEntity) {
+    log?.debug('No boat found nearby to break');
+    return false;
+  }
+
+  log?.debug({ boatId: boatEntity.id, pos: boatEntity.position.toString() }, 'Breaking boat');
+
+  try {
+    // Attack the boat to break it
+    await bot.attack(boatEntity);
+    await sleep(500);
+
+    // The boat drops as an item - we'll pick it up naturally or via pickup action
+    log?.debug('Boat broken');
+    return true;
+  } catch (err) {
+    log?.debug({ err }, 'Failed to break boat');
+    return false;
+  }
+}
+
+/**
+ * Dismounts from boat and breaks it to recover the item.
+ *
+ * @param bot - The bot instance
+ * @param log - Optional logger
+ */
+export async function dismountAndBreakBoat(
+  bot: Bot,
+  log?: { debug: Function }
+): Promise<void> {
+  await dismountBoat(bot);
+  await breakNearbyBoat(bot, 5, log);
+}
+
+/**
+ * Checks if there is solid land directly ahead of the boat.
+ * Used to detect when the boat should be abandoned for walking.
+ *
+ * @param bot - The bot instance
+ * @param yaw - The direction to check (in radians)
+ * @param distance - How far ahead to check (default: 3)
+ * @returns True if there is solid land ahead
+ */
+export function hasLandAhead(bot: Bot, yaw: number, distance: number = 3): boolean {
+  const pos = bot.entity.position;
+  // Calculate position ahead in the direction of yaw
+  const checkX = pos.x - Math.sin(yaw) * distance;
+  const checkZ = pos.z + Math.cos(yaw) * distance;
+
+  // Check at water level and one block above
+  for (let dy = 0; dy <= 1; dy++) {
+    const block = bot.blockAt(new Vec3(checkX, pos.y + dy, checkZ));
+    if (block && !block.transparent && block.name !== 'water' && block.name !== 'air') {
+      return true;
+    }
+  }
+  return false;
 }
