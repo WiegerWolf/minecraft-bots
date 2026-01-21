@@ -1,11 +1,14 @@
 /**
  * Boat placement and navigation utilities.
  *
- * This module provides a workaround for Minecraft 1.21+ where the use_item
- * packet format changed from `rotation: { x, y }` to separate `yaw` and `pitch` fields.
- * Mineflayer 4.33.0 still uses the old format, causing boat placement to fail.
- *
+ * PLACEMENT: Works with MC 1.21+ via patched mineflayer (patches/mineflayer+4.33.0.patch).
+ * The use_item packet format changed to require rotation fields.
  * @see https://github.com/PrismarineJS/mineflayer/issues/3742
+ *
+ * NAVIGATION: Limited functionality on Paper/Spigot servers.
+ * Paper's movement validation rejects client-side vehicle_move packets,
+ * preventing mineflayer from controlling boat movement. Works on vanilla servers.
+ * On Paper servers, the bot will need to swim instead of using boats.
  */
 
 import type { Bot } from 'mineflayer';
@@ -233,8 +236,8 @@ export async function placeBoatOnWater(
 
   // Wait a bit more for the boat to appear via spawn event
   await sleep(500);
-  if (spawnedBoat) {
-    log?.debug({ boatId: spawnedBoat.id }, 'Got boat from spawn listener');
+  if (spawnedBoat !== null) {
+    log?.debug({ boatId: (spawnedBoat as Entity).id }, 'Got boat from spawn listener');
     return spawnedBoat;
   }
 
@@ -363,11 +366,15 @@ export async function placeAndMountBoat(
 /**
  * Navigates a boat toward a destination using vehicle controls.
  *
+ * NOTE: Boat navigation has limited support on Paper/Spigot servers.
+ * Paper's movement validation rejects client-side position updates,
+ * so the boat may not move. Falls back quickly to allow swimming.
+ *
  * @param bot - The bot instance
  * @param destination - Target position
  * @param maxTime - Maximum navigation time in ms (default: 30000)
  * @param log - Optional logger
- * @returns True if reached destination area, false if timed out or stuck
+ * @returns True if reached destination area, false if stuck/unsupported
  */
 export async function navigateBoatToward(
   bot: Bot,
@@ -386,65 +393,80 @@ export async function navigateBoatToward(
     initialDist: lastDistance.toFixed(1),
   }, 'Starting boat navigation');
 
-  while (Date.now() - startTime < maxTime) {
-    const currentPos = bot.entity.position;
-    const distToTarget = currentPos.xzDistanceTo(destination);
+  const botWithVehicle = bot as Bot & { vehicle?: Entity };
+  const client = (bot as any)._client;
 
-    // Check if we're close enough
-    if (distToTarget < 15) {
-      stopBoat(bot);
-      log?.debug({ dist: distToTarget.toFixed(1) }, 'Reached boat destination');
-      return true;
+  let tickCount = 0;
+  try {
+    while (Date.now() - startTime < maxTime) {
+      tickCount++;
+      const currentPos = bot.entity.position;
+      const distToTarget = currentPos.xzDistanceTo(destination);
+
+      // Check if we're close enough
+      if (distToTarget < 15) {
+        stopBoat(bot);
+        log?.debug({ dist: distToTarget.toFixed(1) }, 'Reached boat destination');
+        return true;
+      }
+
+      // Check for progress - fail fast after 5 seconds if not moving
+      // (Paper servers reject boat movement packets)
+      if (distToTarget < lastDistance - 0.5) {
+        lastProgressTime = Date.now();
+        lastDistance = distToTarget;
+      } else if (Date.now() - lastProgressTime > 5000) {
+        stopBoat(bot);
+        log?.debug({
+          distToTarget: distToTarget.toFixed(1),
+          elapsed: ((Date.now() - startTime) / 1000).toFixed(1),
+        }, 'Boat not responding to controls (Paper server?)');
+        return false;
+      }
+
+      // Calculate direction to target
+      const dx = destination.x - currentPos.x;
+      const dz = destination.z - currentPos.z;
+      const targetYaw = Math.atan2(-dx, dz);
+
+      // Aim the boat
+      bot.look(targetYaw, 0, false).catch(() => {});
+
+      // Send movement packets
+      try {
+        // player_input for movement control
+        client.write('player_input', {
+          inputs: { forward: true, backward: false, left: false, right: false, jump: false, shift: false, sprint: false }
+        });
+
+        // vehicle_move with calculated position
+        const speed = 0.2; // conservative speed
+        client.write('vehicle_move', {
+          x: currentPos.x - Math.sin(targetYaw) * speed,
+          y: currentPos.y,
+          z: currentPos.z + Math.cos(targetYaw) * speed,
+          yaw: -targetYaw * 180 / Math.PI,
+          pitch: 0
+        });
+
+        // steer_boat for paddle animation
+        client.write('steer_boat', { leftPaddle: true, rightPaddle: true });
+      } catch {
+        // Ignore packet errors
+      }
+
+      // Also use mineflayer's API
+      bot.moveVehicle(0, 1);
+
+      await sleep(50); // 20 ticks per second like Minecraft
     }
 
-    // Check for progress (moved at least 1 block in last 8 seconds)
-    if (distToTarget < lastDistance - 1) {
-      lastProgressTime = Date.now();
-      lastDistance = distToTarget;
-    } else if (Date.now() - lastProgressTime > 8000) {
-      stopBoat(bot);
-      log?.debug({
-        currentPos: currentPos.toString(),
-        distToTarget: distToTarget.toFixed(1),
-        elapsed: ((Date.now() - startTime) / 1000).toFixed(1),
-      }, 'Boat stuck, no progress');
-      return false;
-    }
-
-    // Calculate direction to target
-    const dx = destination.x - currentPos.x;
-    const dz = destination.z - currentPos.z;
-    const targetYaw = Math.atan2(-dx, dz);
-
-    // Get current yaw (bot.entity.yaw is in radians)
-    const currentYaw = bot.entity.yaw;
-    let yawDiff = targetYaw - currentYaw;
-
-    // Normalize to -PI to PI
-    while (yawDiff > Math.PI) yawDiff -= 2 * Math.PI;
-    while (yawDiff < -Math.PI) yawDiff += 2 * Math.PI;
-
-    // Use moveVehicle for boat control
-    // left: -1 (right), 0 (straight), 1 (left)
-    // forward: -1 (backward), 0 (stop), 1 (forward)
-    let leftValue = 0;
-    const turnThreshold = 0.3; // ~17 degrees
-
-    if (yawDiff > turnThreshold) {
-      leftValue = 1; // Turn left
-    } else if (yawDiff < -turnThreshold) {
-      leftValue = -1; // Turn right
-    }
-
-    // Always move forward
-    bot.moveVehicle(leftValue, 1);
-
-    await sleep(100);
+    stopBoat(bot);
+    log?.debug('Boat navigation timed out');
+    return false;
+  } finally {
+    stopBoat(bot);
   }
-
-  stopBoat(bot);
-  log?.debug('Boat navigation timed out');
-  return false;
 }
 
 /**

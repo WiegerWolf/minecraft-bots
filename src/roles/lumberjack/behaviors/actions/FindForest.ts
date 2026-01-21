@@ -552,17 +552,21 @@ export class FindForest implements BehaviorNode {
             await dismountBoat(bot);
             bb.log?.debug('Dismounted from boat');
 
-            // Step 7: Continue on foot to final destination if needed
-            if (success) {
-                const distToTarget = bot.entity.position.xzDistanceTo(destination);
-                if (distToTarget > 10) {
+            // Step 7: Continue to destination (swimming if boat navigation failed)
+            const distToTarget = bot.entity.position.xzDistanceTo(destination);
+            if (distToTarget > 10) {
+                if (!success) {
+                    bb.log?.info({ dist: distToTarget.toFixed(1) }, 'Boat navigation failed, swimming to destination');
+                } else {
                     bb.log?.debug({ dist: distToTarget.toFixed(1) }, 'Continuing to destination on foot');
-                    const finalGoal = new GoalXZ(destination.x, destination.z);
-                    await pathfinderGotoWithRetry(bot, finalGoal, 2, 20000);
                 }
+                const finalGoal = new GoalXZ(destination.x, destination.z);
+                // Give more time for swimming (it's slower)
+                const swimSuccess = await pathfinderGotoWithRetry(bot, finalGoal, 2, 45000);
+                return swimSuccess;
             }
 
-            return success;
+            return true; // Close enough to destination
         } catch (err) {
             bb.log?.error({ err }, 'Error during boat crossing');
             // Make sure we dismount if something goes wrong
