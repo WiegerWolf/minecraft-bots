@@ -69,6 +69,9 @@ export class PlaceStorageChest implements BehaviorNode {
             bb.sharedChest = placePos;
             bb.knownChests.push(placePos.clone());
 
+            // We placed this chest, so we know it's empty - no need to check for supplies
+            bb.hasCheckedStorage = true;
+
             // Announce to village
             if (bb.villageChat) {
                 bb.villageChat.announceSharedChest(placePos);
