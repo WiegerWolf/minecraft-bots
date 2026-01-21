@@ -12,6 +12,12 @@ import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
 import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
 import { LOG_NAMES } from '../../../shared/TreeHarvest';
+import {
+    placeBoatOnWater,
+    findNearbyWaterBlock,
+    navigateBoatToward,
+    dismountBoat,
+} from '../../../../shared/BoatUtils';
 
 // Minimum water distance to warrant using a boat (shorter distances can be swam)
 const MIN_BOAT_DISTANCE = 8;
@@ -477,6 +483,12 @@ export class FindForest implements BehaviorNode {
         waterStartPos: Vec3,
         destination: Vec3
     ): Promise<boolean> {
+        const log = bb.log ? {
+            debug: (msg: any, ...args: any[]) => bb.log?.debug(msg, ...args),
+            warn: (msg: any, ...args: any[]) => bb.log?.warn(msg, ...args),
+            info: (msg: any, ...args: any[]) => bb.log?.info(msg, ...args),
+        } : undefined;
+
         try {
             // Step 1: Walk to water's edge
             bb.log?.debug({ pos: waterStartPos.floored().toString() }, 'Walking to water edge');
@@ -487,15 +499,15 @@ export class FindForest implements BehaviorNode {
                 return false;
             }
 
-            // Step 2: Find the boat in inventory
+            // Step 2: Check for boat in inventory
             const boatItem = bot.inventory.items().find(i => i.name.includes('boat'));
             if (!boatItem) {
                 bb.log?.warn('No boat in inventory');
                 return false;
             }
 
-            // Step 3: Find a water block to place the boat on
-            const waterBlock = this.findNearbyWater(bot);
+            // Step 3: Find water and place boat using the fixed packet method
+            const waterBlock = findNearbyWaterBlock(bot);
             if (!waterBlock) {
                 bb.log?.warn('No water nearby to place boat');
                 return false;
@@ -503,34 +515,26 @@ export class FindForest implements BehaviorNode {
 
             bb.log?.debug({ water: waterBlock.position.floored().toString() }, 'Placing boat on water');
 
-            // Equip the boat
-            await bot.equip(boatItem, 'hand');
-            await sleep(200);
-
-            // Look at the water block
-            await bot.lookAt(waterBlock.position.offset(0.5, 1, 0.5));
-            await sleep(100);
-
-            // Place the boat (right-click on water)
-            try {
-                await bot.placeEntity(waterBlock, new Vec3(0, 1, 0));
-            } catch (err) {
-                bb.log?.debug({ err }, 'placeEntity failed, trying activateBlock');
-                // Fallback: try activating the water block
-                await bot.activateBlock(waterBlock);
-            }
-            await sleep(500);
-
-            // Step 4: Find and mount the boat entity
-            const boatEntity = this.findNearbyBoatEntity(bot);
+            // Use the fixed boat placement that works in MC 1.21+
+            const boatLog = bb.log ? {
+                debug: (msg: any, ...args: any[]) => bb.log?.debug(msg, ...args),
+                warn: (msg: any, ...args: any[]) => bb.log?.warn(msg, ...args),
+            } : undefined;
+            const boatEntity = await placeBoatOnWater(bot, waterBlock, 5000, boatLog);
             if (!boatEntity) {
-                bb.log?.warn('Could not find placed boat entity');
+                bb.log?.warn('Could not place boat on water');
                 return false;
             }
 
+            // Step 4: Mount the boat
             bb.log?.debug({ boatId: boatEntity.id }, 'Mounting boat');
-            await bot.mount(boatEntity);
-            await sleep(300);
+            try {
+                await bot.mount(boatEntity);
+                await sleep(300);
+            } catch (err) {
+                bb.log?.warn({ err }, 'Failed to mount boat');
+                return false;
+            }
 
             // Verify we're mounted
             const botWithVehicle = bot as BotWithVehicle;
@@ -542,14 +546,11 @@ export class FindForest implements BehaviorNode {
             bb.log?.info('Successfully mounted boat, navigating across water');
 
             // Step 5: Navigate across water toward destination
-            const success = await this.navigateBoatToward(bot, bb, destination);
+            const success = await navigateBoatToward(bot, destination, 30000, log);
 
             // Step 6: Dismount
-            if (botWithVehicle.vehicle) {
-                bb.log?.debug('Dismounting from boat');
-                await bot.dismount();
-                await sleep(300);
-            }
+            await dismountBoat(bot);
+            bb.log?.debug('Dismounted from boat');
 
             // Step 7: Continue on foot to final destination if needed
             if (success) {
@@ -565,130 +566,9 @@ export class FindForest implements BehaviorNode {
         } catch (err) {
             bb.log?.error({ err }, 'Error during boat crossing');
             // Make sure we dismount if something goes wrong
-            const botV = bot as BotWithVehicle;
-            if (botV.vehicle) {
-                try { await bot.dismount(); } catch { /* ignore */ }
-            }
+            await dismountBoat(bot);
             return false;
         }
-    }
-
-    /**
-     * Find a water block near the bot that can be used to place a boat.
-     */
-    private findNearbyWater(bot: Bot): any | null {
-        const pos = bot.entity.position;
-        const searchRadius = 5;
-
-        for (let dx = -searchRadius; dx <= searchRadius; dx++) {
-            for (let dz = -searchRadius; dz <= searchRadius; dz++) {
-                for (let dy = -2; dy <= 1; dy++) {
-                    const checkPos = pos.offset(dx, dy, dz);
-                    const block = bot.blockAt(checkPos);
-                    if (block && (block.name === 'water' || block.name === 'flowing_water')) {
-                        // Verify there's air above for the boat
-                        const above = bot.blockAt(checkPos.offset(0, 1, 0));
-                        if (above && above.name === 'air') {
-                            return block;
-                        }
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Find a boat entity near the bot.
-     */
-    private findNearbyBoatEntity(bot: Bot): Entity | null {
-        for (const entity of Object.values(bot.entities)) {
-            if (entity.name?.includes('boat') && entity.position.distanceTo(bot.entity.position) < 5) {
-                return entity;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Navigate the boat toward a destination.
-     * Uses simple direction-based steering.
-     *
-     * @param bot - The bot instance
-     * @param bb - Blackboard for logging
-     * @param destination - Target position
-     * @returns true if reached near land or destination
-     */
-    private async navigateBoatToward(
-        bot: Bot,
-        bb: LumberjackBlackboard,
-        destination: Vec3
-    ): Promise<boolean> {
-        const maxIterations = 100; // Max ~50 seconds of sailing
-        const checkInterval = 500; // Check every 500ms
-        const botWithVehicle = bot as BotWithVehicle;
-
-        for (let i = 0; i < maxIterations; i++) {
-            if (!botWithVehicle.vehicle) {
-                bb.log?.warn('Fell out of boat during navigation');
-                return false;
-            }
-
-            const pos = bot.entity.position;
-            const distToTarget = pos.xzDistanceTo(destination);
-
-            // Check if we're close enough to destination
-            if (distToTarget < 15) {
-                bb.log?.debug({ dist: distToTarget.toFixed(1) }, 'Close to destination');
-                return true;
-            }
-
-            // Check if we've reached land (solid block below or nearby)
-            if (this.isNearLand(bot, destination)) {
-                bb.log?.debug('Reached land');
-                return true;
-            }
-
-            // Calculate direction to destination
-            const direction = destination.minus(pos).normalize();
-
-            // Look toward destination to steer the boat
-            const lookTarget = pos.plus(direction.scaled(10));
-            await bot.lookAt(lookTarget);
-
-            // Move forward
-            bot.setControlState('forward', true);
-
-            await sleep(checkInterval);
-        }
-
-        bb.log?.warn('Boat navigation timed out');
-        bot.setControlState('forward', false);
-        return false;
-    }
-
-    /**
-     * Check if the bot is near land (solid ground) in the direction of the destination.
-     */
-    private isNearLand(bot: Bot, destination: Vec3): boolean {
-        const pos = bot.entity.position;
-        const direction = destination.minus(pos).normalize();
-
-        // Check a few blocks ahead
-        for (let dist = 2; dist <= 8; dist += 2) {
-            const checkPos = pos.plus(direction.scaled(dist));
-            const x = Math.floor(checkPos.x);
-            const z = Math.floor(checkPos.z);
-
-            // Check at water level and one below
-            for (let y = Math.floor(pos.y) - 1; y <= Math.floor(pos.y) + 1; y++) {
-                const block = bot.blockAt(new Vec3(x, y, z));
-                if (block && !block.transparent && block.name !== 'water' && block.name !== 'flowing_water') {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     private getClusterCenter(positions: Vec3[]): Vec3 | null {

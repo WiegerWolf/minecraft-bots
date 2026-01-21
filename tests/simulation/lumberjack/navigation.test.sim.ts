@@ -73,18 +73,17 @@ async function testExploresForDistantForest() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST: Avoids water barriers during exploration
+// TEST: Uses boat to cross water to reach island forest
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function testAvoidsWaterBarriersDuringExploration() {
-  const test = new SimulationTest('Finds narrow water crossing to reach island forest');
+async function testUsesBoatToCrossWater() {
+  const test = new SimulationTest('Uses boat to cross water to reach island forest');
 
   const world = new MockWorld();
-  // Large area with grass as the mainland
-  world.fill(new Vec3(-60, 63, -60), new Vec3(60, 63, 60), 'grass_block');
+  // Small land area around spawn (2 blocks) - bot MUST use boat
+  world.fill(new Vec3(-2, 63, -2), new Vec3(2, 63, 2), 'grass_block');
 
   // Island with forest at x=50, z=0
-  // We'll add water via RCON after setup (much faster than block-by-block)
   const islandCenter = new Vec3(50, 63, 0);
 
   // Create the island (grass platform)
@@ -108,29 +107,19 @@ async function testAvoidsWaterBarriersDuringExploration() {
     botPosition: spawnPos.clone(),
     botInventory: [
       { name: 'iron_axe', count: 1 },
-      { name: 'oak_boat', count: 1 }, // Boat allows exploration when water detected
+      { name: 'oak_boat', count: 1 }, // Boat required to cross water
     ],
     clearRadius: 150,
   });
 
-  // Use RCON fill commands for water (MUCH faster than block-by-block)
-  // Water avoidance rules (from FindForest.ts):
-  // - Samples up to 5 points along path (one every 8 blocks)
-  // - If >50% of checkpoints are water → returns -30 (skipped)
-  // - For 32-block path: 4 checkpoints, need 3+ water to skip
-  // - So water needs to be ~24+ blocks wide to trigger avoidance
-
-  // Create wide water surrounding the island (40 blocks wide on most sides)
-  // WEST side: wide water from x=5 to x=41 (36 blocks)
-  await test.rcon('fill 5 63 -30 41 63 30 minecraft:water replace minecraft:grass_block');
-  // NORTH side: wide water at z=9 to z=30 (island ends at z=8)
-  await test.rcon('fill 42 63 9 75 63 30 minecraft:water replace minecraft:grass_block');
-  // EAST side: wide water from x=59 to x=75 (island ends at x=58)
-  await test.rcon('fill 59 63 -30 75 63 8 minecraft:water replace minecraft:grass_block');
-
-  // SOUTH side: NARROW water only 5 blocks wide (z=-9 to z=-13)
-  // Island ends at z=-8, this creates a 5-block water gap before mainland at z=-14
-  await test.rcon('fill 42 63 -13 58 63 -9 minecraft:water replace minecraft:grass_block');
+  // Create wide water surrounding spawn (all directions blocked by water)
+  // Water from x=3 to x=41 (covers gap between spawn and island)
+  await test.rcon('fill 3 63 -30 41 63 30 minecraft:water');
+  // Also fill water on negative X side
+  await test.rcon('fill -30 63 -30 -3 63 30 minecraft:water');
+  // Fill water on Z sides
+  await test.rcon('fill -2 63 3 2 63 30 minecraft:water');
+  await test.rcon('fill -2 63 -30 2 63 -3 minecraft:water');
 
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
@@ -140,19 +129,18 @@ async function testAvoidsWaterBarriersDuringExploration() {
 
   const bb = () => (role as any).blackboard;
 
-  // Wait for bot to find forest trees (indicated by forestTrees in blackboard)
+  // Wait for bot to find forest trees on the island
   await test.waitUntil(
     () => bb()?.forestTrees?.length >= 3,
-    { timeout: 90000, message: 'Bot should find forest trees on the island' }
+    { timeout: 120000, message: 'Bot should find forest trees on the island using boat' }
   );
 
-  // Verify the bot found trees near the island (use horizontal distance)
+  // Verify the bot found trees near the island
   const forestTrees = bb()?.forestTrees as Array<{ position: Vec3 }>;
   const firstTreePos = forestTrees[0]?.position;
 
   test.assert(firstTreePos !== undefined, 'Should have at least one forest tree');
 
-  // Use horizontal (XZ) distance to island center
   const horizontalDist = Math.sqrt(
     Math.pow(firstTreePos!.x - islandCenter.x, 2) +
     Math.pow(firstTreePos!.z - islandCenter.z, 2)
@@ -165,12 +153,101 @@ async function testAvoidsWaterBarriersDuringExploration() {
     `Bot should have found forest trees on the island (dist=${horizontalDist.toFixed(1)})`
   );
 
-  // Check bot is on land
-  const botPos = test.bot.entity.position.floored();
-  const blockBelow = test.blockAt(botPos.offset(0, -1, 0));
+  // Check bot crossed water (should be on island now)
+  const botPos = test.bot.entity.position;
   test.assert(
-    blockBelow !== 'water' && blockBelow !== 'flowing_water',
-    `Bot should be standing on land (found ${blockBelow})`
+    botPos.x > 30,
+    `Bot should have crossed water to island (x=${botPos.x.toFixed(1)}, expected > 30)`
+  );
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEST: Avoids water barriers during exploration (no boat)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function testAvoidsWaterBarriersOnFoot() {
+  const test = new SimulationTest('Avoids water barriers and explores on foot');
+
+  const world = new MockWorld();
+  // Large area with grass as the mainland (30 blocks around spawn)
+  world.fill(new Vec3(-35, 63, -35), new Vec3(35, 63, 35), 'grass_block');
+
+  // Island with forest at x=50, z=0
+  const islandCenter = new Vec3(50, 63, 0);
+
+  // Create the island (grass platform)
+  for (let x = -8; x <= 8; x++) {
+    for (let z = -8; z <= 8; z++) {
+      world.setBlock(islandCenter.offset(x, 0, z), 'grass_block');
+    }
+  }
+
+  // Forest on the island
+  const forestCenter = islandCenter.offset(0, 1, 0); // y=64 for trees
+  createOakTree(world, forestCenter.offset(0, 0, 0), 5);
+  createOakTree(world, forestCenter.offset(4, 0, 3), 5);
+  createOakTree(world, forestCenter.offset(-4, 0, 4), 5);
+  createOakTree(world, forestCenter.offset(3, 0, -4), 4);
+  createOakTree(world, forestCenter.offset(-5, 0, -2), 5);
+
+  // Also add a forest cluster on the mainland (so bot can find trees without crossing)
+  const mainlandForestCenter = new Vec3(-20, 64, 15);
+  createOakTree(world, mainlandForestCenter.offset(0, 0, 0), 5);
+  createOakTree(world, mainlandForestCenter.offset(3, 0, 2), 5);
+  createOakTree(world, mainlandForestCenter.offset(-2, 0, 3), 5);
+  createOakTree(world, mainlandForestCenter.offset(1, 0, -3), 4);
+
+  const spawnPos = new Vec3(0, 64, 0);
+
+  await test.setup(world, {
+    botPosition: spawnPos.clone(),
+    botInventory: [
+      { name: 'iron_axe', count: 1 },
+      // NO BOAT - must explore on foot
+    ],
+    clearRadius: 150,
+  });
+
+  // Create wide water barrier between mainland and island
+  // Water from x=36 to x=41 (wide enough to block swimming paths)
+  await test.rcon('fill 36 63 -35 41 63 35 minecraft:water replace minecraft:grass_block');
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  const role = new GOAPLumberjackRole();
+  role.start(test.bot, { logger: test.createRoleLogger('lumberjack'), spawnPosition: spawnPos.clone() });
+
+  const bb = () => (role as any).blackboard;
+
+  // Wait for bot to find forest trees (should find mainland forest)
+  await test.waitUntil(
+    () => bb()?.forestTrees?.length >= 3,
+    { timeout: 90000, message: 'Bot should find forest trees on mainland' }
+  );
+
+  // Verify the bot found trees on mainland (not on island)
+  const forestTrees = bb()?.forestTrees as Array<{ position: Vec3 }>;
+  const firstTreePos = forestTrees[0]?.position;
+
+  test.assert(firstTreePos !== undefined, 'Should have at least one forest tree');
+
+  console.log(`  Found ${forestTrees.length} forest trees near (${firstTreePos!.x.toFixed(0)}, ${firstTreePos!.z.toFixed(0)})`);
+
+  // Bot should have stayed on mainland (x < 35, before water)
+  const botPos = test.bot.entity.position;
+  test.assert(
+    botPos.x < 35,
+    `Bot should have stayed on mainland, avoiding water (x=${botPos.x.toFixed(1)}, expected < 35)`
+  );
+
+  // Verify bot found the mainland forest, not the island one
+  test.assert(
+    firstTreePos!.x < 35,
+    `Bot should have found mainland forest (tree x=${firstTreePos!.x.toFixed(0)}, expected < 35)`
   );
 
   role.stop(test.bot);
@@ -491,7 +568,8 @@ async function testNavigatesBackToForest() {
 
 const ALL_TESTS: Record<string, () => Promise<any>> = {
   'explore-distant': testExploresForDistantForest,
-  'water-barrier': testAvoidsWaterBarriersDuringExploration,
+  'boat-crossing': testUsesBoatToCrossWater,
+  'water-avoidance': testAvoidsWaterBarriersOnFoot,
   'establish-village': testEstablishesVillageWhenCrafting,
   // Long integration tests disabled for now due to pathfinding timeouts in test environment
   // 'return-for-signs': testReturnsToSpawnForSigns,
