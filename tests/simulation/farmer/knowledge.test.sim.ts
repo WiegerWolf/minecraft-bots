@@ -92,6 +92,109 @@ async function testReadsFarmSign() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TEST: Places FARM sign after establishing farm
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function testPlacesFarmSign() {
+  const test = new SimulationTest('Places FARM sign after establishing farm');
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+
+  // Water source where bot will establish farm center
+  const waterPos = new Vec3(10, 63, 10);
+  world.setBlock(waterPos, 'water');
+
+  // Only VILLAGE sign - no FARM sign (bot should create one)
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+
+  // Spawn position for sign placement calculations
+  const spawnPos = new Vec3(0, 64, 0);
+
+  await test.setup(world, {
+    botPosition: spawnPos.clone(),
+    botInventory: [
+      { name: 'iron_hoe', count: 1 },
+      { name: 'wheat_seeds', count: 16 },
+      { name: 'oak_sign', count: 3 },  // Signs ready to place
+    ],
+  });
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  // Collect chat messages from the bot
+  const chatMessages: string[] = [];
+  test.bot.on('chat', (username: string, message: string) => {
+    if (username === test.bot.username) {
+      chatMessages.push(message);
+    }
+  });
+
+  const role = new GOAPFarmingRole();
+  role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: spawnPos.clone() });
+
+  const bb = () => (role as any).blackboard;
+
+  // Wait for bot to study signs first
+  await test.waitUntil(
+    () => bb()?.hasStudiedSigns === true,
+    { timeout: 30000, message: 'Bot should study spawn signs' }
+  );
+
+  // Wait for farm center to be established (triggers sign write queue)
+  await test.waitUntil(
+    () => bb()?.farmCenter !== null,
+    { timeout: 45000, message: 'Bot should establish farm center near water' }
+  );
+
+  // Verify farm center is at the water position
+  const farmCenter = bb()?.farmCenter;
+  test.assert(
+    farmCenter?.x === waterPos.x && farmCenter?.y === waterPos.y && farmCenter?.z === waterPos.z,
+    `Farm center should be at water position (${waterPos.x}, ${waterPos.y}, ${waterPos.z})`
+  );
+
+  // Wait for FARM sign to be written (farmSignWritten flag or chat announcement)
+  await test.waitUntil(
+    () => {
+      const signWritten = bb()?.farmSignWritten === true;
+      const hasAnnouncement = chatMessages.some(msg =>
+        msg.toLowerCase().includes('placed') && msg.toLowerCase().includes('farm') && msg.toLowerCase().includes('sign')
+      );
+      return signWritten && hasAnnouncement;
+    },
+    { timeout: 60000, message: 'Bot should place FARM sign and announce it' }
+  );
+
+  // Verify chat announcement
+  const hasSignAnnouncement = chatMessages.some(msg =>
+    msg.includes('Placed a FARM sign')
+  );
+  test.assert(hasSignAnnouncement, 'Bot should announce "Placed a FARM sign at spawn!"');
+
+  // Verify blackboard state
+  test.assert(bb()?.farmSignWritten === true, 'Blackboard farmSignWritten should be true');
+
+  // Verify signPositions map has FARM entry
+  const signPositions = bb()?.signPositions as Map<string, Vec3> | undefined;
+  const farmSignPos = signPositions?.get('FARM');
+  test.assert(farmSignPos !== undefined, 'Blackboard signPositions should have FARM entry');
+
+  // Verify a sign actually exists at the recorded position
+  if (farmSignPos) {
+    const signBlock = test.blockAt(farmSignPos);
+    test.assert(
+      signBlock?.includes('sign') === true,
+      `Sign block should exist at recorded position (${farmSignPos.x}, ${farmSignPos.y}, ${farmSignPos.z})`
+    );
+  }
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TEST: Learns village infrastructure from signs
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -179,6 +282,7 @@ async function testLearnsInfrastructure() {
 
 const ALL_TESTS: Record<string, () => Promise<any>> = {
   'read-farm': testReadsFarmSign,
+  'place-farm-sign': testPlacesFarmSign,
   'infrastructure': testLearnsInfrastructure,
 };
 
