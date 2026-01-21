@@ -115,23 +115,34 @@ export class WriteKnowledgeSign implements BehaviorNode {
 
         // Get the preferred placement position for this sign type
         const targetPos = getSignPositionForType(bb.spawnPosition!, pending.type);
+        bb.log?.debug(
+            { type: pending.type, primaryPos: targetPos.toString(), botPos: bot.entity.position.floored().toString() },
+            'Attempting to place sign at primary position'
+        );
 
         // Try to place at target position or find alternative
-        const placed = await this.tryPlaceSign(bot, bb, targetPos, pending);
+        const placed = await this.tryPlaceSign(bot, bb, targetPos, pending, 'primary');
         if (placed) {
             return true;
         }
 
         // Try alternative positions near spawn (shared utility)
         const alternativePositions = getAlternativeSignPositions(bb.spawnPosition!);
+        bb.log?.debug(
+            { type: pending.type, alternativeCount: alternativePositions.length },
+            'Primary position failed, trying alternatives'
+        );
+
+        let attemptCount = 0;
         for (const altPos of alternativePositions) {
-            const placedAlt = await this.tryPlaceSign(bot, bb, altPos, pending);
+            attemptCount++;
+            const placedAlt = await this.tryPlaceSign(bot, bb, altPos, pending, `alt-${attemptCount}`);
             if (placedAlt) {
                 return true;
             }
         }
 
-        bb.log?.warn({ type: pending.type }, 'Failed to find suitable position for sign');
+        bb.log?.warn({ type: pending.type, attemptCount }, 'Failed to find suitable position for sign');
         return false;
     }
 
@@ -166,12 +177,22 @@ export class WriteKnowledgeSign implements BehaviorNode {
         }
 
         try {
-            // Move to crafting table
+            // Move to crafting table - get within 2 blocks (closer for crafting to work)
             const success = await pathfinderGotoWithRetry(
                 bot,
-                new GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 3)
+                new GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 2)
             );
             if (!success) {
+                return false;
+            }
+
+            // Get a FRESH block reference after pathfinding (the old one may be stale)
+            const freshCraftingTable = bot.blockAt(craftingTable.position);
+            if (!freshCraftingTable || freshCraftingTable.name !== 'crafting_table') {
+                bb.log?.warn(
+                    { pos: craftingTable.position.toString(), foundBlock: freshCraftingTable?.name },
+                    'Crafting table not found at expected position after pathfinding'
+                );
                 return false;
             }
 
@@ -182,16 +203,24 @@ export class WriteKnowledgeSign implements BehaviorNode {
                 return false;
             }
 
-            const recipe = bot.recipesFor(signId, null, 1, craftingTable)[0];
+            const recipe = bot.recipesFor(signId, null, 1, freshCraftingTable)[0];
             if (!recipe) {
                 bb.log?.debug('No recipe found for oak_sign');
                 return false;
             }
 
-            await bot.craft(recipe, 1, craftingTable);
-            bb.log?.debug('Crafted signs');
-            await sleep(100);
-            return true;
+            await bot.craft(recipe, 1, freshCraftingTable);
+            await sleep(200);
+
+            // Verify crafting succeeded
+            const signAfter = bot.inventory.items().find(i => i.name.includes('_sign'));
+            if (signAfter) {
+                bb.log?.debug('Crafted signs');
+                return true;
+            } else {
+                bb.log?.warn('Craft completed but no sign in inventory');
+                return false;
+            }
         } catch (err) {
             bb.log?.warn({ err }, 'Failed to craft sign');
             return false;
@@ -202,11 +231,15 @@ export class WriteKnowledgeSign implements BehaviorNode {
         bot: Bot,
         bb: FarmingBlackboard,
         targetPos: Vec3,
-        pending: PendingSignWrite
+        pending: PendingSignWrite,
+        attemptLabel: string = 'unknown'
     ): Promise<boolean> {
+        const posKey = targetPos.floored().toString();
+
         // Find a valid Y level at this X,Z position (shared utility)
         const validPos = findValidSignPosition(bot, targetPos);
         if (!validPos) {
+            bb.log?.debug({ pos: posKey, attempt: attemptLabel }, 'No valid Y level found for sign');
             return false;
         }
 
@@ -215,31 +248,70 @@ export class WriteKnowledgeSign implements BehaviorNode {
         const targetBlock = bot.blockAt(validPos);
 
         if (!groundBlock || groundBlock.boundingBox !== 'block') {
+            bb.log?.debug(
+                { pos: posKey, attempt: attemptLabel, groundBlock: groundBlock?.name ?? 'null' },
+                'Invalid ground block for sign'
+            );
             return false;
         }
 
         if (!targetBlock || targetBlock.name !== 'air') {
+            bb.log?.debug(
+                { pos: posKey, attempt: attemptLabel, targetBlock: targetBlock?.name ?? 'null' },
+                'Target position not air for sign'
+            );
             return false;
         }
 
         // Update targetPos to the valid position for placement
         targetPos = validPos;
+        const dist = bot.entity.position.distanceTo(targetPos);
+
+        bb.log?.debug(
+            { pos: targetPos.toString(), attempt: attemptLabel, dist: dist.toFixed(1) },
+            'Valid position found, attempting pathfinding'
+        );
 
         try {
             // Move near the placement position
+            const pathStartTime = Date.now();
             const success = await pathfinderGotoWithRetry(
                 bot,
-                new GoalNear(targetPos.x, targetPos.y, targetPos.z, 3)
+                new GoalNear(targetPos.x, targetPos.y, targetPos.z, 3),
+                2,  // maxRetries
+                5000,  // timeoutMs
+                bb.log  // pass logger for pathfinding debug
             );
+            const pathDuration = Date.now() - pathStartTime;
+
             if (!success) {
+                bb.log?.debug(
+                    { pos: targetPos.toString(), attempt: attemptLabel, durationMs: pathDuration },
+                    'Pathfinding failed for sign placement'
+                );
                 return false;
             }
+
+            bb.log?.debug(
+                { pos: targetPos.toString(), attempt: attemptLabel, durationMs: pathDuration },
+                'Pathfinding succeeded, placing sign'
+            );
 
             // Get a sign from inventory
             const signItem = bot.inventory.items().find(i => i.name.includes('_sign'));
             if (!signItem) {
+                const invItems = bot.inventory.items().map(i => i.name);
+                bb.log?.debug(
+                    { attempt: attemptLabel, inventory: invItems.slice(0, 10) },
+                    'No sign found in inventory after pathfinding'
+                );
                 return false;
             }
+
+            bb.log?.debug(
+                { attempt: attemptLabel, signName: signItem.name, groundBlock: groundBlock.name },
+                'Attempting to place sign block'
+            );
 
             // Place the sign
             await bot.equip(signItem, 'hand');
@@ -249,7 +321,10 @@ export class WriteKnowledgeSign implements BehaviorNode {
             // Verify the sign was placed
             const placedBlock = bot.blockAt(targetPos);
             if (!placedBlock || !placedBlock.name.includes('_sign')) {
-                bb.log?.debug({ blockName: placedBlock?.name }, 'Sign placement verification failed');
+                bb.log?.debug(
+                    { attempt: attemptLabel, pos: targetPos.toString(), blockName: placedBlock?.name ?? 'null' },
+                    'Sign placement verification failed'
+                );
                 return false;
             }
 
