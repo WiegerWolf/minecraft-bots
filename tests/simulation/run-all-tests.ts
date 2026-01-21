@@ -52,6 +52,9 @@ const TEST_SUITES: TestSuite[] = [
   { name: 'Lumberjack - Core Work', file: 'lumberjack/core-work.test.sim.ts' },
   { name: 'Lumberjack - Inventory', file: 'lumberjack/inventory.test.sim.ts' },
   { name: 'Lumberjack - Knowledge', file: 'lumberjack/knowledge.test.sim.ts' },
+  { name: 'Lumberjack - Placement', file: 'lumberjack/placement.test.sim.ts' },
+  { name: 'Lumberjack - Navigation', file: 'lumberjack/navigation.test.sim.ts' },
+  { name: 'Lumberjack - Recovery', file: 'lumberjack/recovery.test.sim.ts' },
 
   // Landscaper tests
   { name: 'Landscaper - Startup', file: 'landscaper/startup.test.sim.ts' },
