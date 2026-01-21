@@ -179,10 +179,11 @@ async function testPrefersForestsOverIsolated() {
   const world = new MockWorld();
   world.fill(new Vec3(-40, 63, -40), new Vec3(40, 63, 40), 'grass_block');
 
-  // Isolated tree nearby
-  createOakTree(world, new Vec3(10, 64, 0), 5);
+  // Isolated tree nearby (at distance ~10 from spawn)
+  const isolatedTreePos = new Vec3(10, 64, 0);
+  createOakTree(world, isolatedTreePos, 5);
 
-  // Forest cluster further away
+  // Forest cluster further away (at distance ~35 from spawn)
   const forestCenter = new Vec3(25, 64, 25);
   createOakTree(world, forestCenter.offset(0, 0, 0), 5);
   createOakTree(world, forestCenter.offset(3, 0, 2), 6);
@@ -204,19 +205,27 @@ async function testPrefersForestsOverIsolated() {
   const role = new LumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
-  // Wait for bot to start moving
-  await test.wait(10000, 'Letting bot decide where to go');
+  // Wait for bot to collect logs (proves it found and chopped a tree)
+  await test.waitForInventory('oak_log', 1, {
+    timeout: 60000,
+    message: 'Bot should collect logs from a tree',
+  });
 
-  // Check if bot is heading toward forest
+  // Verify bot went to the forest, not the isolated tree
   const distToForest = test.botDistanceTo(forestCenter);
-  const distToIsolated = test.botDistanceTo(new Vec3(10, 64, 0));
-
-  const hasLogs = test.botInventoryCount('oak_log') > 0;
-  const headingToForest = distToForest < distToIsolated + 5;
+  const distToIsolated = test.botDistanceTo(isolatedTreePos);
 
   test.assert(
-    hasLogs || headingToForest,
-    'Bot should prefer the forest cluster over isolated tree'
+    distToForest < distToIsolated,
+    `Bot should be closer to forest (dist=${distToForest.toFixed(1)}) than isolated tree (dist=${distToIsolated.toFixed(1)})`
+  );
+
+  // Verify isolated tree is still standing (base log intact)
+  const isolatedTreeBase = test.blockAt(isolatedTreePos);
+  test.assertEqual(
+    isolatedTreeBase,
+    'oak_log',
+    'Isolated tree should still be standing (bot preferred forest)'
   );
 
   role.stop(test.bot);
