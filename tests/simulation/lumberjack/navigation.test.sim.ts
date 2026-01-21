@@ -73,6 +73,104 @@ async function testExploresForDistantForest() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TEST: Avoids water barriers during exploration
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function testAvoidsWaterBarriersDuringExploration() {
+  const test = new SimulationTest('Finds narrow water crossing to reach island forest');
+
+  const world = new MockWorld();
+  // Large area with grass as the mainland
+  world.fill(new Vec3(-60, 63, -60), new Vec3(60, 63, 60), 'grass_block');
+
+  // Island with forest at x=50, z=0
+  // We'll add water via RCON after setup (much faster than block-by-block)
+  const islandCenter = new Vec3(50, 63, 0);
+
+  // Create the island (grass platform)
+  for (let x = -8; x <= 8; x++) {
+    for (let z = -8; z <= 8; z++) {
+      world.setBlock(islandCenter.offset(x, 0, z), 'grass_block');
+    }
+  }
+
+  // Forest on the island
+  const forestCenter = islandCenter.offset(0, 1, 0); // y=64 for trees
+  createOakTree(world, forestCenter.offset(0, 0, 0), 5);
+  createOakTree(world, forestCenter.offset(4, 0, 3), 5);
+  createOakTree(world, forestCenter.offset(-4, 0, 4), 5);
+  createOakTree(world, forestCenter.offset(3, 0, -4), 4);
+  createOakTree(world, forestCenter.offset(-5, 0, -2), 5);
+
+  const spawnPos = new Vec3(0, 64, 0);
+
+  await test.setup(world, {
+    botPosition: spawnPos.clone(),
+    botInventory: [
+      { name: 'iron_axe', count: 1 },
+      // No oak_signs - we want the bot to explore, not trade
+    ],
+    clearRadius: 150,
+  });
+
+  // Use RCON fill commands for water (MUCH faster than block-by-block)
+  // Water avoidance rules (from FindForest.ts):
+  // - Samples up to 5 points along path (one every 8 blocks)
+  // - If >50% of checkpoints are water → returns -30 (skipped)
+  // - For 32-block path: 4 checkpoints, need 3+ water to skip
+  // - So water needs to be ~24+ blocks wide to trigger avoidance
+
+  // Create wide water surrounding the island (40 blocks wide on most sides)
+  // WEST side: wide water from x=5 to x=41 (36 blocks)
+  await test.rcon('fill 5 63 -30 41 63 30 minecraft:water replace minecraft:grass_block');
+  // NORTH side: wide water at z=9 to z=30 (island ends at z=8)
+  await test.rcon('fill 42 63 9 75 63 30 minecraft:water replace minecraft:grass_block');
+  // EAST side: wide water from x=59 to x=75 (island ends at x=58)
+  await test.rcon('fill 59 63 -30 75 63 8 minecraft:water replace minecraft:grass_block');
+
+  // SOUTH side: NARROW water only 5 blocks wide (z=-9 to z=-13)
+  // Island ends at z=-8, this creates a 5-block water gap before mainland at z=-14
+  await test.rcon('fill 42 63 -13 58 63 -9 minecraft:water replace minecraft:grass_block');
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  const role = new GOAPLumberjackRole();
+  role.start(test.bot, { logger: test.createRoleLogger('lumberjack'), spawnPosition: spawnPos.clone() });
+
+  const bb = () => (role as any).blackboard;
+
+  // Wait for bot to discover the island forest
+  await test.waitUntil(
+    () => bb()?.knownForests?.length > 0,
+    { timeout: 120000, message: 'Bot should discover island forest via narrow crossing' }
+  );
+
+  const discoveredForest = bb()?.knownForests[0] as Vec3;
+  test.assert(discoveredForest !== null, 'Bot should have discovered a forest');
+
+  // The bot should have reached the island (check it's on land)
+  const botPos = test.bot.entity.position.floored();
+  const blockBelow = test.blockAt(botPos.offset(0, -1, 0));
+  test.assert(
+    blockBelow !== 'water' && blockBelow !== 'flowing_water',
+    `Bot should be standing on land, not in water (found ${blockBelow})`
+  );
+
+  // Verify the discovered forest is on the island
+  const distToIslandForest = discoveredForest.distanceTo(forestCenter);
+  console.log(`  Found forest at ${discoveredForest.toString()}, dist ${distToIslandForest.toFixed(1)} from island center`);
+
+  test.assert(
+    distToIslandForest < 15,
+    `Bot should have found the island forest via narrow crossing (dist=${distToIslandForest.toFixed(1)})`
+  );
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TEST: Establishes village when crafting infrastructure
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -386,6 +484,7 @@ async function testNavigatesBackToForest() {
 
 const ALL_TESTS: Record<string, () => Promise<any>> = {
   'explore-distant': testExploresForDistantForest,
+  'water-barrier': testAvoidsWaterBarriersDuringExploration,
   'establish-village': testEstablishesVillageWhenCrafting,
   // Long integration tests disabled for now due to pathfinding timeouts in test environment
   // 'return-for-signs': testReturnsToSpawnForSigns,
