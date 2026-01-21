@@ -488,16 +488,6 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
             const tillable = countTillableAround(bot, best.position);
             bb.farmCenter = best.position.clone();
             bb.log?.info({ pos: bb.farmCenter.toString(), tillable }, 'Established farm center');
-
-            // Queue sign write for the new farm center (if we have spawn position)
-            if (bb.spawnPosition && !bb.farmSignWritten) {
-                bb.pendingSignWrites.push({
-                    type: 'FARM',
-                    pos: bb.farmCenter.clone()
-                });
-                bb.farmSignWritten = true;
-                bb.log?.info({ pos: bb.farmCenter.toString() }, 'Queued FARM sign write');
-            }
         } else if (bb.nearbyWater.length > 0) {
             bb.log?.debug({ waterSources: bb.nearbyWater.length }, 'Found water but none under clear sky');
         }
@@ -510,6 +500,18 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
             bb.log?.warn({ blockName: block?.name ?? 'null' }, 'Farm center invalid, clearing');
             bb.farmCenter = null;
         }
+    }
+
+    // Queue FARM sign write if farm center exists but sign not written yet
+    // This is separate from farm establishment to handle all code paths that set farmCenter
+    // (FindFarmCenter action, StudySpawnSigns, ReadUnknownSign, etc.)
+    if (bb.farmCenter && bb.spawnPosition && !bb.farmSignWritten) {
+        bb.pendingSignWrites.push({
+            type: 'FARM',
+            pos: bb.farmCenter.clone()
+        });
+        bb.farmSignWritten = true;
+        bb.log?.info({ pos: bb.farmCenter.toString() }, 'Queued FARM sign write');
     }
 
     // ═══════════════════════════════════════════════
