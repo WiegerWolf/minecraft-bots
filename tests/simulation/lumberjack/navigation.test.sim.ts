@@ -150,13 +150,15 @@ async function testAvoidsWaterBarriersDuringExploration() {
   const forestTrees = bb()?.forestTrees as Array<{ position: Vec3 }>;
   const firstTreePos = forestTrees[0]?.position;
 
+  test.assert(firstTreePos !== undefined, 'Should have at least one forest tree');
+
   // Use horizontal (XZ) distance to island center
   const horizontalDist = Math.sqrt(
-    Math.pow(firstTreePos.x - islandCenter.x, 2) +
-    Math.pow(firstTreePos.z - islandCenter.z, 2)
+    Math.pow(firstTreePos!.x - islandCenter.x, 2) +
+    Math.pow(firstTreePos!.z - islandCenter.z, 2)
   );
 
-  console.log(`  Found ${forestTrees.length} forest trees near (${firstTreePos.x.toFixed(0)}, ${firstTreePos.z.toFixed(0)}), dist ${horizontalDist.toFixed(1)} from island center`);
+  console.log(`  Found ${forestTrees.length} forest trees near (${firstTreePos!.x.toFixed(0)}, ${firstTreePos!.z.toFixed(0)}), dist ${horizontalDist.toFixed(1)} from island center`);
 
   test.assert(
     horizontalDist < 20,
