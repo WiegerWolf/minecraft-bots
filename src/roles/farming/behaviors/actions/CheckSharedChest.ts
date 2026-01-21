@@ -157,8 +157,9 @@ export class CheckSharedChest {
             const chestItems = container.containerItems();
             let totalWithdrawn = 0;
 
-            // Withdrawal priorities: logs first, then planks if no logs, then sticks
+            // Withdrawal priorities: hoe first (if available), then crafting materials
             const priorities = [
+                { pattern: '_hoe', maxAmount: 1, onlyIfPreviousEmpty: false },
                 { pattern: '_log', maxAmount: 4, onlyIfPreviousEmpty: false },
                 { pattern: '_planks', maxAmount: 8, onlyIfPreviousEmpty: true },
                 { pattern: 'stick', maxAmount: 8, onlyIfPreviousEmpty: false },
