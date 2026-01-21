@@ -51,26 +51,41 @@ async function testReadsFarmSign() {
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
+  // Collect chat messages from the bot
+  const chatMessages: string[] = [];
+  test.bot.on('chat', (username: string, message: string) => {
+    if (username === test.bot.username) {
+      chatMessages.push(message);
+    }
+  });
+
   const role = new GOAPFarmingRole();
   role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
-  // Bot should read FARM sign and plant at that location
-  const initialSeeds = test.botInventoryCount('wheat_seeds');
+  // Wait for bot to study signs (check blackboard hasStudiedSigns flag)
+  const bb = () => (role as any).blackboard;
   await test.waitUntil(
-    () => test.botInventoryCount('wheat_seeds') < initialSeeds,
-    { timeout: 90000, message: 'Bot should read FARM sign and plant at farm location (15,63,15)' }
+    () => bb()?.hasStudiedSigns === true,
+    { timeout: 30000, message: 'Bot should study spawn signs' }
   );
 
-  // Verify crops planted near FARM sign location
-  let cropsNearFarm = 0;
-  for (let dx = -3; dx <= 3; dx++) {
-    for (let dz = -3; dz <= 3; dz++) {
-      const block = test.blockAt(new Vec3(15 + dx, 64, 15 + dz));
-      if (block?.includes('wheat')) cropsNearFarm++;
-    }
-  }
+  // Verify chat announcement mentions studying signs and the farm
+  const hasStudiedAnnouncement = chatMessages.some(msg =>
+    msg.toLowerCase().includes('studied') && msg.toLowerCase().includes('farm')
+  );
+  test.assert(hasStudiedAnnouncement, 'Bot should announce studying farm sign in chat');
 
-  test.assertGreater(cropsNearFarm, 0, 'Crops should be planted near the FARM sign location');
+  // Verify blackboard has learned farm location
+  const knownFarms = bb()?.knownFarms || [];
+  const hasFarmKnowledge = knownFarms.some((pos: Vec3) =>
+    pos.x === 15 && pos.y === 63 && pos.z === 15
+  );
+  test.assert(hasFarmKnowledge, 'Bot blackboard should have farm at (15, 63, 15) in knownFarms');
+
+  // Verify sign was marked as read
+  const readSignPositions = bb()?.readSignPositions as Set<string> | undefined;
+  const farmSignRead = readSignPositions?.has('2,64,0');
+  test.assert(farmSignRead === true, 'Bot should mark FARM sign position as read');
 
   role.stop(test.bot);
   return test.cleanup();
@@ -108,14 +123,51 @@ async function testLearnsInfrastructure() {
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
+  // Collect chat messages from the bot
+  const chatMessages: string[] = [];
+  test.bot.on('chat', (username: string, message: string) => {
+    if (username === test.bot.username) {
+      chatMessages.push(message);
+    }
+  });
+
   const role = new GOAPFarmingRole();
   role.start(test.bot, { logger: test.createRoleLogger('farmer'), spawnPosition: new Vec3(0, 64, 0) });
 
-  // Let the bot read signs
-  await test.wait(20000, 'Bot reading signs and learning infrastructure');
+  // Wait for bot to study signs
+  const bb = () => (role as any).blackboard;
+  await test.waitUntil(
+    () => bb()?.hasStudiedSigns === true,
+    { timeout: 30000, message: 'Bot should study spawn signs' }
+  );
 
-  // Bot should have moved to read signs (toward origin area)
-  test.assertNear(new Vec3(0, 64, 0), 10, 'Bot should have moved near signs to study them');
+  // Verify chat announcement mentions studying signs
+  const hasStudiedAnnouncement = chatMessages.some(msg =>
+    msg.toLowerCase().includes('studied')
+  );
+  test.assert(hasStudiedAnnouncement, 'Bot should announce studying signs in chat');
+
+  // Verify blackboard learned village center
+  const villageCenter = bb()?.villageCenter;
+  const hasVillageCenter = villageCenter?.x === 0 && villageCenter?.y === 64 && villageCenter?.z === 0;
+  test.assert(hasVillageCenter, 'Bot should learn village center at (0, 64, 0)');
+
+  // Verify blackboard learned shared chest location
+  const sharedChest = bb()?.sharedChest;
+  const hasChestKnowledge = sharedChest?.x === -8 && sharedChest?.y === 64 && sharedChest?.z === 0;
+  test.assert(hasChestKnowledge, 'Bot should learn shared chest at (-8, 64, 0)');
+
+  // Verify blackboard learned shared crafting table location
+  const sharedCraftingTable = bb()?.sharedCraftingTable;
+  const hasCraftingKnowledge = sharedCraftingTable?.x === -8 && sharedCraftingTable?.y === 64 && sharedCraftingTable?.z === 2;
+  test.assert(hasCraftingKnowledge, 'Bot should learn crafting table at (-8, 64, 2)');
+
+  // Verify blackboard learned farm location
+  const knownFarms = bb()?.knownFarms || [];
+  const hasFarmKnowledge = knownFarms.some((pos: Vec3) =>
+    pos.x === 12 && pos.y === 63 && pos.z === 12
+  );
+  test.assert(hasFarmKnowledge, 'Bot should learn farm at (12, 63, 12)');
 
   role.stop(test.bot);
   return test.cleanup();
