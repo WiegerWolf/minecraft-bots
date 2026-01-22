@@ -551,7 +551,8 @@ export class FindForest implements BehaviorNode {
             const navResult = await navigateBoatToward(bot, destination, 30000, log);
 
             // Step 6: Dismount and try to recover the boat
-            await dismountAndBreakBoat(bot, log);
+            // Pass last known position from navigation for proper dismount packet
+            await dismountAndBreakBoat(bot, navResult.lastPos, navResult.lastYawDeg, log);
             bb.log?.debug({ reason: navResult.reason }, 'Dismounted from boat');
 
             // Step 7: Continue to destination based on navigation result
@@ -576,7 +577,8 @@ export class FindForest implements BehaviorNode {
         } catch (err) {
             bb.log?.error({ err }, 'Error during boat crossing');
             // Make sure we dismount if something goes wrong
-            await dismountAndBreakBoat(bot, log);
+            // No position info available, will use fallback
+            await dismountAndBreakBoat(bot, undefined, undefined, log);
             return false;
         }
     }

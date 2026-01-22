@@ -374,6 +374,8 @@ export interface BoatNavigationResult {
   success: boolean;          // True if reached destination
   reason: 'reached' | 'land_collision' | 'no_progress' | 'timeout';
   distanceRemaining: number; // Distance to destination when stopped
+  lastPos?: Vec3;            // Last known boat position (for dismount)
+  lastYawDeg?: number;       // Last known boat yaw in degrees (for dismount)
 }
 
 /**
@@ -435,26 +437,27 @@ export async function navigateBoatToward(
       const dz = destination.z - localPos.z;
       const targetYaw = Math.atan2(-dx, dz);
 
+      // Track last known good position for dismount
+      const lastYawDeg = localYaw * (180 / Math.PI);
+
       // Check if we're close enough using SERVER position (actual boat location)
       if (serverDistToTarget < 15) {
-        stopBoat(bot);
         log?.debug({
           serverDist: serverDistToTarget.toFixed(1),
           localDist: localDistToTarget.toFixed(1),
           serverPos: `(${serverPos.x.toFixed(1)}, ${serverPos.z.toFixed(1)})`
         }, 'Reached boat destination');
-        return { success: true, reason: 'reached', distanceRemaining: serverDistToTarget };
+        return { success: true, reason: 'reached', distanceRemaining: serverDistToTarget, lastPos: localPos.clone(), lastYawDeg };
       }
 
       // Check for land ahead every second (not every tick for performance)
       if (Date.now() - lastLandCheckTime > 1000) {
         lastLandCheckTime = Date.now();
         if (hasLandAhead(bot, targetYaw, 3)) {
-          stopBoat(bot);
           log?.debug({
             distToTarget: serverDistToTarget.toFixed(1),
           }, 'Land detected ahead, stopping boat');
-          return { success: false, reason: 'land_collision', distanceRemaining: serverDistToTarget };
+          return { success: false, reason: 'land_collision', distanceRemaining: serverDistToTarget, lastPos: localPos.clone(), lastYawDeg };
         }
       }
 
@@ -464,13 +467,12 @@ export async function navigateBoatToward(
         lastDistance = serverDistToTarget;
       } else if (Date.now() - lastProgressTime > 10000) {
         // Give 10 seconds for server to catch up before giving up
-        stopBoat(bot);
         log?.debug({
           serverDist: serverDistToTarget.toFixed(1),
           localDist: localDistToTarget.toFixed(1),
           elapsed: ((Date.now() - startTime) / 1000).toFixed(1),
         }, 'Server not updating boat position');
-        return { success: false, reason: 'no_progress', distanceRemaining: serverDistToTarget };
+        return { success: false, reason: 'no_progress', distanceRemaining: serverDistToTarget, lastPos: localPos.clone(), lastYawDeg };
       }
 
       // Smoothly turn toward target (boats don't turn instantly)
@@ -525,12 +527,12 @@ export async function navigateBoatToward(
       await sleep(50); // 20 ticks per second like Minecraft
     }
 
-    stopBoat(bot);
     log?.debug('Boat navigation timed out');
     const finalDist = bot.entity.position.xzDistanceTo(destination);
-    return { success: false, reason: 'timeout', distanceRemaining: finalDist };
+    const lastYawDeg = localYaw * (180 / Math.PI);
+    return { success: false, reason: 'timeout', distanceRemaining: finalDist, lastPos: localPos.clone(), lastYawDeg };
   } finally {
-    stopBoat(bot);
+    // Don't call stopBoat here - let caller handle dismount with correct position
   }
 }
 
@@ -557,13 +559,56 @@ export function stopBoat(bot: Bot): void {
 
 /**
  * Dismounts from the current vehicle (boat).
+ *
+ * In MC 1.21.4, dismounting is done by sending player_input with SHIFT flag (0x20)
+ * WHILE continuing to send normal boat tick packets (steer_boat, vehicle_move).
+ * Mineflayer's bot.dismount() sends JUMP which doesn't work.
+ *
+ * @param bot - The bot instance
+ * @param lastKnownPos - Last known boat position (from navigation loop)
+ * @param lastKnownYaw - Last known boat yaw in degrees (from navigation loop)
+ * @param log - Optional logger
  */
-export async function dismountBoat(bot: Bot, log?: { debug: Function }): Promise<void> {
+export async function dismountBoat(
+  bot: Bot,
+  lastKnownPos?: Vec3,
+  lastKnownYaw?: number,
+  log?: { debug: Function }
+): Promise<void> {
   const botWithVehicle = bot as Bot & { vehicle?: Entity };
   if (botWithVehicle.vehicle) {
     log?.debug({ vehicleId: botWithVehicle.vehicle.id }, 'Dismounting from vehicle');
-    await bot.dismount();
-    await sleep(500); // Give more time for dismount to complete
+
+    const client = (bot as any)._client;
+    const vehicle = botWithVehicle.vehicle;
+
+    // Use provided position or try to get from vehicle entity
+    const pos = lastKnownPos || vehicle?.position || bot.entity.position;
+    const yawDeg = lastKnownYaw ?? 0;
+
+    try {
+      // Send SHIFT while continuing boat tick packets (like real client does)
+      // Real client order is: steer_boat -> player_input -> vehicle_move
+      for (let i = 0; i < 6; i++) {
+        client.write('steer_boat', { leftPaddle: false, rightPaddle: false });
+        client.write('player_input', { inputs: { shift: true } });
+        client.write('vehicle_move', {
+          x: pos.x,
+          y: pos.y,
+          z: pos.z,
+          yaw: yawDeg,
+          pitch: 0,
+        });
+        await sleep(50);
+      }
+      // Release SHIFT
+      client.write('player_input', { inputs: {} });
+    } catch (err) {
+      log?.debug({ err }, 'Failed to send dismount packet, trying bot.dismount()');
+      await bot.dismount();
+    }
+
+    await sleep(300); // Give time for dismount to complete
     log?.debug('Dismount complete');
   } else {
     log?.debug('No vehicle to dismount from');
@@ -609,13 +654,17 @@ export async function breakNearbyBoat(
  * Dismounts from boat and breaks it to recover the item.
  *
  * @param bot - The bot instance
+ * @param lastKnownPos - Last known boat position (from navigation)
+ * @param lastKnownYaw - Last known boat yaw in degrees (from navigation)
  * @param log - Optional logger
  */
 export async function dismountAndBreakBoat(
   bot: Bot,
+  lastKnownPos?: Vec3,
+  lastKnownYaw?: number,
   log?: { debug: Function }
 ): Promise<void> {
-  await dismountBoat(bot, log);
+  await dismountBoat(bot, lastKnownPos, lastKnownYaw, log);
   await breakNearbyBoat(bot, 5, log);
 }
 
