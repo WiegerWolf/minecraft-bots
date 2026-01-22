@@ -18,6 +18,91 @@ index 496cf63..813a667 100644
        !bot.entity.onGround,
        enchantments,
        bot.entity.effects
+diff --git a/node_modules/mineflayer/lib/plugins/entities.js b/node_modules/mineflayer/lib/plugins/entities.js
+index 666b0b3..411d889 100644
+--- a/node_modules/mineflayer/lib/plugins/entities.js
++++ b/node_modules/mineflayer/lib/plugins/entities.js
+@@ -856,6 +856,18 @@ function inject (bot) {
+     useEntity(target, 0)
+   }
+ 
++  /**
++   * Helper to check if entity is a boat (any variant).
++   * Boat names include: boat, oak_boat, cherry_boat, bamboo_raft, etc.
++   */
++  function isBoatEntity (entity) {
++    if (!entity || !entity.name) return false
++    const name = entity.name.toLowerCase()
++    // Match all boat variants: *_boat, boat, *_raft (bamboo)
++    // Also handle chest variants: *_chest_boat
++    return name.includes('boat') || name.includes('raft')
++  }
++
+   function moveVehicle (left, forward) {
+     if (bot.supportFeature('newPlayerInputPacket')) {
+       // docs:
+@@ -869,6 +881,16 @@ function inject (bot) {
+           right: left < 0
+         }
+       })
++      // For boats, also send steer_boat packet for paddle animation
++      // This is required for proper boat movement in MC 1.21+
++      if (isBoatEntity(bot.vehicle)) {
++        const leftPaddle = forward > 0 || left < 0 // Forward or turning right
++        const rightPaddle = forward > 0 || left > 0 // Forward or turning left
++        bot._client.write('steer_boat', {
++          leftPaddle,
++          rightPaddle
++        })
++      }
+     } else {
+       bot._client.write('steer_vehicle', {
+         sideways: left,
+@@ -881,11 +903,39 @@ function inject (bot) {
+   function dismount () {
+     if (bot.vehicle) {
+       if (bot.supportFeature('newPlayerInputPacket')) {
+-        bot._client.write('player_input', {
+-          inputs: {
+-            jump: true
+-          }
+-        })
++        // MC 1.21.4+ boats require entity_action with START_SNEAK to dismount.
++        // Sending jump via player_input doesn't work for boats.
++        // Other vehicles (horses, minecarts) still use jump.
++        if (isBoatEntity(bot.vehicle)) {
++          // Send entity_action START_SNEAK - this triggers the actual dismount
++          bot._client.write('entity_action', {
++            entityId: bot.entity.id,
++            actionId: 0, // START_SNEAK
++            jumpBoost: 0
++          })
++          // Also send player_input with shift flag (same tick as real client)
++          bot._client.write('player_input', {
++            inputs: {
++              shift: true
++            }
++          })
++          // Schedule releasing shift after a short delay
++          setTimeout(() => {
++            bot._client.write('player_input', { inputs: {} })
++            bot._client.write('entity_action', {
++              entityId: bot.entity.id,
++              actionId: 1, // STOP_SNEAK
++              jumpBoost: 0
++            })
++          }, 100)
++        } else {
++          // Non-boat vehicles: use jump to dismount
++          bot._client.write('player_input', {
++            inputs: {
++              jump: true
++            }
++          })
++        }
+       } else {
+         bot._client.write('steer_vehicle', {
+           sideways: 0.0,
 diff --git a/node_modules/mineflayer/lib/plugins/inventory.js b/node_modules/mineflayer/lib/plugins/inventory.js
 index 70db312..93d2054 100644
 --- a/node_modules/mineflayer/lib/plugins/inventory.js
@@ -53,12 +138,11 @@ index fdaec6b..08983b6 100644
          // oldBlock and newBlock will both be null when the world unloads
          checkCondition: (oldBlock, newBlock) => !oldBlock || !newBlock || oldBlock.type !== newBlock.type
 diff --git a/node_modules/mineflayer/lib/plugins/place_entity.js b/node_modules/mineflayer/lib/plugins/place_entity.js
-index 33d4c1e..f8b2a3c 100644
+index c7b750a..a5eb6d4 100644
 --- a/node_modules/mineflayer/lib/plugins/place_entity.js
 +++ b/node_modules/mineflayer/lib/plugins/place_entity.js
-@@ -35,9 +35,16 @@ function inject (bot) {
-     const pos = await bot._genericPlace(referenceBlock, faceVector, options)
-
+@@ -36,8 +36,16 @@ function inject (bot) {
+ 
      if (type === 'boat') {
        if (bot.supportFeature('useItemWithOwnPacket')) {
 +        // Fix for MC 1.21+: use_item requires sequence and rotation fields
