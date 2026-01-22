@@ -25,7 +25,7 @@ const minecraftData = (minecraftDataModule as any).default || minecraftDataModul
 const PROXY_PORT = parseInt(process.argv[2] || '25567');
 const SERVER_HOST = 'localhost';
 const SERVER_PORT = parseInt(process.argv[3] || '25566');
-const MC_VERSION = process.env.MC_VERSION || '1.21.4';
+const MC_VERSION = process.env.MC_VERSION || '1.21.6';
 
 // Load packet mappings from minecraft-data
 const mcData = minecraftData(MC_VERSION);
