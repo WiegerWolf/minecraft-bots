@@ -515,11 +515,12 @@ export class PatrolForestGoal extends BaseGoal {
 
   getUtility(ws: WorldState): number {
     // Check for water crossing requirement first
-    const waterAhead = ws.getNumber('exploration.waterAhead');
+    // Use minWaterAhead - only block if ALL directions have large water
+    const minWaterAhead = ws.getNumber('exploration.minWaterAhead');
     const hasBoat = ws.getBool('has.boat');
 
-    // If large water body ahead and no boat, can't patrol
-    if (waterAhead >= MAX_SWIMMING_DISTANCE && !hasBoat) {
+    // Only block patrol if ALL directions have uncrossable water
+    if (minWaterAhead >= MAX_SWIMMING_DISTANCE && !hasBoat) {
       return 0;
     }
 
@@ -663,11 +664,13 @@ export class FindForestGoal extends BaseGoal {
     if (hasKnownForest || !hasStudiedSigns) return false;
 
     // Check for water crossing requirement
-    const waterAhead = ws.getNumber('exploration.waterAhead');
+    // Use minWaterAhead (best escape route) - only block if ALL directions have large water
+    const minWaterAhead = ws.getNumber('exploration.minWaterAhead');
     const hasBoat = ws.getBool('has.boat');
 
-    // If large water body ahead, require a boat
-    if (waterAhead >= MAX_SWIMMING_DISTANCE && !hasBoat) {
+    // Only block exploration if ALL directions have uncrossable water
+    // If any direction has crossable water (or land), exploration is still possible
+    if (minWaterAhead >= MAX_SWIMMING_DISTANCE && !hasBoat) {
       return false;
     }
 

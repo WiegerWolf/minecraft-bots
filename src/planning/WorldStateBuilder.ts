@@ -305,6 +305,7 @@ export class WorldStateBuilder {
     // Exploration state - boat and water detection
     ws.set('has.boat', bb.hasBoat);
     ws.set('exploration.waterAhead', bb.maxWaterAhead);
+    ws.set('exploration.minWaterAhead', bb.minWaterAhead);
     ws.set('derived.forestSearchRecentlyFailed', Date.now() < bb.forestSearchFailedUntil);
   }
 

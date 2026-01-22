@@ -98,7 +98,8 @@ export interface LumberjackBlackboard {
     // EXPLORATION STATE
     // ═══════════════════════════════════════════════════════════════
     hasBoat: boolean;              // Has a boat in inventory
-    maxWaterAhead: number;         // Maximum water distance in exploration directions
+    maxWaterAhead: number;         // Maximum water distance in any exploration direction
+    minWaterAhead: number;         // Minimum water distance (best land escape route)
     forestSearchFailedUntil: number; // Backoff timestamp after max forest search attempts
 
     // ═══════════════════════════════════════════════════════════════
@@ -177,6 +178,7 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         // Exploration state
         hasBoat: false,
         maxWaterAhead: 0,
+        minWaterAhead: 0,
         forestSearchFailedUntil: 0,
 
         // Trade state
@@ -437,9 +439,12 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     // ═══════════════════════════════════════════════
     // WATER AHEAD DETECTION
     // Measures water distance in exploration directions to determine
-    // if a boat is needed for exploration
+    // if a boat is needed for exploration. Tracks both max (worst obstacle)
+    // and min (best escape route) to allow land-based exploration when possible.
     // ═══════════════════════════════════════════════
-    bb.maxWaterAhead = detectMaxWaterAhead(bot, pos);
+    const waterAhead = detectWaterAhead(bot, pos);
+    bb.maxWaterAhead = waterAhead.max;
+    bb.minWaterAhead = waterAhead.min;
 
     // ═══════════════════════════════════════════════
     // COMPUTED DECISIONS
@@ -775,28 +780,38 @@ const EXPLORATION_DIRECTIONS = [
 ];
 
 /**
- * Detect the maximum continuous water distance in any exploration direction.
- * This helps determine if the bot needs a boat to explore.
+ * Detect water distances in all exploration directions.
+ * Returns both max (worst obstacle) and min (best escape route).
  *
  * The algorithm samples points along each direction and measures continuous
- * water stretches. If there's a large body of water (like an ocean) in any
- * direction the bot might explore, it returns that distance.
+ * water stretches. This helps determine:
+ * - maxWaterAhead: Whether there's a large water body in ANY direction
+ * - minWaterAhead: Whether there's at least one clear land path (min < threshold)
  *
  * @param bot - The bot instance
  * @param pos - Current position
- * @returns Maximum water distance in blocks (0 if no significant water)
+ * @returns { max, min } water distances in blocks
  */
-function detectMaxWaterAhead(bot: Bot, pos: Vec3): number {
+function detectWaterAhead(bot: Bot, pos: Vec3): { max: number; min: number } {
     let maxWaterDistance = 0;
+    let minWaterDistance = Infinity;
 
     for (const direction of EXPLORATION_DIRECTIONS) {
         const waterDist = measureWaterDistance(bot, pos, direction);
         if (waterDist > maxWaterDistance) {
             maxWaterDistance = waterDist;
         }
+        if (waterDist < minWaterDistance) {
+            minWaterDistance = waterDist;
+        }
     }
 
-    return maxWaterDistance;
+    // If all directions returned Infinity (no valid samples), use 0
+    if (minWaterDistance === Infinity) {
+        minWaterDistance = 0;
+    }
+
+    return { max: maxWaterDistance, min: minWaterDistance };
 }
 
 /**

@@ -213,6 +213,7 @@ async function testAvoidsWaterBarriersOnFoot() {
   createOakTree(world, mainlandForestCenter.offset(1, 0, -3), 4);
 
   // Spawn bot close to water barrier to test water avoidance behavior
+  // Bot should explore away from water (toward mainland forest) rather than freezing
   const spawnPos = new Vec3(25, 64, 0);
 
   await test.setup(world, {
