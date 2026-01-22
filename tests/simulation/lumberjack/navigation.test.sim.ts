@@ -81,15 +81,17 @@ async function testUsesBoatToCrossWater() {
 
   const world = new MockWorld();
   // Small land area around spawn (2 blocks) - bot MUST use boat
+  world.fill(new Vec3(-2, 62, -2), new Vec3(2, 62, 2), 'dirt');
   world.fill(new Vec3(-2, 63, -2), new Vec3(2, 63, 2), 'grass_block');
 
   // Island with forest at x=50, z=0
   const islandCenter = new Vec3(50, 63, 0);
 
-  // Create the island (grass platform)
+  // Create the island with dirt layer underneath for proper ground
   for (let x = -8; x <= 8; x++) {
     for (let z = -8; z <= 8; z++) {
-      world.setBlock(islandCenter.offset(x, 0, z), 'grass_block');
+      world.setBlock(islandCenter.offset(x, -1, z), 'dirt'); // y=62 dirt layer
+      world.setBlock(islandCenter.offset(x, 0, z), 'grass_block'); // y=63 grass layer
     }
   }
 
@@ -103,16 +105,19 @@ async function testUsesBoatToCrossWater() {
 
   const spawnPos = new Vec3(0, 64, 0);
 
+  // Use clearRadius: 80 to ensure all our blocks fit within cleanup area
+  // Island extends to x=58, water to x=41, both well within 80 block radius
   await test.setup(world, {
     botPosition: spawnPos.clone(),
     botInventory: [
       { name: 'iron_axe', count: 1 },
       { name: 'oak_boat', count: 1 }, // Boat required to cross water
     ],
-    clearRadius: 150,
+    clearRadius: 80,
   });
 
   // Create wide water surrounding spawn (all directions blocked by water)
+  // All coordinates stay within clearRadius of 80 for proper cleanup
   // Water from x=3 to x=41 (covers gap between spawn and island)
   await test.rcon('fill 3 63 -30 41 63 30 minecraft:water');
   // Also fill water on negative X side
@@ -120,6 +125,11 @@ async function testUsesBoatToCrossWater() {
   // Fill water on Z sides
   await test.rcon('fill -2 63 3 2 63 30 minecraft:water');
   await test.rcon('fill -2 63 -30 2 63 -3 minecraft:water');
+
+  // Explicitly place island ground via RCON to guarantee it exists
+  // Island center is at (50, 63, 0), extends 8 blocks in each direction
+  await test.rcon('fill 42 62 -8 58 62 8 minecraft:dirt');
+  await test.rcon('fill 42 63 -8 58 63 8 minecraft:grass_block');
 
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
