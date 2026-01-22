@@ -458,28 +458,20 @@ export async function navigateBoatToward(
       // Aim the boat
       bot.look(targetYaw, 0, false).catch(() => {});
 
-      // Send movement packets
+      // Send movement packets (based on real client behavior)
       try {
-        // player_input for movement control
+        // player_input for movement control (MC 1.21+)
+        // Real client sends 0x1 for forward
         client.write('player_input', {
-          inputs: { forward: true, backward: false, left: false, right: false, jump: false, shift: false, sprint: false }
+          inputs: { forward: true }
         });
 
-        // vehicle_move with calculated position
-        // Movement: -sin(yaw) moves in X, +cos(yaw) moves in Z (forward direction)
-        const speed = 0.2; // conservative speed
-        client.write('vehicle_move', {
-          x: currentPos.x - Math.sin(targetYaw) * speed,
-          y: currentPos.y,
-          z: currentPos.z + Math.cos(targetYaw) * speed,
-          // Convert mineflayer radians to Minecraft degrees
-          // Note: NOT negated - mineflayer and Minecraft use same yaw convention
-          yaw: targetYaw * 180 / Math.PI,
-          pitch: 0
-        });
-
-        // steer_boat for paddle animation
+        // steer_boat for paddle animation (both paddles for forward movement)
         client.write('steer_boat', { leftPaddle: true, rightPaddle: true });
+
+        // NOTE: We do NOT send vehicle_move - Paper server does physics server-side
+        // and rejects client position updates. The server will move the boat based
+        // on our player_input flags.
       } catch {
         // Ignore packet errors
       }
@@ -509,6 +501,15 @@ export function stopBoat(bot: Bot): void {
   bot.setControlState('forward', false);
   bot.setControlState('left', false);
   bot.setControlState('right', false);
+
+  // Send empty flags to stop boat input (MC 1.21+ bitflags format)
+  try {
+    const client = (bot as any)._client;
+    client.write('player_input', { inputs: {} });
+    client.write('steer_boat', { leftPaddle: false, rightPaddle: false });
+  } catch {
+    // Ignore packet errors
+  }
 }
 
 /**
