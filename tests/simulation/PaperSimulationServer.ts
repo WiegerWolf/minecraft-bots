@@ -84,6 +84,24 @@ export interface SimulationOptions {
 // Track players we've already set up spectator view for (persists across test runs)
 const spectatorSetupDone = new Set<string>();
 
+export interface CameraFollowOptions {
+  /** Vertical offset above the bot (default: 10) */
+  heightOffset?: number;
+  /** Horizontal distance from the bot (default: 20) */
+  horizontalDistance?: number;
+  /** Update interval in ms (default: 50) */
+  updateInterval?: number;
+  /** Smoothing factor 0-1 (1 = instant, lower = smoother) (default: 0.3) */
+  smoothing?: number;
+  /**
+   * Camera mode:
+   * - 'third-person': Follows from above/behind (has some jank due to teleport)
+   * - 'first-person': Spectates the bot directly (perfectly smooth but first-person view)
+   * Default: 'third-person'
+   */
+  mode?: 'third-person' | 'first-person';
+}
+
 export class PaperSimulationServer {
   private serverProcess: Subprocess | null = null;
   private rcon: Rcon | null = null;
@@ -92,6 +110,12 @@ export class PaperSimulationServer {
   private options!: Required<SimulationOptions>;
   private rconCommandQueue: Promise<void> = Promise.resolve();
   private rconThrottleMs = 5; // ms between commands to avoid overwhelming RCON
+
+  // Camera follow state
+  private cameraFollowInterval: ReturnType<typeof setInterval> | null = null;
+  private cameraFollowPlayer: string | null = null;
+  private cameraPosition: { x: number; y: number; z: number } = { x: 35, y: 75, z: 35 };
+  private cameraEntityUUID: string | null = null;
 
   private defaultOptions: Required<SimulationOptions> = {
     botPosition: new Vec3(0, 65, 0),
@@ -262,7 +286,7 @@ export class PaperSimulationServer {
   }
 
   /**
-   * Set up spectator mode and teleport player above the test area.
+   * Set up spectator mode and start following the bot.
    */
   private async setupSpectatorView(playerName: string): Promise<void> {
     console.log(`[PaperSim] Setting up spectator view for ${playerName}...`);
@@ -270,26 +294,173 @@ export class PaperSimulationServer {
     // Set spectator mode
     await this.rconCommand(`gamemode spectator ${playerName}`);
 
-    // Teleport to a position looking at world center (0, 64, 0)
-    // Position: offset from center, lower than before, angled toward center
-    const viewX = 35;
-    const viewY = 75;
-    const viewZ = 35;
+    // Initialize camera position based on bot's current position
+    const botPos = this.bot?.entity?.position;
+    if (botPos) {
+      this.cameraPosition = {
+        x: botPos.x + 20,
+        y: botPos.y + 10,
+        z: botPos.z + 20,
+      };
+    }
 
-    // Calculate yaw to look at origin (0, 64, 0)
-    // yaw = atan2(dz, -dx) * 180/PI + 180 (Minecraft convention)
-    const dx = 0 - viewX;
-    const dz = 0 - viewZ;
-    const yaw = Math.atan2(dz, -dx) * (180 / Math.PI) + 180;
-
-    // Calculate pitch to look down at target (y=64)
-    const dy = 64 - viewY;
-    const horizontalDist = Math.sqrt(dx * dx + dz * dz);
-    const pitch = -Math.atan2(-dy, horizontalDist) * (180 / Math.PI);
-
-    await this.rconCommand(`tp ${playerName} ${viewX} ${viewY} ${viewZ} ${yaw.toFixed(1)} ${pitch.toFixed(1)}`);
+    // Initial teleport to camera position
+    const { yaw, pitch } = this.calculateLookAt(
+      this.cameraPosition,
+      botPos ? { x: botPos.x, y: botPos.y + 1, z: botPos.z } : { x: 0, y: 64, z: 0 }
+    );
+    await this.rconCommand(
+      `tp ${playerName} ${this.cameraPosition.x.toFixed(1)} ${this.cameraPosition.y.toFixed(1)} ${this.cameraPosition.z.toFixed(1)} ${yaw.toFixed(1)} ${pitch.toFixed(1)}`
+    );
 
     await this.delay(200);
+
+    // Start following the bot
+    this.startCameraFollow(playerName);
+  }
+
+  /**
+   * Calculate yaw and pitch to look from one position to another.
+   */
+  private calculateLookAt(
+    from: { x: number; y: number; z: number },
+    to: { x: number; y: number; z: number }
+  ): { yaw: number; pitch: number } {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dz = to.z - from.z;
+
+    // yaw = atan2(dz, -dx) * 180/PI + 180 (Minecraft convention)
+    const yaw = Math.atan2(dz, -dx) * (180 / Math.PI) + 180;
+
+    // pitch = -atan2(dy, horizontal_distance)
+    const horizontalDist = Math.sqrt(dx * dx + dz * dz);
+    const pitch = -Math.atan2(dy, horizontalDist) * (180 / Math.PI);
+
+    return { yaw, pitch };
+  }
+
+  /**
+   * Start camera follow mode.
+   *
+   * Two modes available:
+   * - 'third-person': Follows from above/behind (some jank due to teleport limitations)
+   * - 'first-person': Spectates the bot directly (perfectly smooth)
+   */
+  startCameraFollow(playerName: string, options: CameraFollowOptions = {}): void {
+    const {
+      heightOffset = 10,
+      horizontalDistance = 20,
+      updateInterval = 50,  // Fast updates for less noticeable jumps
+      smoothing = 0.3,
+      mode = 'third-person',
+    } = options;
+
+    // Stop any existing follow
+    this.stopCameraFollow();
+
+    this.cameraFollowPlayer = playerName;
+
+    if (mode === 'first-person') {
+      this.startFirstPersonFollow(playerName);
+    } else {
+      this.startThirdPersonFollow(playerName, { heightOffset, horizontalDistance, updateInterval, smoothing });
+    }
+  }
+
+  /**
+   * First-person follow - spectate the bot directly for perfectly smooth camera.
+   */
+  private async startFirstPersonFollow(playerName: string): Promise<void> {
+    console.log(`[PaperSim] Starting first-person spectate for ${playerName}`);
+
+    // Use Minecraft's built-in spectate command for smooth following
+    await this.rconCommand(`gamemode spectator ${playerName}`);
+    await this.rconCommand(`spectate SimBot ${playerName}`);
+
+    // No interval needed - Minecraft handles the camera smoothly
+  }
+
+  /**
+   * Third-person follow - teleports player to follow position.
+   * Uses fast updates (50ms) to minimize jank.
+   */
+  private startThirdPersonFollow(
+    playerName: string,
+    options: { heightOffset: number; horizontalDistance: number; updateInterval: number; smoothing: number }
+  ): void {
+    const { heightOffset, horizontalDistance, updateInterval, smoothing } = options;
+
+    console.log(`[PaperSim] Starting third-person follow for ${playerName} (${heightOffset}m above, ${horizontalDistance}m away, ${updateInterval}ms interval)`);
+
+    // Initialize camera position
+    const botPos = this.bot?.entity?.position;
+    if (botPos) {
+      const angle = Math.PI / 4;
+      this.cameraPosition = {
+        x: botPos.x + Math.cos(angle) * horizontalDistance,
+        y: botPos.y + heightOffset,
+        z: botPos.z + Math.sin(angle) * horizontalDistance,
+      };
+    }
+
+    this.cameraFollowInterval = setInterval(async () => {
+      if (!this.bot?.entity?.position || !this.cameraFollowPlayer) return;
+
+      const botPos = this.bot.entity.position;
+
+      // Target camera position (diagonal offset)
+      const angle = Math.PI / 4;
+      const targetX = botPos.x + Math.cos(angle) * horizontalDistance;
+      const targetY = botPos.y + heightOffset;
+      const targetZ = botPos.z + Math.sin(angle) * horizontalDistance;
+
+      // Smooth interpolation toward target
+      this.cameraPosition.x += (targetX - this.cameraPosition.x) * smoothing;
+      this.cameraPosition.y += (targetY - this.cameraPosition.y) * smoothing;
+      this.cameraPosition.z += (targetZ - this.cameraPosition.z) * smoothing;
+
+      // Teleport player, using "facing entity" for smooth rotation
+      try {
+        await this.rconCommand(
+          `tp ${this.cameraFollowPlayer} ${this.cameraPosition.x.toFixed(2)} ${this.cameraPosition.y.toFixed(2)} ${this.cameraPosition.z.toFixed(2)} facing entity SimBot`
+        );
+      } catch {
+        // Ignore teleport errors (player might have disconnected)
+      }
+    }, updateInterval);
+  }
+
+  /**
+   * Stop camera follow mode.
+   */
+  stopCameraFollow(): void {
+    if (this.cameraFollowInterval) {
+      clearInterval(this.cameraFollowInterval);
+      this.cameraFollowInterval = null;
+      console.log('[PaperSim] Stopped camera follow');
+    }
+
+    // If player was spectating, stop spectating (execute as the player)
+    if (this.cameraFollowPlayer && this.rcon) {
+      this.rconCommand(`execute as ${this.cameraFollowPlayer} run spectate`).catch(() => {});
+    }
+
+    this.cameraFollowPlayer = null;
+    this.cameraEntityUUID = null;
+  }
+
+  /**
+   * Reconfigure camera follow with new options.
+   * Uses the currently followed player if one exists.
+   */
+  configureCameraFollow(options: CameraFollowOptions): void {
+    const player = this.cameraFollowPlayer;
+    if (!player) {
+      console.log('[PaperSim] No player being followed, cannot reconfigure');
+      return;
+    }
+    this.startCameraFollow(player, options);
   }
 
   /**
@@ -402,6 +573,9 @@ export class PaperSimulationServer {
    */
   async stop(options?: { killServer?: boolean }): Promise<void> {
     console.log('[PaperSim] Stopping...');
+
+    // Stop camera follow first
+    this.stopCameraFollow();
 
     // Wait for any pending RCON commands to complete
     try {

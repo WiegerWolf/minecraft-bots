@@ -31,7 +31,7 @@
 
 import { Vec3 } from 'vec3';
 import type { Bot } from 'mineflayer';
-import { PaperSimulationServer, type SimulationOptions } from './PaperSimulationServer';
+import { PaperSimulationServer, type SimulationOptions, type CameraFollowOptions } from './PaperSimulationServer';
 import { MockWorld } from '../mocks/MockWorld';
 import { createTestLogger, generateSessionId, type Logger } from '../../src/shared/logger';
 
@@ -167,6 +167,26 @@ export class SimulationTest {
   get sim(): PaperSimulationServer {
     if (!this.server) throw new Error('Test not set up - call setup() first');
     return this.server;
+  }
+
+  /**
+   * Configure camera follow settings.
+   * By default, camera follows 10 blocks above and 20 blocks away.
+   *
+   * @example
+   * test.setCameraFollow({ heightOffset: 15, horizontalDistance: 25 });
+   */
+  setCameraFollow(options: CameraFollowOptions): void {
+    if (!this.server) throw new Error('Test not set up - call setup() first');
+    this.server.configureCameraFollow(options);
+  }
+
+  /**
+   * Stop camera from following the bot.
+   */
+  stopCameraFollow(): void {
+    if (!this.server) throw new Error('Test not set up - call setup() first');
+    this.server.stopCameraFollow();
   }
 
   /**
@@ -562,3 +582,6 @@ export async function runSimulationTests(
 
   return { passed, failed, results };
 }
+
+// Re-export CameraFollowOptions for convenience
+export type { CameraFollowOptions };
