@@ -589,8 +589,7 @@ const ALL_TESTS: Record<string, () => Promise<any>> = {
   'boat-crossing': testUsesBoatToCrossWater,
   'water-avoidance': testAvoidsWaterBarriersOnFoot,
   'establish-village': testEstablishesVillageWhenCrafting,
-  // Long integration tests disabled for now due to pathfinding timeouts in test environment
-  // 'return-for-signs': testReturnsToSpawnForSigns,
+  'return-for-signs': testReturnsToSpawnForSigns,
   // 'full-pioneer': testFullPioneerSequence,
   // 'navigate-back': testNavigatesBackToForest,
 };
