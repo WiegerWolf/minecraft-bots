@@ -560,13 +560,14 @@ export function stopBoat(bot: Bot): void {
 /**
  * Dismounts from the current vehicle (boat).
  *
- * In MC 1.21.4, dismounting is done by sending player_input with SHIFT flag (0x20)
- * WHILE continuing to send normal boat tick packets (steer_boat, vehicle_move).
- * Mineflayer's bot.dismount() sends JUMP which doesn't work.
+ * In MC 1.21.4, dismounting requires sending entity_action with START_SNEAK (action 0)
+ * followed by player_input with SHIFT flag. The entity_action packet is what actually
+ * triggers the server to dismount the player - player_input alone doesn't work.
+ * Mineflayer's bot.dismount() sends JUMP which doesn't work for boats.
  *
  * @param bot - The bot instance
- * @param lastKnownPos - Last known boat position (from navigation loop)
- * @param lastKnownYaw - Last known boat yaw in degrees (from navigation loop)
+ * @param lastKnownPos - Last known boat position (unused, kept for API compat)
+ * @param lastKnownYaw - Last known boat yaw in degrees (unused, kept for API compat)
  * @param log - Optional logger
  */
 export async function dismountBoat(
@@ -587,22 +588,29 @@ export async function dismountBoat(
     const yawDeg = lastKnownYaw ?? 0;
 
     try {
-      // Send SHIFT while continuing boat tick packets (like real client does)
-      // Real client order is: steer_boat -> player_input -> vehicle_move
-      for (let i = 0; i < 6; i++) {
-        client.write('steer_boat', { leftPaddle: false, rightPaddle: false });
-        client.write('player_input', { inputs: { shift: true } });
-        client.write('vehicle_move', {
-          x: pos.x,
-          y: pos.y,
-          z: pos.z,
-          yaw: yawDeg,
-          pitch: 0,
-        });
-        await sleep(50);
-      }
-      // Release SHIFT
+      // CRITICAL: Send entity_action START_SNEAK first - this triggers the dismount
+      // Real client sends entity_action BEFORE player_input, and does NOT continue
+      // sending vehicle_move after (the player is already out of the boat)
+      const playerEntityId = bot.entity.id;
+      client.write('entity_action', {
+        entityId: playerEntityId,
+        actionId: 0, // START_SNEAK
+        jumpBoost: 0,
+      });
+
+      // Send player_input with SNEAK flag (same tick as entity_action in real client)
+      client.write('player_input', { inputs: { shift: true } });
+
+      // Wait for server to process the dismount
+      await sleep(100);
+
+      // Release SHIFT and send STOP_SNEAK
       client.write('player_input', { inputs: {} });
+      client.write('entity_action', {
+        entityId: playerEntityId,
+        actionId: 1, // STOP_SNEAK
+        jumpBoost: 0,
+      });
     } catch (err) {
       log?.debug({ err }, 'Failed to send dismount packet, trying bot.dismount()');
       await bot.dismount();
