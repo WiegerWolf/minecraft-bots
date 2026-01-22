@@ -173,6 +173,22 @@ export class FindForest implements BehaviorNode {
                 // Move toward the exploration target via land
                 const goal = new GoalXZ(target.pos.x, target.pos.z);
                 success = await pathfinderGotoWithRetry(bot, goal, 3, 20000);
+
+                // Fallback: if land pathfinding failed and we have a boat, try crossing water
+                if (!success && bb.hasBoat) {
+                    const waterBlock = findNearbyWaterBlock(bot);
+                    if (waterBlock) {
+                        bb.log?.info({ waterPos: waterBlock.position.floored().toString() },
+                            'Land pathfinding failed, retrying with boat');
+                        // Find a position near the water to start from
+                        const waterStartPos = new Vec3(
+                            Math.floor(bot.entity.position.x),
+                            waterBlock.position.y,
+                            Math.floor(bot.entity.position.z)
+                        );
+                        success = await this.useBoatToCross(bot, bb, waterStartPos, target.pos);
+                    }
+                }
             }
 
             if (!success) {
@@ -372,33 +388,48 @@ export class FindForest implements BehaviorNode {
             }
         }
 
+        // Track path solid count before checking target (for boat path analysis)
+        const pathSolidCount = solidBlockCount;
+
         // Also check the target position itself
         const targetSurface = this.findSurface(bot, Math.floor(targetPos.x), Math.floor(targetPos.z), Math.floor(targetPos.y));
+        let targetHasNoTerrain = false;
         if (targetSurface.isWater) {
             waterBlockCount += 2; // Weight target more heavily
         } else if (targetSurface.isSolid) {
             solidBlockCount += 2;
+        } else {
+            // Target has no solid ground and no water - likely unloaded/empty chunk
+            targetHasNoTerrain = true;
         }
 
         // Evaluate based on findings
         const waterRatio = waterBlockCount / (checkPoints + 2);
-        const significantWater = waterBlockCount > checkPoints / 2;
+        // More aggressive water detection: ANY water OR consecutive water blocks should trigger boat
+        // Previously used `waterBlockCount > checkPoints / 2` which missed paths with sparse water
+        const hasWaterBarrier = waterBlockCount >= 1 || maxConsecutiveWater >= 1;
 
-        if (significantWater) {
-            // Path has significant water
+        if (hasWaterBarrier) {
+            // Path has water that could block pathfinding
             if (hasBoat) {
                 // With a boat, water paths should be competitive with land paths
                 // Boat travel is actually faster than walking, so give good score
-                bb.log?.debug?.({ waterCount: waterBlockCount, total: checkPoints }, 'Path goes over water - will use boat');
+                bb.log?.debug?.({ waterCount: waterBlockCount, consecutive: maxConsecutiveWater, total: checkPoints }, 'Path has water - will use boat');
                 requiresBoat = true;
                 waterStartPos = firstWaterPos;
                 // Base score of 110 (competitive with land paths ~115-130)
                 // Small penalty for more water (longer boat ride)
                 score = 110 - waterRatio * 10;
             } else {
-                // Without a boat, this is a no-go
-                bb.log?.trace?.({ waterCount: waterBlockCount, total: checkPoints }, 'Path goes over water - no boat available');
-                return { score: -30, requiresBoat: false, waterStartPos: null };
+                // Without a boat, penalize heavily but don't completely reject
+                // (pathfinder might find a way around small water patches)
+                bb.log?.trace?.({ waterCount: waterBlockCount, total: checkPoints }, 'Path has water - no boat available');
+                if (waterBlockCount > checkPoints / 2) {
+                    // Too much water to cross without boat
+                    return { score: -30, requiresBoat: false, waterStartPos: null };
+                }
+                // Some water but maybe pathable - reduce score
+                score -= waterBlockCount * 15;
             }
         } else {
             // Mostly land path
@@ -410,9 +441,28 @@ export class FindForest implements BehaviorNode {
 
             // Bonus for more solid ground
             score += solidBlockCount * 5;
+        }
 
-            // Penalty for any water (minor)
-            score -= waterBlockCount * 5;
+        // Apply penalties for bad destinations (after base score calculation)
+        if (targetHasNoTerrain) {
+            // Target has no solid ground and no water - likely unloaded/empty chunk
+            bb.log?.info?.({ target: targetPos.floored().toString(), scoreBefore: score }, 'Target has no terrain - penalizing');
+            score -= 30;
+        }
+
+        // For boat paths, check path quality
+        // Penalize paths that cross significant water to reach random generated terrain
+        if (requiresBoat) {
+            if (pathSolidCount === 0) {
+                // Boat path with no solid ground along the way - probably leads to nowhere useful
+                bb.log?.info?.({ target: targetPos.floored().toString(), pathSolidCount, scoreBefore: score }, 'Boat path has no solid ground along route - penalizing');
+                score -= 20;
+            } else if (maxConsecutiveWater >= 2 && targetSurface.isSolid && pathSolidCount <= 1) {
+                // Crossed water barrier to reach solid ground - probably just random generated terrain
+                // Not a meaningful exploration destination
+                bb.log?.info?.({ target: targetPos.floored().toString(), maxConsecutiveWater, pathSolidCount, scoreBefore: score }, 'Boat path crosses water to random terrain - penalizing');
+                score -= 25;
+            }
         }
 
         return { score, requiresBoat, waterStartPos };
