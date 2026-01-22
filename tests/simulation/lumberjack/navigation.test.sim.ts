@@ -205,13 +205,15 @@ async function testAvoidsWaterBarriersOnFoot() {
   createOakTree(world, forestCenter.offset(-5, 0, -2), 5);
 
   // Also add a forest cluster on the mainland (so bot can find trees without crossing)
-  const mainlandForestCenter = new Vec3(-20, 64, 15);
+  // Placed in the -x/-z corner, far from spawn so bot doesn't find it immediately
+  const mainlandForestCenter = new Vec3(-25, 64, -20);
   createOakTree(world, mainlandForestCenter.offset(0, 0, 0), 5);
   createOakTree(world, mainlandForestCenter.offset(3, 0, 2), 5);
   createOakTree(world, mainlandForestCenter.offset(-2, 0, 3), 5);
   createOakTree(world, mainlandForestCenter.offset(1, 0, -3), 4);
 
-  const spawnPos = new Vec3(0, 64, 0);
+  // Spawn bot close to water barrier to test water avoidance behavior
+  const spawnPos = new Vec3(25, 64, 0);
 
   await test.setup(world, {
     botPosition: spawnPos.clone(),
