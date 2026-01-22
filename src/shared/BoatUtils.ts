@@ -420,20 +420,30 @@ export async function navigateBoatToward(
   try {
     while (Date.now() - startTime < maxTime) {
       tickCount++;
-      // Use server position for distance checks but local pos for sending
-      const currentPos = bot.entity.position;
-      const distToTarget = currentPos.xzDistanceTo(destination);
+      // Use SERVER position for "reached" detection (actual boat location)
+      const serverPos = bot.entity.position;
+      const serverDistToTarget = serverPos.xzDistanceTo(destination);
 
-      // Calculate direction to target
+      // Use LOCAL position for physics calculation (what we're sending)
+      const localDistToTarget = Math.sqrt(
+        Math.pow(destination.x - localPos.x, 2) +
+        Math.pow(destination.z - localPos.z, 2)
+      );
+
+      // Calculate direction to target using local position
       const dx = destination.x - localPos.x;
       const dz = destination.z - localPos.z;
       const targetYaw = Math.atan2(-dx, dz);
 
-      // Check if we're close enough
-      if (distToTarget < 15) {
+      // Check if we're close enough using SERVER position (actual boat location)
+      if (serverDistToTarget < 15) {
         stopBoat(bot);
-        log?.debug({ dist: distToTarget.toFixed(1) }, 'Reached boat destination');
-        return { success: true, reason: 'reached', distanceRemaining: distToTarget };
+        log?.debug({
+          serverDist: serverDistToTarget.toFixed(1),
+          localDist: localDistToTarget.toFixed(1),
+          serverPos: `(${serverPos.x.toFixed(1)}, ${serverPos.z.toFixed(1)})`
+        }, 'Reached boat destination');
+        return { success: true, reason: 'reached', distanceRemaining: serverDistToTarget };
       }
 
       // Check for land ahead every second (not every tick for performance)
@@ -442,24 +452,25 @@ export async function navigateBoatToward(
         if (hasLandAhead(bot, targetYaw, 3)) {
           stopBoat(bot);
           log?.debug({
-            distToTarget: distToTarget.toFixed(1),
+            distToTarget: serverDistToTarget.toFixed(1),
           }, 'Land detected ahead, stopping boat');
-          return { success: false, reason: 'land_collision', distanceRemaining: distToTarget };
+          return { success: false, reason: 'land_collision', distanceRemaining: serverDistToTarget };
         }
       }
 
-      // Check for progress - fail fast after 5 seconds if not moving
-      // (Paper servers reject boat movement packets)
-      if (distToTarget < lastDistance - 0.5) {
+      // Progress check: if server position isn't moving, boat physics aren't working
+      if (serverDistToTarget < lastDistance - 0.5) {
         lastProgressTime = Date.now();
-        lastDistance = distToTarget;
-      } else if (Date.now() - lastProgressTime > 5000) {
+        lastDistance = serverDistToTarget;
+      } else if (Date.now() - lastProgressTime > 10000) {
+        // Give 10 seconds for server to catch up before giving up
         stopBoat(bot);
         log?.debug({
-          distToTarget: distToTarget.toFixed(1),
+          serverDist: serverDistToTarget.toFixed(1),
+          localDist: localDistToTarget.toFixed(1),
           elapsed: ((Date.now() - startTime) / 1000).toFixed(1),
-        }, 'Boat not responding to controls (Paper server?)');
-        return { success: false, reason: 'no_progress', distanceRemaining: distToTarget };
+        }, 'Server not updating boat position');
+        return { success: false, reason: 'no_progress', distanceRemaining: serverDistToTarget };
       }
 
       // Smoothly turn toward target (boats don't turn instantly)
