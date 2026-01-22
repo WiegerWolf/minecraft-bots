@@ -73,7 +73,7 @@ export interface SimulationOptions {
   autoStartServer?: boolean;
   /** Clear world before placing blocks (default: true) */
   clearWorld?: boolean;
-  /** World clear radius (default: 50) */
+  /** World clear radius (default: 100) - large enough to clear artifacts from any test suite */
   clearRadius?: number;
   /** Wait for a player to join before proceeding (default: true) */
   waitForPlayer?: boolean;
@@ -107,7 +107,7 @@ export class PaperSimulationServer {
     openBrowser: false,
     autoStartServer: true,
     clearWorld: true,
-    clearRadius: 50,
+    clearRadius: 100, // Large enough to clear artifacts from any test suite
     skipDefaultGround: false,
     waitForPlayer: true,
     testName: '',
