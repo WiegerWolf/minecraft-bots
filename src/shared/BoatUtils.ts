@@ -278,20 +278,31 @@ export async function placeBoatOnWater(
 
   // Start placeEntity but don't await it directly - race with spawn event
   log?.debug('Placing boat with placeEntity...');
+  let gotBoatFromSpawnEvent = false;
   const placeEntityPromise = bot.placeEntity(waterBlock, new Vec3(0, 1, 0))
     .then((entity) => {
-      log?.debug({ boatId: entity?.id }, 'placeEntity returned successfully');
+      if (!gotBoatFromSpawnEvent) {
+        log?.debug({ boatId: entity?.id }, 'placeEntity returned successfully');
+      }
       return entity;
     })
     .catch((err: any) => {
-      // This often fails on Paper servers even though the boat spawned
-      log?.debug({ error: err.message }, 'placeEntity threw error (boat may still have spawned)');
+      // Only log error if we didn't already get the boat from spawn event
+      // placeEntity often fails/times out on Paper servers even though the boat spawned
+      if (!gotBoatFromSpawnEvent) {
+        log?.debug({ error: err.message }, 'placeEntity threw error (boat may still have spawned)');
+      }
       return null;
     });
 
   // Race: return as soon as EITHER placeEntity succeeds OR spawn event fires
   // This is critical - we don't want to wait 5 seconds for placeEntity to timeout
   const result = await Promise.race([placeEntityPromise, boatSpawnPromise]);
+
+  // Mark that we got the boat from spawn event (to suppress placeEntity error logging)
+  if (result) {
+    gotBoatFromSpawnEvent = true;
+  }
 
   if (result) {
     log?.debug({ boatId: result.id }, 'Got boat from race');
@@ -624,38 +635,152 @@ export async function dismountBoat(
 }
 
 /**
- * Breaks a nearby boat entity to pick it up.
+ * Breaks a nearby boat entity and picks up the dropped boat item.
+ *
+ * Boats have 4 HP and require multiple hits to break. After breaking,
+ * the boat drops as an item that needs to be collected.
  *
  * @param bot - The bot instance
  * @param maxDistance - Maximum distance to search for boat (default: 5)
  * @param log - Optional logger
- * @returns True if a boat was broken, false otherwise
+ * @returns True if a boat was broken and picked up, false otherwise
  */
 export async function breakNearbyBoat(
   bot: Bot,
   maxDistance: number = 5,
   log?: { debug: Function }
 ): Promise<boolean> {
-  const boatEntity = findNearbyBoat(bot, maxDistance);
+  let boatEntity = findNearbyBoat(bot, maxDistance);
   if (!boatEntity) {
     log?.debug('No boat found nearby to break');
     return false;
   }
 
-  log?.debug({ boatId: boatEntity.id, pos: boatEntity.position.toString() }, 'Breaking boat');
+  const boatPos = boatEntity.position.clone();
+  log?.debug({ boatId: boatEntity.id, pos: boatPos.toString() }, 'Breaking boat');
 
-  try {
-    // Attack the boat to break it
-    await bot.attack(boatEntity);
-    await sleep(500);
+  // Attack the boat multiple times until destroyed (boats have 4 HP)
+  for (let i = 0; i < 10 && boatEntity; i++) {
+    try {
+      await bot.attack(boatEntity);
+      await sleep(250);
+      // Check if boat is still there
+      boatEntity = findNearbyBoat(bot, maxDistance);
+    } catch {
+      // Boat probably gone
+      break;
+    }
+  }
 
-    // The boat drops as an item - we'll pick it up naturally or via pickup action
-    log?.debug('Boat broken');
-    return true;
-  } catch (err) {
-    log?.debug({ err }, 'Failed to break boat');
+  // Verify boat was destroyed
+  if (findNearbyBoat(bot, maxDistance)) {
+    log?.debug('Could not destroy boat after multiple attempts');
     return false;
   }
+
+  log?.debug('Boat destroyed, picking up dropped item');
+
+  // Wait for and pick up the dropped boat item
+  // The boat drops near where it was destroyed
+  const pickedUp = await waitForAndCollectBoatItem(bot, boatPos, 3000, log);
+
+  if (pickedUp) {
+    log?.debug('Boat item picked up');
+  } else {
+    log?.debug('Could not pick up boat item (may have been collected automatically or despawned)');
+  }
+
+  return true;
+}
+
+/**
+ * Waits for a boat item drop and collects it.
+ *
+ * @param bot - The bot instance
+ * @param nearPosition - Position to look for the drop near
+ * @param timeout - Maximum time to wait in ms
+ * @param log - Optional logger
+ * @returns True if collected, false otherwise
+ */
+async function waitForAndCollectBoatItem(
+  bot: Bot,
+  nearPosition: Vec3,
+  timeout: number,
+  log?: { debug: Function }
+): Promise<boolean> {
+  const startTime = Date.now();
+  const initialBoatCount = bot.inventory.items().filter(i => i.name.includes('boat')).length;
+
+  // Helper to find item drop near where boat was destroyed
+  // We just destroyed a boat, so any item entity nearby is likely the boat drop
+  const findItemDrop = () => {
+    for (const entity of Object.values(bot.entities)) {
+      if (entity.name === 'item' && entity.position.distanceTo(nearPosition) < 5) {
+        return entity;
+      }
+    }
+    return null;
+  };
+
+  // Wait a bit for the item to spawn
+  await sleep(100);
+
+  // Try to find and collect the item
+  while (Date.now() - startTime < timeout) {
+    // Check if we already collected the boat (inventory increased)
+    const currentBoatCount = bot.inventory.items().filter(i => i.name.includes('boat')).length;
+    if (currentBoatCount > initialBoatCount) {
+      return true;
+    }
+
+    const itemDrop = findItemDrop();
+
+    if (!itemDrop) {
+      await sleep(100);
+      continue;
+    }
+
+    // Walk toward the drop to collect it
+    const dist = bot.entity.position.distanceTo(itemDrop.position);
+    log?.debug({ dropPos: itemDrop.position.toString(), dist: dist.toFixed(1) }, 'Found item drop, collecting');
+
+    // Set up collection listener
+    const collected = await new Promise<boolean>((resolve) => {
+      const dropId = itemDrop.id;
+      const collectTimeout = setTimeout(() => {
+        bot.off('playerCollect', onCollect);
+        bot.clearControlStates();
+        resolve(false);
+      }, 2000);
+
+      function onCollect(collector: Entity, collectedEntity: Entity) {
+        if (collectedEntity.id === dropId) {
+          clearTimeout(collectTimeout);
+          bot.off('playerCollect', onCollect);
+          bot.clearControlStates();
+          resolve(true);
+        }
+      }
+
+      bot.on('playerCollect', onCollect);
+
+      // Walk toward the item
+      const direction = itemDrop.position.minus(bot.entity.position);
+      const yaw = Math.atan2(-direction.x, -direction.z);
+      bot.look(yaw, 0).then(() => {
+        bot.setControlState('forward', true);
+      });
+    });
+
+    if (collected) {
+      return true;
+    }
+
+    // Item may have moved or we missed it, try again
+    await sleep(100);
+  }
+
+  return false;
 }
 
 /**
