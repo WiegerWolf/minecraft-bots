@@ -228,10 +228,16 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
     // ═══════════════════════════════════════════════
     // WORLD PERCEPTION
     // ═══════════════════════════════════════════════
-    const searchCenter = bb.villageCenter || pos;
-    // Search radius must match ChopTree's startTreeHarvest radius (50 with village, 32 without)
-    // Otherwise planner thinks trees exist but action can't find them
-    const SEARCH_RADIUS = bb.villageCenter ? 50 : 32;
+    // Search from bot's position when:
+    // 1. No village center established yet
+    // 2. Bot is far from village (exploring)
+    // 3. No known forests yet (need to discover)
+    // This ensures exploration finds trees near the bot, not just near the village
+    const distanceFromVillage = bb.villageCenter ? pos.distanceTo(bb.villageCenter) : Infinity;
+    const isExploring = bb.knownForests.length === 0 || distanceFromVillage > 30;
+    const searchCenter = isExploring ? pos : (bb.villageCenter || pos);
+    // Search radius: larger when exploring from bot position, smaller when working from village
+    const SEARCH_RADIUS = isExploring ? 50 : (bb.villageCenter ? 50 : 32);
 
     // Find logs - increased count to find trees beyond nearby stumps
     bb.nearbyLogs = bot.findBlocks({
