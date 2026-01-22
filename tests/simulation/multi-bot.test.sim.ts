@@ -112,7 +112,7 @@ class MultiBotTest {
       host: 'localhost',
       port: 25566,
       username: name,
-      version: '1.21.4',
+      version: '1.21.6',
       auth: 'offline',
     });
 

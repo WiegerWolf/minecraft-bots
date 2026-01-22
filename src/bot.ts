@@ -54,10 +54,11 @@ const bot: Bot = mineflayer.createBot(config);
 bot.loadPlugin(pathfinder);
 
 // Register all available roles (all using GOAP)
+// Keys must match BOT_ROLE values sent by the manager (see manager/types.ts)
 const roles: Record<string, Role> = {
-    farmer: new GOAPFarmingRole({ debug: true, logger }),
-    lumberjack: new GOAPLumberjackRole({ debug: true, logger }),
-    landscaper: new GOAPLandscaperRole({ debug: true, logger }),
+    'goap-farming': new GOAPFarmingRole({ debug: true, logger }),
+    'goap-lumberjack': new GOAPLumberjackRole({ debug: true, logger }),
+    'landscaper': new GOAPLandscaperRole({ debug: true, logger }),
 };
 
 let currentRole: Role | null = null;

@@ -40,7 +40,7 @@ import mineflayer from 'mineflayer';
 // @ts-ignore
 import { mineflayer as mineflayerViewer } from 'prismarine-viewer';
 
-const VERSION = '1.21.4';
+const VERSION = '1.21.6';
 const SERVER_DIR = path.join(import.meta.dir, '../../server');
 const INSTANCE_DIR = path.join(SERVER_DIR, 'instance');
 

@@ -5,7 +5,7 @@
 set -e
 cd "$(dirname "$0")"
 
-PAPER_VERSION="1.21.4"
+PAPER_VERSION="1.21.6"
 INSTANCE_DIR="instance"
 
 echo "=== Paper Server Setup ==="
@@ -20,7 +20,7 @@ if [ ! -f "paper.jar" ]; then
     echo "Downloading Paper $PAPER_VERSION..."
 
     # Get latest build number
-    BUILD=$(curl -s "https://api.papermc.io/v2/projects/paper/versions/$PAPER_VERSION/builds" | grep -o '"build":[0-9]*' | head -1 | grep -o '[0-9]*')
+    BUILD=$(curl -s "https://api.papermc.io/v2/projects/paper/versions/$PAPER_VERSION/builds" | grep -o '"build":[0-9]*' | tail -1 | grep -o '[0-9]*')
 
     if [ -z "$BUILD" ]; then
         echo "Error: Could not fetch Paper build info"
