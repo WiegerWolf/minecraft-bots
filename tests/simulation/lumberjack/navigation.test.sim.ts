@@ -44,6 +44,7 @@ async function testExploresForDistantForest() {
       { name: 'iron_axe', count: 1 },
       { name: 'oak_sign', count: 5 },
     ],
+    clearRadius: 80, // Match other tests in this file to ensure proper cleanup
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
@@ -182,11 +183,11 @@ async function testAvoidsWaterBarriersOnFoot() {
   const test = new SimulationTest('Avoids water barriers and explores on foot');
 
   const world = new MockWorld();
-  // Large area with grass as the mainland (30 blocks around spawn)
+  // Large area with grass as the mainland (35 blocks around spawn)
   world.fill(new Vec3(-35, 63, -35), new Vec3(35, 63, 35), 'grass_block');
 
-  // Island with forest at x=50, z=0
-  const islandCenter = new Vec3(50, 63, 0);
+  // Island with forest at x=74, z=0 (past the 30-block-wide water barrier)
+  const islandCenter = new Vec3(74, 63, 0);
 
   // Create the island (grass platform)
   for (let x = -8; x <= 8; x++) {
@@ -218,12 +219,12 @@ async function testAvoidsWaterBarriersOnFoot() {
       { name: 'iron_axe', count: 1 },
       // NO BOAT - must explore on foot
     ],
-    clearRadius: 150,
+    clearRadius: 90, // Extended to accommodate island at x=74
   });
 
-  // Create wide water barrier between mainland and island
-  // Water from x=36 to x=41 (wide enough to block swimming paths)
-  await test.rcon('fill 36 63 -35 41 63 35 minecraft:water replace minecraft:grass_block');
+  // Create wide water barrier between mainland and island (30 blocks wide)
+  // Water from x=36 to x=65, z=-35 to 35 (island starts at x=66)
+  await test.rcon('fill 36 63 -35 65 63 35 minecraft:water');
 
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
