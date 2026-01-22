@@ -13,9 +13,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as zlib from 'zlib';
 
-const PROXY_PORT = parseInt(process.argv[2] || '25566');
+const PROXY_PORT = parseInt(process.argv[2] || '25567');
 const SERVER_HOST = 'localhost';
-const SERVER_PORT = parseInt(process.argv[3] || '25565');
+const SERVER_PORT = parseInt(process.argv[3] || '25566');
 
 // Packet IDs for 1.21.4 (serverbound play)
 const PACKET_IDS = {

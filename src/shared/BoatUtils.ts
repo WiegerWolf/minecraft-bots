@@ -410,16 +410,23 @@ export async function navigateBoatToward(
   const botWithVehicle = bot as Bot & { vehicle?: Entity };
   const client = (bot as any)._client;
 
+  // Track local position for physics calculation
+  // Real client calculates physics locally and sends position to server
+  let localPos = startPos.clone();
+  let localYaw = bot.entity.yaw; // radians
+  const BOAT_SPEED = 0.2; // blocks per tick when paddling forward (approx)
+
   let tickCount = 0;
   try {
     while (Date.now() - startTime < maxTime) {
       tickCount++;
+      // Use server position for distance checks but local pos for sending
       const currentPos = bot.entity.position;
       const distToTarget = currentPos.xzDistanceTo(destination);
 
       // Calculate direction to target
-      const dx = destination.x - currentPos.x;
-      const dz = destination.z - currentPos.z;
+      const dx = destination.x - localPos.x;
+      const dz = destination.z - localPos.z;
       const targetYaw = Math.atan2(-dx, dz);
 
       // Check if we're close enough
@@ -455,13 +462,32 @@ export async function navigateBoatToward(
         return { success: false, reason: 'no_progress', distanceRemaining: distToTarget };
       }
 
-      // Aim the boat
-      bot.look(targetYaw, 0, false).catch(() => {});
+      // Smoothly turn toward target (boats don't turn instantly)
+      const yawDiff = targetYaw - localYaw;
+      // Normalize to -PI to PI
+      const normalizedDiff = Math.atan2(Math.sin(yawDiff), Math.cos(yawDiff));
+      // Turn rate: about 5 degrees per tick max
+      const maxTurn = 0.09; // ~5 degrees in radians
+      if (Math.abs(normalizedDiff) > maxTurn) {
+        localYaw += Math.sign(normalizedDiff) * maxTurn;
+      } else {
+        localYaw = targetYaw;
+      }
+
+      // Calculate local physics - move forward in the direction we're facing
+      // Boat speed is about 0.2 blocks per tick when paddling
+      const moveX = -Math.sin(localYaw) * BOAT_SPEED;
+      const moveZ = Math.cos(localYaw) * BOAT_SPEED;
+      localPos.x += moveX;
+      localPos.z += moveZ;
+
+      // Set look direction
+      bot.look(localYaw, 0, false).catch(() => {});
 
       // Send movement packets (based on real client behavior)
+      // Real client sends: player_input -> steer_boat -> vehicle_move every tick
       try {
         // player_input for movement control (MC 1.21+)
-        // Real client sends 0x1 for forward
         client.write('player_input', {
           inputs: { forward: true }
         });
@@ -469,9 +495,15 @@ export async function navigateBoatToward(
         // steer_boat for paddle animation (both paddles for forward movement)
         client.write('steer_boat', { leftPaddle: true, rightPaddle: true });
 
-        // NOTE: We do NOT send vehicle_move - Paper server does physics server-side
-        // and rejects client position updates. The server will move the boat based
-        // on our player_input flags.
+        // vehicle_move with our calculated position
+        // Server will validate - if too far off, it will rubberband us
+        client.write('vehicle_move', {
+          x: localPos.x,
+          y: localPos.y,
+          z: localPos.z,
+          yaw: localYaw * (180 / Math.PI), // Convert radians to degrees
+          pitch: 0,
+        });
       } catch {
         // Ignore packet errors
       }

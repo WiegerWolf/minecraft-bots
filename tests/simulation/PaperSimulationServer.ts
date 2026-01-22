@@ -55,6 +55,8 @@ export interface SimulationOptions {
   gameMode?: 'survival' | 'creative';
   /** Server port (default: 25566) */
   serverPort?: number;
+  /** Bot connection port - can differ from serverPort for proxy debugging (default: same as serverPort) */
+  botPort?: number;
   /** RCON port (default: 25575) */
   rconPort?: number;
   /** RCON password (default: 'simulation') */
@@ -96,6 +98,7 @@ export class PaperSimulationServer {
     botInventory: [],
     gameMode: 'survival',
     serverPort: 25566,
+    botPort: 25566, // default to serverPort, can be different for proxy debugging
     rconPort: 25575,
     rconPassword: 'simulation',
     viewerPort: 3000,
@@ -116,6 +119,15 @@ export class PaperSimulationServer {
   async start(world: MockWorld, options: SimulationOptions = {}): Promise<Bot> {
     this.mockWorld = world;
     this.options = { ...this.defaultOptions, ...options };
+    // Default botPort to serverPort if not explicitly provided
+    if (options.botPort === undefined) {
+      this.options.botPort = this.options.serverPort;
+    }
+    // Override botPort with PROXY_PORT env var if set (for packet debugging)
+    if (process.env.PROXY_PORT) {
+      this.options.botPort = parseInt(process.env.PROXY_PORT, 10);
+      console.log(`[PaperSim] Using proxy port ${this.options.botPort} for bot connection`);
+    }
 
     // Start server if needed
     if (this.options.autoStartServer) {
@@ -661,7 +673,7 @@ export class PaperSimulationServer {
     return new Promise((resolve, reject) => {
       this.bot = mineflayer.createBot({
         host: 'localhost',
-        port: this.options.serverPort,
+        port: this.options.botPort || this.options.serverPort,
         username: 'SimBot',
         version: VERSION,
         auth: 'offline',
