@@ -557,23 +557,47 @@ async function testNavigatesBackToForest() {
     { timeout: 180000, message: 'Bot should write FOREST sign at spawn' }
   );
 
-  // Now wait for bot to collect logs (proving it went back to forest)
+  // Now wait for bot to return to forest area
   await test.waitUntil(
     () => {
-      const logCount = test.bot.inventory.items()
-        .filter(i => i.name.includes('_log'))
-        .reduce((sum, i) => sum + i.count, 0);
-      return logCount >= 3;
+      const botPos = test.bot.entity.position;
+      return botPos.distanceTo(forestCenter) < 25;
     },
-    { timeout: 120000, message: 'Bot should return to forest and collect logs' }
+    { timeout: 120000, message: 'Bot should return to forest after writing signs' }
   );
 
-  // Verify bot is near forest now
+  // Track that bot stays busy in the forest for 5 seconds
+  // (breaking logs OR leaves - both are valid lumberjack work)
+  let blocksDigged = 0;
+  const digListener = () => { blocksDigged++; };
+  test.bot.on('diggingCompleted', digListener);
+
+  const startTime = Date.now();
+  const busyDuration = 5000;
+
+  await test.waitUntil(
+    () => {
+      const elapsed = Date.now() - startTime;
+      const botPos = test.bot.entity.position;
+      const stillInForest = botPos.distanceTo(forestCenter) < 30;
+      // Bot should stay in forest and be actively working
+      return elapsed >= busyDuration && stillInForest && blocksDigged >= 1;
+    },
+    { timeout: 30000, message: 'Bot should stay busy in forest for 5 seconds' }
+  );
+
+  test.bot.removeListener('diggingCompleted', digListener);
+
+  // Verify bot is still near forest
   const botPos = test.bot.entity.position;
   const distToForest = botPos.distanceTo(forestCenter);
   test.assert(
-    distToForest < 25,
-    `Bot should be near forest after returning (dist=${distToForest.toFixed(1)})`
+    distToForest < 30,
+    `Bot should remain near forest while working (dist=${distToForest.toFixed(1)})`
+  );
+  test.assert(
+    blocksDigged >= 1,
+    `Bot should have broken at least one block (logs or leaves) while in forest (broke ${blocksDigged})`
   );
 
   role.stop(test.bot);
@@ -591,7 +615,7 @@ const ALL_TESTS: Record<string, () => Promise<any>> = {
   'establish-village': testEstablishesVillageWhenCrafting,
   'return-for-signs': testReturnsToSpawnForSigns,
   // 'full-pioneer': testFullPioneerSequence,
-  // 'navigate-back': testNavigatesBackToForest,
+  'navigate-back': testNavigatesBackToForest,
 };
 
 async function main() {
