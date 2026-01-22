@@ -296,6 +296,7 @@ async function testEstablishesVillageWhenCrafting() {
       { name: 'stick', count: 8 },
       { name: 'oak_sign', count: 5 },
     ],
+    clearRadius: 90, // Match other tests to clear any leftover water/blocks
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
@@ -361,6 +362,7 @@ async function testReturnsToSpawnForSigns() {
       { name: 'stick', count: 8 },
       { name: 'oak_sign', count: 5 },
     ],
+    clearRadius: 90, // Clear any leftover blocks from previous tests
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
@@ -433,6 +435,7 @@ async function testFullPioneerSequence() {
       { name: 'oak_sign', count: 5 },
       { name: 'chest', count: 1 },
     ],
+    clearRadius: 95, // Slightly larger for 90-block world fill
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
@@ -534,6 +537,7 @@ async function testNavigatesBackToForest() {
       { name: 'stick', count: 8 },
       { name: 'oak_sign', count: 5 },
     ],
+    clearRadius: 90, // Clear any leftover blocks from previous tests
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
