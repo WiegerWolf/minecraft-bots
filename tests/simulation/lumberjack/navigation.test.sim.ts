@@ -405,110 +405,6 @@ async function testReturnsToSpawnForSigns() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST: Full pioneer sequence - explore, establish, document
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function testFullPioneerSequence() {
-  const test = new SimulationTest('Full pioneer sequence');
-
-  const world = new MockWorld();
-  // Large world for long-range navigation
-  world.fill(new Vec3(-90, 63, -90), new Vec3(90, 63, 90), 'grass_block');
-
-  // Forest far from spawn - bot must explore to find it
-  const forestCenter = new Vec3(45, 64, 40);
-  createOakTree(world, forestCenter.offset(0, 0, 0), 5);
-  createOakTree(world, forestCenter.offset(4, 0, 2), 5);
-  createOakTree(world, forestCenter.offset(-3, 0, 4), 5);
-  createOakTree(world, forestCenter.offset(2, 0, -3), 5);
-  createOakTree(world, forestCenter.offset(-2, 0, -2), 4);
-  createOakTree(world, forestCenter.offset(5, 0, -1), 5);
-
-  const spawnPos = new Vec3(0, 64, 0);
-
-  await test.setup(world, {
-    botPosition: spawnPos.clone(),
-    botInventory: [
-      // No axe - needs to craft, triggering village establishment
-      { name: 'oak_planks', count: 16 },
-      { name: 'stick', count: 8 },
-      { name: 'oak_sign', count: 5 },
-      { name: 'chest', count: 1 },
-    ],
-    clearRadius: 95, // Slightly larger for 90-block world fill
-  });
-
-  test.bot.loadPlugin(pathfinderPlugin);
-  await test.wait(2000, 'World loading');
-
-  // Track sequence of events
-  const events: string[] = [];
-
-  const role = new GOAPLumberjackRole();
-  role.start(test.bot, { logger: test.createRoleLogger('lumberjack'), spawnPosition: spawnPos.clone() });
-
-  const bb = () => (role as any).blackboard;
-
-  // Phase 1: Bot explores and finds forest
-  await test.waitUntil(
-    () => {
-      if (bb()?.knownForests?.length > 0 && !events.includes('forest_found')) {
-        events.push('forest_found');
-      }
-      return events.includes('forest_found');
-    },
-    { timeout: 120000, message: 'Phase 1: Bot should find forest' }
-  );
-  test.assert(events.includes('forest_found'), 'Bot found forest through exploration');
-
-  // Phase 2: Bot establishes village
-  await test.waitUntil(
-    () => {
-      if (bb()?.villageCenter !== null && !events.includes('village_established')) {
-        events.push('village_established');
-      }
-      return events.includes('village_established');
-    },
-    { timeout: 60000, message: 'Phase 2: Bot should establish village' }
-  );
-  test.assert(events.includes('village_established'), 'Bot established village center');
-
-  // Phase 3: Bot writes signs at spawn
-  await test.waitUntil(
-    () => {
-      const signPositions = bb()?.signPositions as Map<string, Vec3> | undefined;
-      if (signPositions?.has('VILLAGE') && signPositions?.has('FOREST') && !events.includes('signs_written')) {
-        events.push('signs_written');
-      }
-      return events.includes('signs_written');
-    },
-    { timeout: 120000, message: 'Phase 3: Bot should write signs at spawn' }
-  );
-  test.assert(events.includes('signs_written'), 'Bot wrote knowledge signs at spawn');
-
-  // Verify the full sequence happened
-  test.assertEqual(events.length, 3, 'All three phases should complete');
-
-  // Verify village center is established (at spawn where crafting happens)
-  const villageCenter = bb()?.villageCenter as Vec3;
-  test.assert(villageCenter !== null, 'Village center should be set');
-
-  // Verify signs point to correct locations (both at spawn)
-  const signPositions = bb()?.signPositions as Map<string, Vec3>;
-  test.assert(
-    signPositions.get('VILLAGE')!.distanceTo(spawnPos) <= 5,
-    'VILLAGE sign should be at spawn'
-  );
-  test.assert(
-    signPositions.get('FOREST')!.distanceTo(spawnPos) <= 5,
-    'FOREST sign should be at spawn'
-  );
-
-  role.stop(test.bot);
-  return test.cleanup();
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // TEST: Navigates back to forest after visiting spawn
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -614,7 +510,6 @@ const ALL_TESTS: Record<string, () => Promise<any>> = {
   'water-avoidance': testAvoidsWaterBarriersOnFoot,
   'establish-village': testEstablishesVillageWhenCrafting,
   'return-for-signs': testReturnsToSpawnForSigns,
-  // 'full-pioneer': testFullPioneerSequence,
   'navigate-back': testNavigatesBackToForest,
 };
 
