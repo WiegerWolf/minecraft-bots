@@ -458,10 +458,168 @@ async function testGathersDirt() {
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TEST: Establishes dirtpit following distance rules
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// SPECIFICATION: Landscaper Dirtpit Establishment
+//
+// When no dirtpit is known, the landscaper must establish one that:
+// - Is 50+ blocks from village center
+// - Is 30+ blocks from known farms
+// - Is 20+ blocks from known forests
+// - Is in an area with good dirt density
+
+async function testEstablishesDirtpit() {
+  const test = new SimulationTest('Establishes dirtpit following distance rules');
+
+  const world = new MockWorld();
+
+  // === LOCATIONS ===
+  const villageCenter = new Vec3(0, 64, 0);
+  const farmCenter = new Vec3(15, 63, 15);
+  // Add a forest location to test forest avoidance
+  const forestCenter = new Vec3(-30, 64, 10);
+
+  // === SIGNS at spawn - NO DIRTPIT SIGN (bot must establish one) ===
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', {
+    signText: `[VILLAGE]\nX: ${villageCenter.x}\nY: ${villageCenter.y}\nZ: ${villageCenter.z}`,
+  });
+  world.setBlock(new Vec3(3, 64, 0), 'oak_sign', {
+    signText: `[FARM]\nX: ${farmCenter.x}\nY: ${farmCenter.y}\nZ: ${farmCenter.z}`,
+  });
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', {
+    signText: `[FOREST]\nX: ${forestCenter.x}\nY: ${forestCenter.y}\nZ: ${forestCenter.z}`,
+  });
+
+  // === HOLES in the farm surface (bot needs dirt to fill these) ===
+  const holePositions = [
+    new Vec3(13, 63, 15),
+    new Vec3(17, 63, 15),
+  ];
+  for (const pos of holePositions) {
+    world.setBlock(pos, 'air');
+  }
+
+  await test.setup(world, {
+    botPosition: new Vec3(0, 64, 2),
+    botInventory: [{ name: 'iron_shovel', count: 1 }],
+    clearRadius: 80,
+  });
+
+  // Build world layers via RCON (after setup)
+  await test.rcon('fill -80 58 -80 80 58 80 minecraft:bedrock');
+  await test.rcon('fill -80 59 -80 80 59 80 minecraft:dirt');
+  await test.rcon('fill -80 60 -80 80 60 80 minecraft:dirt');
+  await test.rcon('fill -80 61 -80 80 61 80 minecraft:dirt');
+  await test.rcon('fill -80 62 -80 80 62 80 minecraft:dirt');
+  await test.rcon('fill -80 63 -80 80 63 80 minecraft:grass_block');
+
+  // === FARM: water source at center ===
+  await test.rcon(`setblock ${farmCenter.x} ${farmCenter.y} ${farmCenter.z} minecraft:water`);
+
+  // === HOLES in the farm surface ===
+  for (const pos of holePositions) {
+    await test.rcon(`setblock ${pos.x} ${pos.y} ${pos.z} minecraft:air`);
+  }
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  const role = new GOAPLandscaperRole();
+  role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
+
+  console.log('  📋 Dirtpit Establishment Test:');
+  console.log(`     - Village at (${villageCenter.x}, ${villageCenter.y}, ${villageCenter.z})`);
+  console.log(`     - Farm at (${farmCenter.x}, ${farmCenter.y}, ${farmCenter.z})`);
+  console.log(`     - Forest at (${forestCenter.x}, ${forestCenter.y}, ${forestCenter.z})`);
+  console.log(`     - NO dirtpit sign - bot must establish one`);
+  console.log(`     - Rules: 50+ from village, 30+ from farm, 20+ from forest`);
+
+  // Distance rules (must match EstablishDirtpit.ts)
+  const MIN_DISTANCE_FROM_VILLAGE = 50;
+  const MIN_DISTANCE_FROM_FARMS = 30;
+  const MIN_DISTANCE_FROM_FORESTS = 20;
+
+  // Wait for bot to establish a dirtpit
+  await test.waitUntil(
+    () => {
+      const bb = (role as any).blackboard;
+      return bb?.dirtpit !== null && bb?.dirtpit !== undefined;
+    },
+    {
+      timeout: 90000,
+      interval: 2000,
+      message: 'Bot should establish a dirtpit location',
+    }
+  );
+
+  const bb = (role as any).blackboard;
+  const dirtpit = bb.dirtpit as Vec3;
+
+  console.log(`  ✓ Dirtpit established at (${dirtpit.x}, ${dirtpit.y}, ${dirtpit.z})`);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FINAL ASSERTIONS - Verify dirtpit follows all distance rules
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // 1. Distance from village center (must be 50+)
+  const distFromVillage = dirtpit.distanceTo(villageCenter);
+  console.log(`     - Distance from village: ${distFromVillage.toFixed(1)} blocks (min: ${MIN_DISTANCE_FROM_VILLAGE})`);
+  test.assert(
+    distFromVillage >= MIN_DISTANCE_FROM_VILLAGE,
+    `Dirtpit must be ${MIN_DISTANCE_FROM_VILLAGE}+ blocks from village (was ${distFromVillage.toFixed(1)})`
+  );
+
+  // 2. Distance from farm (must be 30+)
+  const distFromFarm = dirtpit.distanceTo(farmCenter);
+  console.log(`     - Distance from farm: ${distFromFarm.toFixed(1)} blocks (min: ${MIN_DISTANCE_FROM_FARMS})`);
+  test.assert(
+    distFromFarm >= MIN_DISTANCE_FROM_FARMS,
+    `Dirtpit must be ${MIN_DISTANCE_FROM_FARMS}+ blocks from farm (was ${distFromFarm.toFixed(1)})`
+  );
+
+  // 3. Distance from forest (must be 20+)
+  const distFromForest = dirtpit.distanceTo(forestCenter);
+  console.log(`     - Distance from forest: ${distFromForest.toFixed(1)} blocks (min: ${MIN_DISTANCE_FROM_FORESTS})`);
+  test.assert(
+    distFromForest >= MIN_DISTANCE_FROM_FORESTS,
+    `Dirtpit must be ${MIN_DISTANCE_FROM_FORESTS}+ blocks from forest (was ${distFromForest.toFixed(1)})`
+  );
+
+  // 4. Verify bot can gather dirt from the established dirtpit
+  // Wait for dirt gathering to start (proves dirtpit is usable)
+  await test.waitUntil(
+    () => {
+      const currentBb = (role as any).blackboard;
+      return (currentBb?.dirtCount || 0) > 0;
+    },
+    {
+      timeout: 60000,
+      interval: 2000,
+      message: 'Bot should gather dirt from the established dirtpit',
+    }
+  );
+
+  const finalDirtCount = bb.dirtCount || 0;
+  console.log(`  ✓ Gathered ${finalDirtCount} dirt from established dirtpit`);
+
+  test.assert(finalDirtCount > 0, 'Bot should have gathered some dirt');
+
+  const botPos = test.botPosition();
+  if (botPos) {
+    console.log(`  📍 Bot final position: (${Math.floor(botPos.x)}, ${Math.floor(botPos.y)}, ${Math.floor(botPos.z)})`);
+  }
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
 const ALL_TESTS: Record<string, () => Promise<any>> = {
   'flatten': testFlattensTerrain,
   'holes': testFillsHoles,
   'dirt': testGathersDirt,
+  'establish-dirtpit': testEstablishesDirtpit,
 };
 
 async function main() {
