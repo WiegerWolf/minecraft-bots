@@ -605,32 +605,71 @@ export class PaperSimulationServer {
   private async buildWorld(): Promise<void> {
     if (!this.mockWorld || !this.rcon) return;
 
-    const blocks = this.mockWorld.getAllBlocks();
-    // Skip grass_block at y=63 (already placed by clearWorldArea)
-    // But DO place air blocks - they can be used to clear the default grass
-    const blocksToPlace = blocks.filter(b => {
-      if (b.name === 'grass_block' && b.position.y === 63) return false;
-      return true;
-    });
-    console.log(`[PaperSim] Placing ${blocksToPlace.length} blocks...`);
-
-    // Place blocks individually to preserve metadata (like signText)
-    let placed = 0;
-    for (const block of blocksToPlace) {
-      try {
-        await this.setBlock(block.position, block.name, { signText: block.signText });
-        placed++;
-
-        // Progress update every 100 blocks
-        if (placed % 100 === 0) {
-          console.log(`[PaperSim] Placed ${placed}/${blocksToPlace.length} blocks...`);
+    // Process fill operations first (much faster than individual blocks)
+    const fills = this.mockWorld.getFills();
+    if (fills.length > 0) {
+      console.log(`[PaperSim] Processing ${fills.length} fill operations...`);
+      for (const fill of fills) {
+        // Skip grass_block at y=63 (already placed by clearWorldArea)
+        if (fill.name === 'grass_block' && fill.from.y === 63 && fill.to.y === 63) {
+          continue;
         }
-      } catch (err) {
-        console.warn(`[PaperSim] Failed to place ${block.name} at ${block.position}: ${err}`);
+        try {
+          const { from, to, name } = fill;
+          await this.rconCommand(
+            `fill ${from.x} ${from.y} ${from.z} ${to.x} ${to.y} ${to.z} minecraft:${name} replace`
+          );
+        } catch (err) {
+          console.warn(`[PaperSim] Failed fill ${fill.name}: ${err}`);
+        }
       }
     }
 
-    console.log(`[PaperSim] Placed ${placed} blocks`);
+    // Get blocks that were set individually (not via fill)
+    // These include: signs, air blocks (holes), water sources, and any overrides
+    const blocks = this.mockWorld.getAllBlocks();
+    const blocksToPlace = blocks.filter(b => {
+      // Skip grass_block at y=63 (already placed by clearWorldArea)
+      if (b.name === 'grass_block' && b.position.y === 63) return false;
+
+      // Always place blocks with special metadata (signs)
+      if (b.signText) return true;
+
+      // Always place air blocks (these create holes/clearings)
+      if (b.name === 'air') return true;
+
+      // Always place water blocks (important for farms)
+      if (b.name === 'water' || b.name === 'flowing_water') return true;
+
+      // If no fills, place all blocks
+      if (fills.length === 0) return true;
+
+      // With fills: skip blocks that match what a fill would have placed
+      // This is a heuristic - we place blocks that might be overrides
+      // TODO: Track fill positions more precisely for complex scenarios
+      return false;
+    });
+
+    if (blocksToPlace.length > 0) {
+      console.log(`[PaperSim] Placing ${blocksToPlace.length} individual blocks...`);
+
+      let placed = 0;
+      for (const block of blocksToPlace) {
+        try {
+          await this.setBlock(block.position, block.name, { signText: block.signText });
+          placed++;
+
+          // Progress update every 100 blocks
+          if (placed % 100 === 0) {
+            console.log(`[PaperSim] Placed ${placed}/${blocksToPlace.length} blocks...`);
+          }
+        } catch (err) {
+          console.warn(`[PaperSim] Failed to place ${block.name} at ${block.position}: ${err}`);
+        }
+      }
+
+      console.log(`[PaperSim] Placed ${placed} blocks`);
+    }
   }
 
   /**

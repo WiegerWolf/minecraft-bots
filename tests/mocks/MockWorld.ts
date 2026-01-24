@@ -68,9 +68,16 @@ function createMockBlock(name: string, x: number, y: number, z: number, signText
  * // Now bot.blockAt() and bot.findBlocks() work with this world
  * ```
  */
+export interface FillOperation {
+  from: Vec3;
+  to: Vec3;
+  name: string;
+}
+
 export class MockWorld {
   private blocks: Map<string, MockBlock> = new Map();
   private defaultBlock: string | null = 'air';  // Return 'air' for unset positions (like real Minecraft)
+  private fills: FillOperation[] = [];  // Track fill operations for batch placement
 
   /**
    * Get the key for a position (floored to integers).
@@ -109,6 +116,7 @@ export class MockWorld {
 
   /**
    * Fill a region with a block type.
+   * Tracks the fill operation for batch placement by PaperSimulationServer.
    */
   fill(from: Vec3, to: Vec3, name: string): void {
     const minX = Math.min(from.x, to.x);
@@ -118,6 +126,14 @@ export class MockWorld {
     const minZ = Math.min(from.z, to.z);
     const maxZ = Math.max(from.z, to.z);
 
+    // Track fill operation for batch placement
+    this.fills.push({
+      from: new Vec3(minX, minY, minZ),
+      to: new Vec3(maxX, maxY, maxZ),
+      name,
+    });
+
+    // Also set individual blocks for local testing (bot.blockAt, findBlocks, etc.)
     for (let x = minX; x <= maxX; x++) {
       for (let y = minY; y <= maxY; y++) {
         for (let z = minZ; z <= maxZ; z++) {
@@ -125,6 +141,13 @@ export class MockWorld {
         }
       }
     }
+  }
+
+  /**
+   * Get all fill operations (for batch placement by PaperSimulationServer).
+   */
+  getFills(): FillOperation[] {
+    return this.fills;
   }
 
   /**

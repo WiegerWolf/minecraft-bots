@@ -289,59 +289,73 @@ async function testFillsHoles() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST: Gathers dirt by digging
+// TEST: Gathers dirt to fill farm holes
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // SPECIFICATION: Landscaper Dirt Gathering
 //
-// The landscaper gathers dirt proactively to prepare for terraform requests.
-// This test uses a pre-placed DIRTPIT sign so the bot learns the location
-// during sign study (testing the core gathering behavior without establishment).
+// Tests that the landscaper will gather dirt when needed for farm maintenance.
+// The bot discovers a farm with holes but has NO dirt - it must dig dirt first.
 //
-// The dirt gathering flow is:
-// 1. StudySpawnSigns (utility 150) - Learn village center and dirtpit location
-// 2. GatherDirt (utility 30-50) - Dig dirt from the known dirtpit area
-//
-// GatherDirt requirements:
-// - Bot must have a shovel
-// - Bot must know a dirtpit location (from sign or establishment)
-// - Dirtpit area must have accessible dirt/grass blocks (air above)
+// Scenario:
+// 1. Farm exists with holes that need filling
+// 2. Bot has shovel but NO dirt
+// 3. Dirtpit is available nearby
+// 4. Bot should: study signs → detect farm issues → gather dirt → fill holes
 
 async function testGathersDirt() {
-  const test = new SimulationTest('Gathers dirt by digging');
+  const test = new SimulationTest('Gathers dirt to fill farm holes');
 
   const world = new MockWorld();
 
-  // Village center at spawn area
+  // Village center at origin
   const villageCenter = new Vec3(0, 64, 0);
 
-  // Dirtpit area - use a pre-placed DIRTPIT sign so bot learns location directly
-  // This tests the core dirt gathering without the complexity of dirtpit establishment
-  const dirtpitCenter = new Vec3(30, 63, 30);
+  // Farm near village (within normal village bounds)
+  const farmCenter = new Vec3(15, 63, 15);
 
-  // Create a compact dirt area at the dirtpit center for testing
-  // Place dirt at y=64 (above the default grass at y=63) for easy digging
-  // Using a 5x5 area - enough for testing continuous digging pattern
-  const dirtRadius = 2;
+  // Build farm ground
+  world.fill(new Vec3(11, 62, 11), new Vec3(19, 62, 19), 'stone'); // Foundation
+  world.fill(new Vec3(11, 63, 11), new Vec3(19, 63, 19), 'dirt');  // Farm surface
+
+  // Water source at farm center
+  world.setBlock(farmCenter, 'water');
+
+  // Create holes in the farm (these need dirt to fill)
+  const holePositions = [
+    new Vec3(13, 63, 15),
+    new Vec3(17, 63, 15),
+    new Vec3(15, 63, 13),
+  ];
+  for (const pos of holePositions) {
+    world.setBlock(pos, 'air');
+  }
+
+  // Dirtpit area - MUST be:
+  // - 50+ blocks from village (0,0)
+  // - 30+ blocks from farm (15,15)
+  // Place at (60, 63, 60): ~85 blocks from village, ~64 blocks from farm
+  const dirtpitCenter = new Vec3(60, 63, 60);
   world.fill(
-    new Vec3(dirtpitCenter.x - dirtRadius, 64, dirtpitCenter.z - dirtRadius),
-    new Vec3(dirtpitCenter.x + dirtRadius, 64, dirtpitCenter.z + dirtRadius),
+    new Vec3(dirtpitCenter.x - 4, 63, dirtpitCenter.z - 4),
+    new Vec3(dirtpitCenter.x + 4, 63, dirtpitCenter.z + 4),
     'dirt'
   );
 
-  // Village sign at spawn
-  world.setBlock(new Vec3(2, 64, 2), 'oak_sign', {
+  // Signs at spawn
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', {
     signText: `[VILLAGE]\nX: ${villageCenter.x}\nY: ${villageCenter.y}\nZ: ${villageCenter.z}`,
   });
-
-  // DIRTPIT sign - bot learns this location instead of establishing one
-  world.setBlock(new Vec3(3, 64, 2), 'oak_sign', {
+  world.setBlock(new Vec3(3, 64, 0), 'oak_sign', {
+    signText: `[FARM]\nX: ${farmCenter.x}\nY: ${farmCenter.y}\nZ: ${farmCenter.z}`,
+  });
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', {
     signText: `[DIRTPIT]\nX: ${dirtpitCenter.x}\nY: ${dirtpitCenter.y}\nZ: ${dirtpitCenter.z}`,
   });
 
   await test.setup(world, {
-    botPosition: new Vec3(0, 64, 3),
-    botInventory: [{ name: 'iron_shovel', count: 1 }],
+    botPosition: new Vec3(0, 64, 2),
+    botInventory: [{ name: 'iron_shovel', count: 1 }], // Shovel but NO dirt!
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
@@ -350,17 +364,18 @@ async function testGathersDirt() {
   const role = new GOAPLandscaperRole();
   role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
 
-  console.log('  📋 Dirt gathering flow:');
-  console.log('     1. StudySpawnSigns - Learn village center and dirtpit location');
-  console.log('     2. GatherDirt - Dig dirt from dirtpit area');
-  console.log(`  🏘️  Village center: (${villageCenter.x}, ${villageCenter.y}, ${villageCenter.z})`);
-  console.log(`  🕳️  Dirtpit location: (${dirtpitCenter.x}, ${dirtpitCenter.y}, ${dirtpitCenter.z})`);
+  console.log('  📋 Dirt Gathering Test:');
+  console.log(`     - Farm at (${farmCenter.x}, ${farmCenter.y}, ${farmCenter.z}) with ${holePositions.length} holes`);
+  console.log(`     - Dirtpit at (${dirtpitCenter.x}, ${dirtpitCenter.y}, ${dirtpitCenter.z})`);
+  console.log(`     - Bot has shovel but NO dirt - must gather first`);
 
-  // Track progress through the phases
+  // Track progress
   let hasStudiedSigns = false;
-  let hasDirtpit = false;
+  let hasDetectedIssues = false;
+  let hasGatheredDirt = false;
   let lastDirtCount = 0;
 
+  // Wait for the bot to fill the holes (which requires gathering dirt first)
   await test.waitUntil(
     () => {
       const bb = (role as any).blackboard;
@@ -369,28 +384,41 @@ async function testGathersDirt() {
       // Track phase transitions
       if (!hasStudiedSigns && bb.hasStudiedSigns) {
         hasStudiedSigns = true;
-        console.log('  ✓ Studied signs - learned village center and dirtpit');
+        console.log('  ✓ Phase 1: Studied signs');
       }
 
-      if (!hasDirtpit && bb.hasDirtpit) {
-        hasDirtpit = true;
-        const pos = bb.dirtpit;
-        console.log(`  ✓ Dirtpit known at (${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)})`);
+      if (!hasDetectedIssues && bb.farmMaintenanceNeeded) {
+        hasDetectedIssues = true;
+        console.log('  ✓ Phase 2: Detected farm needs maintenance');
       }
 
-      // Check dirt in inventory - only log when count changes
       const dirtCount = bb.dirtCount || 0;
+      if (!hasGatheredDirt && dirtCount > 0) {
+        hasGatheredDirt = true;
+        console.log(`  ✓ Phase 3: Started gathering dirt (now has ${dirtCount})`);
+      }
+
       if (dirtCount > lastDirtCount) {
-        console.log(`  [progress] Gathered ${dirtCount}/4 dirt`);
+        console.log(`  [progress] Dirt count: ${dirtCount}`);
         lastDirtCount = dirtCount;
       }
 
-      return dirtCount >= 4;
+      // Check if holes are filled
+      const holesRemaining = holePositions.filter(pos => {
+        const block = test.blockAt(pos);
+        return block === 'air';
+      });
+
+      if (holesRemaining.length < holePositions.length) {
+        console.log(`  [progress] Filled ${holePositions.length - holesRemaining.length}/${holePositions.length} holes`);
+      }
+
+      return holesRemaining.length === 0;
     },
     {
-      timeout: 90000,
-      interval: 2000,
-      message: 'Bot should gather at least 4 dirt blocks',
+      timeout: 120000,
+      interval: 3000,
+      message: 'Bot should gather dirt and fill all farm holes',
     }
   );
 
@@ -400,16 +428,21 @@ async function testGathersDirt() {
 
   const bb = (role as any).blackboard;
 
-  // 1. Signs should have been studied
-  test.assert(bb.hasStudiedSigns === true, 'Bot should have studied spawn signs');
+  // 1. All phases should have completed
+  test.assert(hasStudiedSigns, 'Bot should have studied spawn signs');
+  test.assert(hasGatheredDirt, 'Bot should have gathered dirt from dirtpit');
 
-  // 2. Dirtpit should be known (learned from sign)
-  test.assert(bb.hasDirtpit === true, 'Bot should have learned dirtpit location from sign');
+  // 2. All holes should be filled
+  for (const pos of holePositions) {
+    const block = test.blockAt(pos);
+    test.assert(
+      block === 'dirt' || block === 'grass_block',
+      `Hole at (${pos.x}, ${pos.z}) should be filled (was ${block})`
+    );
+  }
 
-  // 3. Should have gathered dirt
-  const finalDirtCount = bb.dirtCount || 0;
-  test.assert(finalDirtCount >= 4, `Bot should have at least 4 dirt (had ${finalDirtCount})`);
-  console.log(`  ✓ Gathered ${finalDirtCount} dirt blocks`);
+  console.log(`  ✓ All ${holePositions.length} holes filled`);
+  console.log(`  ✓ Final dirt count: ${bb.dirtCount || 0}`);
 
   const botPos = test.botPosition();
   if (botPos) {
