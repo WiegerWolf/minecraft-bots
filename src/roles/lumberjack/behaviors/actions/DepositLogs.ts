@@ -154,9 +154,10 @@ export class DepositLogs implements BehaviorNode {
 
             // If we had items to deposit but deposited nothing, chest is full
             if (itemsToDeposit.length > 0 && deposited === 0) {
-                bb.log?.warn({ chestPos: chestPos.toString() }, 'Chest is full, marking as full and clearing shared chest');
+                bb.log?.warn({ chestPos: chestPos.toString() }, 'Chest is full, marking as full');
                 this.markChestFull(bb, chestPos);
-                bb.sharedChest = null;
+                // Don't clear sharedChest from VillageChat - other bots still need to know about it
+                // When a farmer empties it, it will become usable again (fullChests has 5min expiry)
                 return 'failure';
             }
 

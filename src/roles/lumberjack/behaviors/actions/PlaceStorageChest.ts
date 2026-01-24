@@ -29,9 +29,20 @@ const VALID_SURFACE_BLOCKS = [
 export class PlaceStorageChest implements BehaviorNode {
     name = 'PlaceStorageChest';
 
+    private isChestFull(bb: LumberjackBlackboard, pos: Vec3): boolean {
+        const key = `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
+        const expiry = bb.fullChests.get(key);
+        if (!expiry) return false;
+        if (Date.now() >= expiry) {
+            bb.fullChests.delete(key);
+            return false;
+        }
+        return true;
+    }
+
     async tick(bot: Bot, bb: LumberjackBlackboard): Promise<BehaviorStatus> {
-        // Already have a shared chest
-        if (bb.sharedChest !== null) {
+        // Already have a non-full shared chest - no need to place another
+        if (bb.sharedChest !== null && !this.isChestFull(bb, bb.sharedChest)) {
             return 'failure';
         }
 

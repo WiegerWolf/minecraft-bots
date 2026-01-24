@@ -284,7 +284,7 @@ export class WorldStateBuilder {
     ws.set('derived.hasStorageAccess', this.hasAvailableStorage(bb));
     ws.set('derived.hasVillage', bb.villageCenter !== null);
     ws.set('derived.needsCraftingTable', bb.nearbyCraftingTables.length === 0 && !bb.sharedCraftingTable);
-    ws.set('derived.needsChest', bb.nearbyChests.length === 0 && !bb.sharedChest);
+    ws.set('derived.needsChest', !this.hasAvailableStorage(bb)); // Account for full chests
 
     // Sign-based persistent knowledge
     ws.set('pending.signWrites', bb.pendingSignWrites.length);

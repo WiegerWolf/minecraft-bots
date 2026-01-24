@@ -216,6 +216,17 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
         bb.sharedChest = bb.villageChat.getSharedChest();
         bb.sharedCraftingTable = bb.villageChat.getSharedCraftingTable();
 
+        // Merge known chests from village chat (learned from other bots)
+        const chatChests = bb.villageChat.getKnownChests();
+        for (const pos of chatChests) {
+            const isDuplicate = bb.knownChests.some(
+                c => c.x === pos.x && c.y === pos.y && c.z === pos.z
+            );
+            if (!isDuplicate) {
+                bb.knownChests.push(pos.clone());
+            }
+        }
+
         // Check for incoming needs from other bots that we can fulfill
         const incomingNeeds = bb.villageChat.getIncomingBroadcastingNeeds();
         bb.hasIncomingNeeds = incomingNeeds.length > 0;

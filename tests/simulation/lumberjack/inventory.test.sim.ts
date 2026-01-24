@@ -478,11 +478,19 @@ async function testFullChestHandledGracefully() {
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
   world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: -5\nY: 64\nZ: 0' });
 
+  // Crafting table so bot can craft a new chest
+  world.setBlock(new Vec3(-2, 64, 0), 'crafting_table');
+  world.setBlock(new Vec3(-3, 64, 0), 'oak_sign', { signText: '[CRAFT]\nX: -2\nY: 64\nZ: 0' });
+
+  // Forest sign so bot doesn't wander off exploring
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[FOREST]\nX: 50\nY: 64\nZ: 50' });
+
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),
     botInventory: [
       { name: 'iron_axe', count: 1 },
       { name: 'oak_log', count: 32 },      // Logs to attempt deposit
+      { name: 'oak_planks', count: 16 },   // Planks to craft new chest (needs 8)
     ],
   });
 
@@ -498,51 +506,65 @@ async function testFullChestHandledGracefully() {
   fillCommand += fillerItems.join(',') + ']}';
   await test.rcon(fillCommand);
 
-  console.log(`  📦 Chest filled with cobblestone (27 slots)`);
+  console.log(`  📦 Full chest at ${fullChestPos}`);
+
+  // Count initial chests in world (should be 1 - the full one)
+  const initialChests = test.bot.findBlocks({
+    matching: (block: any) => block.name === 'chest',
+    maxDistance: 32,
+    count: 10,
+  });
+  console.log(`  📦 Initial chest count: ${initialChests.length}`);
 
   const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
-  // Wait for bot to attempt deposit (DepositLogs goal should be selected)
-  // The bot should try to deposit, fail due to full chest, and continue without crashing
+  // Wait for bot to place a NEW chest (the expected behavior when existing chest is full)
+  let newChestPos: Vec3 | null = null;
   await test.waitUntil(
     () => {
-      // Check if bot has tried to deposit by looking for DepositLogs action
-      // We can infer this happened if the goal was selected and either succeeded or failed
-      // For now, just wait until bot has done some work (studied signs at minimum)
-      const items = test.bot.inventory.items();
-      const hasAxe = items.some(i => i.name.includes('_axe'));
-      return hasAxe; // Bot still has axe, meaning it didn't crash
+      const chests = test.bot.findBlocks({
+        matching: (block: any) => block.name === 'chest',
+        maxDistance: 32,
+        count: 10,
+      });
+      // Look for a chest that isn't the original full chest
+      for (const pos of chests) {
+        if (!pos.equals(fullChestPos)) {
+          newChestPos = pos;
+          return true;
+        }
+      }
+      return false;
     },
     {
-      timeout: 30000,
-      message: 'Bot should handle full chest gracefully',
+      timeout: 60000,
+      message: 'Bot should place a new chest when existing one is full',
     }
   );
 
-  // Give bot time to attempt deposit and handle the full chest
-  await test.wait(10000, 'Bot attempting deposit on full chest');
+  console.log(`  ✓ New chest placed at: ${newChestPos}`);
 
-  // Verify bot hasn't crashed and is still functional
-  const botIsAlive = test.bot.entity !== null;
-  test.assert(botIsAlive, 'Bot should still be alive after full chest encounter');
-
-  // Verify bot still has its logs (couldn't deposit to full chest)
-  const botLogs = test.botInventoryCount('oak_log');
-  console.log(`  🎒 Bot still has ${botLogs} logs (couldn't deposit to full chest)`);
-
-  // Bot should still have at least some logs since chest was full
-  // (May have lost some to other actions, but shouldn't be 0)
+  // Verify the new chest is near village center
+  const villageCenter = new Vec3(0, 64, 0);
+  const distanceToVillage = newChestPos!.distanceTo(villageCenter);
   test.assert(
-    botLogs > 0,
-    `Bot should retain logs when chest is full (has ${botLogs})`
+    distanceToVillage <= 10,
+    `New chest should be near village center (distance: ${distanceToVillage.toFixed(1)})`
   );
 
-  // Verify the chest is still full (bot didn't somehow clear it)
-  const chestCobble = await test.getChestItemCount(fullChestPos, 'cobblestone');
+  // Verify bot used planks to craft the new chest
+  const finalPlanks = test.botInventoryCount('oak_planks');
   test.assert(
-    chestCobble > 0,
-    `Original chest should still contain items (has ${chestCobble} cobblestone)`
+    finalPlanks < 16,
+    `Bot should have used planks to craft chest (was 16, now ${finalPlanks})`
+  );
+
+  // Verify original full chest is still there with its contents
+  const originalChestCobble = await test.getChestItemCount(fullChestPos, 'cobblestone');
+  test.assert(
+    originalChestCobble > 0,
+    `Original chest should still contain items (has ${originalChestCobble} cobblestone)`
   );
 
   role.stop(test.bot);

@@ -109,7 +109,8 @@ export interface ActiveTrade {
 
 export interface VillageChatState {
     villageCenter: Vec3 | null;
-    sharedChest: Vec3 | null;
+    sharedChest: Vec3 | null;           // Primary chest (for backwards compatibility)
+    knownChests: Vec3[];                // All known community chests
     sharedCraftingTable: Vec3 | null;
     pendingRequests: ResourceRequest[];
     lastDepositNotification: DepositNotification | null;
@@ -128,6 +129,7 @@ export class VillageChat {
     private state: VillageChatState = {
         villageCenter: null,
         sharedChest: null,
+        knownChests: [],
         sharedCraftingTable: null,
         pendingRequests: [],
         lastDepositNotification: null,
@@ -183,6 +185,7 @@ export class VillageChat {
         this.state = {
             villageCenter: null,
             sharedChest: null,
+            knownChests: [],
             sharedCraftingTable: null,
             pendingRequests: [],
             lastDepositNotification: null,
@@ -249,7 +252,17 @@ export class VillageChat {
                 const match = message.match(/\[CHEST\] shared (-?\d+) (-?\d+) (-?\d+)/);
                 if (match) {
                     const pos = new Vec3(parseInt(match[1]!), parseInt(match[2]!), parseInt(match[3]!));
-                    this.state.sharedChest = pos;
+                    // Add to known chests if not already there
+                    const isDuplicate = this.state.knownChests.some(
+                        c => c.x === pos.x && c.y === pos.y && c.z === pos.z
+                    );
+                    if (!isDuplicate) {
+                        this.state.knownChests.push(pos.clone());
+                    }
+                    // Set as primary if none set
+                    if (!this.state.sharedChest) {
+                        this.state.sharedChest = pos;
+                    }
                     this.log?.info({ from: username, pos: pos.toString() }, 'Learned shared chest');
                 }
             }
@@ -805,7 +818,17 @@ export class VillageChat {
 
     // Announce shared chest
     announceSharedChest(pos: Vec3) {
-        this.state.sharedChest = pos;
+        // Add to known chests if not already there
+        const isDuplicate = this.state.knownChests.some(
+            c => c.x === pos.x && c.y === pos.y && c.z === pos.z
+        );
+        if (!isDuplicate) {
+            this.state.knownChests.push(pos.clone());
+        }
+        // Keep sharedChest as the primary for backwards compatibility
+        if (!this.state.sharedChest) {
+            this.state.sharedChest = pos;
+        }
         const msg = `[CHEST] shared ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}`;
         this.bot.chat(msg);
     }
@@ -984,6 +1007,23 @@ export class VillageChat {
 
     setSharedChest(pos: Vec3) {
         this.state.sharedChest = pos;
+    }
+
+    clearSharedChest() {
+        this.state.sharedChest = null;
+    }
+
+    getKnownChests(): Vec3[] {
+        return this.state.knownChests;
+    }
+
+    addKnownChest(pos: Vec3) {
+        const isDuplicate = this.state.knownChests.some(
+            c => c.x === pos.x && c.y === pos.y && c.z === pos.z
+        );
+        if (!isDuplicate) {
+            this.state.knownChests.push(pos.clone());
+        }
     }
 
     getSharedCraftingTable(): Vec3 | null {
