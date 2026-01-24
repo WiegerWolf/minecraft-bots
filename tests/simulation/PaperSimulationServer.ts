@@ -360,6 +360,9 @@ export class PaperSimulationServer {
 
   /**
    * Place a sign with text.
+   *
+   * In Minecraft 1.21+, sign text uses SNBT format for text components.
+   * We use the compound format {text:"content"} directly.
    */
   private async placeSign(pos: Vec3, blockName: string, text: string): Promise<void> {
     const x = Math.floor(pos.x);
@@ -373,16 +376,15 @@ export class PaperSimulationServer {
     const lines = text.split('\n').slice(0, 4);
     while (lines.length < 4) lines.push('');
 
-    // Set each line individually using /data modify (most reliable)
+    // Set each line using SNBT compound format (no outer quotes)
+    // Format: {text:"content"} - raw SNBT compound, not a string
     for (let i = 0; i < 4; i++) {
       const line = lines[i] || '';
-      if (line) {
-        // Escape for JSON string
-        const escaped = line.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-        await this.rconCommand(
-          `data modify block ${x} ${y} ${z} front_text.messages[${i}] set value '{"text":"${escaped}"}'`
-        );
-      }
+      // Escape backslashes and double quotes for SNBT string
+      const escaped = line.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      await this.rconCommand(
+        `data modify block ${x} ${y} ${z} front_text.messages[${i}] set value {text:"${escaped}"}`
+      );
     }
   }
 

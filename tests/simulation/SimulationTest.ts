@@ -494,6 +494,102 @@ export class SimulationTest {
     await this.rcon(`setblock ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)} minecraft:${blockName}`);
   }
 
+  /**
+   * Get the count of a specific item in a chest at a position.
+   * Uses RCON to query the chest's NBT data.
+   */
+  async getChestItemCount(pos: Vec3, itemName: string): Promise<number> {
+    const x = Math.floor(pos.x);
+    const y = Math.floor(pos.y);
+    const z = Math.floor(pos.z);
+
+    try {
+      // Get the chest's Items NBT data
+      const result = await this.rcon(`data get block ${x} ${y} ${z} Items`);
+
+      // Parse the result - it looks like:
+      // "Block data: [{Slot: 0b, id: "minecraft:oak_log", count: 32}]"
+      // or "Block data: []" if empty
+
+      // Count occurrences of the item
+      const itemPattern = new RegExp(`id:\\s*"minecraft:${itemName}"[^}]*count:\\s*(\\d+)`, 'g');
+      let total = 0;
+      let match;
+      while ((match = itemPattern.exec(result)) !== null) {
+        total += parseInt(match[1]!, 10);
+      }
+
+      return total;
+    } catch (err) {
+      console.log(`  ⚠ Could not read chest at (${x}, ${y}, ${z}): ${err}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Assert that a chest contains at least N of an item.
+   */
+  async assertChestContains(pos: Vec3, itemName: string, minCount: number, message?: string): Promise<boolean> {
+    const count = await this.getChestItemCount(pos, itemName);
+    const passed = count >= minCount;
+    const desc = message || `Chest at (${pos.x}, ${pos.y}, ${pos.z}) should have at least ${minCount} ${itemName}`;
+    this.recordAssertion(desc, passed, passed ? undefined : `Actual: ${count}`);
+    return passed;
+  }
+
+  /**
+   * Wait until a chest contains at least N of an item.
+   */
+  async waitForChestContains(
+    pos: Vec3,
+    itemName: string,
+    minCount: number,
+    options: WaitOptions = {}
+  ): Promise<boolean> {
+    return this.waitUntil(
+      async () => (await this.getChestItemCount(pos, itemName)) >= minCount,
+      {
+        message: `Chest at (${pos.x}, ${pos.y}, ${pos.z}) should have at least ${minCount} ${itemName}`,
+        ...options,
+      }
+    );
+  }
+
+  /**
+   * Read sign text at a position via RCON.
+   * Returns the front text lines as an array.
+   */
+  async readSignText(pos: Vec3): Promise<string[]> {
+    const x = Math.floor(pos.x);
+    const y = Math.floor(pos.y);
+    const z = Math.floor(pos.z);
+
+    try {
+      const result = await this.rcon(`data get block ${x} ${y} ${z} front_text.messages`);
+      // Result looks like: Block data: ['{"text":"[CHEST]"}', '{"text":"X: -5"}', ...]
+      const matches = result.matchAll(/"text":\s*"([^"]*)"/g);
+      const lines: string[] = [];
+      for (const match of matches) {
+        lines.push(match[1]!);
+      }
+      return lines;
+    } catch (err) {
+      console.log(`  ⚠ Could not read sign at (${x}, ${y}, ${z}): ${err}`);
+      return [];
+    }
+  }
+
+  /**
+   * Debug helper to dump sign text from a position.
+   */
+  async debugSign(pos: Vec3, label?: string): Promise<void> {
+    const lines = await this.readSignText(pos);
+    console.log(`  📜 Sign${label ? ` (${label})` : ''} at (${pos.x}, ${pos.y}, ${pos.z}):`);
+    for (const line of lines) {
+      console.log(`     "${line}"`);
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // PRIVATE
   // ═══════════════════════════════════════════════════════════════════════════

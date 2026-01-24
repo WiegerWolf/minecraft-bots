@@ -27,7 +27,8 @@ async function testDepositsToChest() {
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
 
   // Chest for deposits
-  world.setBlock(new Vec3(-5, 64, 0), 'chest');
+  const chestPos = new Vec3(-5, 64, 0);
+  world.setBlock(chestPos, 'chest');
 
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
   world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: -5\nY: 64\nZ: 0' });
@@ -43,17 +44,42 @@ async function testDepositsToChest() {
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
 
-  const initialLogs = test.botInventoryCount('oak_log');
+  // Debug: verify signs are placed correctly in the world
+  console.log('  🔍 Verifying sign placement:');
+  await test.debugSign(new Vec3(0, 64, 0), 'VILLAGE');
+  await test.debugSign(new Vec3(2, 64, 0), 'CHEST');
+
+  // Verify chest starts empty
+  const initialChestLogs = await test.getChestItemCount(chestPos, 'oak_log');
+  console.log(`  📦 Initial chest logs: ${initialChestLogs}`);
+
+  const initialBotLogs = test.botInventoryCount('oak_log');
+  console.log(`  🎒 Initial bot logs: ${initialBotLogs}`);
 
   const role = new GOAPLumberjackRole();
   role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
 
-  await test.waitUntil(
-    () => test.botInventoryCount('oak_log') < initialLogs,
-    {
-      timeout: 60000,
-      message: 'Bot should deposit logs to chest',
-    }
+  // Wait for items to appear in chest (stronger assertion than inventory decrease)
+  const depositSuccess = await test.waitForChestContains(chestPos, 'oak_log', 1, {
+    timeout: 60000,
+    message: 'Chest should receive deposited logs',
+  });
+
+  // Also verify bot inventory decreased
+  const finalBotLogs = test.botInventoryCount('oak_log');
+  const finalChestLogs = await test.getChestItemCount(chestPos, 'oak_log');
+
+  console.log(`  📊 Final state: bot=${finalBotLogs} logs, chest=${finalChestLogs} logs`);
+
+  test.assert(
+    finalBotLogs < initialBotLogs,
+    `Bot inventory should decrease (was ${initialBotLogs}, now ${finalBotLogs})`
+  );
+
+  test.assertGreater(
+    finalChestLogs,
+    0,
+    `Chest should contain logs (has ${finalChestLogs})`
   );
 
   role.stop(test.bot);
