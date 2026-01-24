@@ -508,11 +508,12 @@ export class SimulationTest {
       const result = await this.rcon(`data get block ${x} ${y} ${z} Items`);
 
       // Parse the result - it looks like:
-      // "Block data: [{Slot: 0b, id: "minecraft:oak_log", count: 32}]"
-      // or "Block data: []" if empty
+      // "0, 64, 0 has the following block data: [{Slot: 0b, id: "minecraft:oak_log", count: 32}]"
+      // or "... block data: []" if empty
 
-      // Count occurrences of the item
-      const itemPattern = new RegExp(`id:\\s*"minecraft:${itemName}"[^}]*count:\\s*(\\d+)`, 'g');
+      // Count occurrences of the item using non-greedy match
+      // The .*? ensures we don't consume the count: part
+      const itemPattern = new RegExp(`id:\\s*"minecraft:${itemName}".*?count:\\s*(\\d+)`, 'g');
       let total = 0;
       let match;
       while ((match = itemPattern.exec(result)) !== null) {
