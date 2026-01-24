@@ -36,6 +36,9 @@ export class GatherDirt implements BehaviorNode {
     // Track last dig position for continuity (stored on blackboard)
     private lastDigPos: Vec3 | null = null;
 
+    // Max reach for digging (Minecraft default is ~4.5 blocks)
+    private readonly DIG_REACH = 4;
+
     async tick(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
         bb.lastAction = 'gather_dirt';
 
@@ -57,17 +60,6 @@ export class GatherDirt implements BehaviorNode {
             return 'failure';
         }
 
-        const searchCenter = bb.dirtpit;
-        const searchRadius = 30;
-
-        // Find dirt/grass blocks to dig
-        const candidates = this.findDirtCandidates(bot, bb, searchCenter, searchRadius);
-
-        if (candidates.length === 0) {
-            bb.log?.debug('[Landscaper] No dirt found nearby');
-            return 'failure';
-        }
-
         // Equip shovel
         const shovel = bot.inventory.items().find(i => i.name.includes('shovel'));
         if (shovel) {
@@ -79,10 +71,10 @@ export class GatherDirt implements BehaviorNode {
         const neededDirt = Math.min(this.TARGET_DIRT - bb.dirtCount, this.GATHER_BATCH);
         let gathered = 0;
 
-        bb.log?.debug({ needed: neededDirt, candidates: candidates.length }, 'Gathering dirt');
+        bb.log?.debug({ needed: neededDirt }, 'Gathering dirt');
 
-        for (const candidate of candidates) {
-            if (gathered >= neededDirt) break;
+        // Main digging loop: stand in one spot, dig everything in reach, then move
+        while (gathered < neededDirt) {
             if (bb.inventoryFull) {
                 bb.log?.debug('[Landscaper] Inventory full, stopping dirt gathering');
                 break;
@@ -94,41 +86,53 @@ export class GatherDirt implements BehaviorNode {
                 break;
             }
 
-            const block = bot.blockAt(candidate.pos);
-            if (!block || (block.name !== 'dirt' && block.name !== 'grass_block')) {
-                continue;
-            }
+            // Find all diggable blocks within reach from current position
+            const reachable = this.findBlocksWithinReach(bot, bb);
 
-            // Move close
-            const dist = bot.entity.position.distanceTo(candidate.pos);
-            if (dist > 4) {
+            if (reachable.length > 0) {
+                // Dig all reachable blocks without moving
+                for (const block of reachable) {
+                    if (gathered >= neededDirt) break;
+
+                    try {
+                        const digPos = block.position.clone();
+                        await bot.dig(block);
+                        gathered++;
+                        this.lastDigPos = digPos.clone();
+
+                        bb.log?.debug(
+                            { pos: digPos.floored().toString(), gathered, needed: neededDirt },
+                            'Dug dirt block'
+                        );
+
+                        // Brief wait for item drop
+                        await sleep(100);
+                    } catch (error) {
+                        // Skip this block
+                    }
+                }
+
+                // Collect any dropped items nearby
+                await this.collectNearbyDrops(bot, bb, bot.entity.position);
+            } else {
+                // No blocks in reach - find next dig spot and move there
+                const nextSpot = this.findNextDigSpot(bot, bb);
+
+                if (!nextSpot) {
+                    bb.log?.debug('[Landscaper] No more dirt to dig');
+                    break;
+                }
+
                 const result = await smartPathfinderGoto(
                     bot,
-                    new GoalNear(candidate.pos.x, candidate.pos.y, candidate.pos.z, 3),
+                    new GoalNear(nextSpot.x, nextSpot.y, nextSpot.z, 2),
                     { timeoutMs: 15000 }
                 );
-                if (!result.success) continue;
-            }
 
-            // Dig the block
-            try {
-                const digPos = block.position.clone();
-                await bot.dig(block);
-                gathered++;
-
-                // Track last dig position for continuity
-                this.lastDigPos = digPos.clone();
-
-                bb.log?.debug(
-                    { pos: candidate.pos.floored().toString(), gathered, needed: neededDirt },
-                    'Dug dirt block'
-                );
-
-                // Wait for item to spawn and collect it
-                await sleep(150);
-                await this.collectNearbyDrops(bot, bb, digPos);
-            } catch (error) {
-                // Skip this block
+                if (!result.success) {
+                    bb.log?.debug('[Landscaper] Could not reach next dig spot');
+                    break;
+                }
             }
         }
 
@@ -138,6 +142,123 @@ export class GatherDirt implements BehaviorNode {
         }
 
         return 'failure';
+    }
+
+    /**
+     * Find all diggable dirt/grass blocks within reach of current position.
+     * Returns blocks sorted by distance (closest first).
+     */
+    private findBlocksWithinReach(bot: Bot, bb: LandscaperBlackboard): any[] {
+        const botPos = bot.entity.position;
+        const blocks: { block: any; dist: number }[] = [];
+
+        // Check blocks in a cube around the bot
+        for (let dx = -this.DIG_REACH; dx <= this.DIG_REACH; dx++) {
+            for (let dz = -this.DIG_REACH; dz <= this.DIG_REACH; dz++) {
+                for (let dy = -2; dy <= 1; dy++) {
+                    const pos = new Vec3(
+                        Math.floor(botPos.x) + dx,
+                        Math.floor(botPos.y) + dy,
+                        Math.floor(botPos.z) + dz
+                    );
+
+                    const dist = botPos.distanceTo(pos.offset(0.5, 0.5, 0.5));
+                    if (dist > this.DIG_REACH) continue;
+
+                    const block = bot.blockAt(pos);
+                    if (!block) continue;
+                    if (block.name !== 'dirt' && block.name !== 'grass_block') continue;
+
+                    // Must have air above to be diggable
+                    const above = bot.blockAt(pos.offset(0, 1, 0));
+                    if (!above || (above.name !== 'air' && !above.name.includes('grass') && !above.name.includes('flower'))) continue;
+
+                    // Check exclusion zones
+                    if (bb.villageCenter && pos.distanceTo(bb.villageCenter) < this.MIN_DISTANCE_FROM_VILLAGE) continue;
+                    if (bb.knownFarms.some(f => pos.distanceTo(f) < this.MIN_DISTANCE_FROM_FARMS)) continue;
+                    if (bb.knownForests.some(f => pos.distanceTo(f) < this.MIN_DISTANCE_FROM_FORESTS)) continue;
+
+                    blocks.push({ block, dist });
+                }
+            }
+        }
+
+        // Sort by distance (closest first) and return just the blocks
+        blocks.sort((a, b) => a.dist - b.dist);
+        return blocks.map(b => b.block);
+    }
+
+    /**
+     * Find the next spot to stand for digging.
+     * Prefers spots near dirtpit center and near last dig position.
+     */
+    private findNextDigSpot(bot: Bot, bb: LandscaperBlackboard): Vec3 | null {
+        const dirtpit = bb.dirtpit!;
+        const botPos = bot.entity.position;
+        const candidates: { pos: Vec3; score: number }[] = [];
+
+        // Search in dirtpit area - standing position is ON the surface (y+1)
+        for (let dx = -10; dx <= 10; dx++) {
+            for (let dz = -10; dz <= 10; dz++) {
+                // Standing position: on top of dirtpit surface
+                const standPos = new Vec3(
+                    Math.floor(dirtpit.x) + dx,
+                    Math.floor(dirtpit.y) + 1,  // Stand ON the grass, not IN it
+                    Math.floor(dirtpit.z) + dz
+                );
+
+                // Check if there's diggable dirt within reach from this standing position
+                let hasDirt = false;
+                for (let cx = -this.DIG_REACH; cx <= this.DIG_REACH && !hasDirt; cx++) {
+                    for (let cz = -this.DIG_REACH; cz <= this.DIG_REACH && !hasDirt; cz++) {
+                        for (let cy = -2; cy <= 0 && !hasDirt; cy++) {
+                            const checkPos = standPos.offset(cx, cy, cz);
+                            if (standPos.distanceTo(checkPos) > this.DIG_REACH) continue;
+
+                            const block = bot.blockAt(checkPos);
+                            const above = bot.blockAt(checkPos.offset(0, 1, 0));
+                            if (block && (block.name === 'dirt' || block.name === 'grass_block') &&
+                                above && (above.name === 'air' || above.name.includes('grass'))) {
+                                hasDirt = true;
+                            }
+                        }
+                    }
+                }
+
+                if (!hasDirt) continue;
+
+                // Must be able to stand here (solid ground below, air at feet and head)
+                const ground = bot.blockAt(standPos.offset(0, -1, 0));
+                const feet = bot.blockAt(standPos);
+                const head = bot.blockAt(standPos.offset(0, 1, 0));
+                if (!ground || ground.boundingBox !== 'block') continue;
+                if (!feet || feet.boundingBox === 'block') continue;
+                if (!head || head.boundingBox === 'block') continue;
+
+                let score = 0;
+
+                // Prefer spots near dirtpit center
+                const distFromCenter = Math.abs(dx) + Math.abs(dz);
+                score += 100 - distFromCenter * 5;
+
+                // Prefer spots near bot (minimize travel)
+                const distFromBot = botPos.distanceTo(standPos);
+                score += 50 - distFromBot * 2;
+
+                // Prefer spots near last dig
+                if (this.lastDigPos) {
+                    const distFromLast = this.lastDigPos.distanceTo(standPos);
+                    score += 30 - distFromLast * 2;
+                }
+
+                candidates.push({ pos: standPos, score });
+            }
+        }
+
+        if (candidates.length === 0) return null;
+
+        candidates.sort((a, b) => b.score - a.score);
+        return candidates[0].pos;
     }
 
     /**
