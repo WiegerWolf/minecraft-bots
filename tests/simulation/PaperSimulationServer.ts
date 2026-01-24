@@ -271,23 +271,16 @@ export class PaperSimulationServer {
     await this.rconCommand(`gamemode spectator ${playerName}`);
 
     // Teleport to a position looking at world center (0, 64, 0)
-    // Position: offset from center, lower than before, angled toward center
-    const viewX = 35;
-    const viewY = 75;
-    const viewZ = 35;
+    // Position: closer to spawn area, looking down at the action
+    const viewX = -4;
+    const viewY = 70;
+    const viewZ = 10;
 
-    // Calculate yaw to look at origin (0, 64, 0)
-    // yaw = atan2(dz, -dx) * 180/PI + 180 (Minecraft convention)
-    const dx = 0 - viewX;
-    const dz = 0 - viewZ;
-    const yaw = Math.atan2(dz, -dx) * (180 / Math.PI) + 180;
+    // Fixed facing: yaw=-120 (looking southeast), pitch=45 (looking down)
+    const yaw = -120;
+    const pitch = 45;
 
-    // Calculate pitch to look down at target (y=64)
-    const dy = 64 - viewY;
-    const horizontalDist = Math.sqrt(dx * dx + dz * dz);
-    const pitch = -Math.atan2(-dy, horizontalDist) * (180 / Math.PI);
-
-    await this.rconCommand(`tp ${playerName} ${viewX} ${viewY} ${viewZ} ${yaw.toFixed(1)} ${pitch.toFixed(1)}`);
+    await this.rconCommand(`tp ${playerName} ${viewX} ${viewY} ${viewZ} ${yaw} ${pitch}`);
 
     await this.delay(200);
   }
