@@ -255,32 +255,49 @@ export class GatherDirt implements BehaviorNode {
                     );
                     if (nearForest) continue;
 
-                    // === SCORING FOR CONTINUOUS DIGGING ===
+                    // === SCORING FOR EFFICIENT DIGGING ===
                     let score = 0;
 
-                    // High priority: adjacent to last dig position (continuity)
+                    // 1. HIGHEST PRIORITY: Blocks within the dirtpit area
+                    // The dirtpit is typically a small designated area - prefer it over random grass
+                    const distFromDirtpitCenter = Math.abs(dx) + Math.abs(dz);
+                    if (distFromDirtpitCenter <= 5) {
+                        // Within dirtpit area - massive bonus
+                        score += 5000;
+                        // Extra bonus for being closer to center
+                        score += (5 - distFromDirtpitCenter) * 100;
+                    }
+
+                    // 2. Prefer dirt blocks over grass (dirt = intentional dirtpit, grass = random)
+                    if (block.name === 'dirt') {
+                        score += 500;
+                    }
+
+                    // 3. Distance from bot - minimize travel time
+                    const botPos = bot.entity.position;
+                    const distFromBot = Math.abs(pos.x - botPos.x) + Math.abs(pos.z - botPos.z);
+                    // Closer blocks get higher score (max 200 points for adjacent)
+                    score += Math.max(0, 200 - distFromBot * 10);
+
+                    // 4. Continuity bonus - adjacent to last dig position
                     if (this.lastDigPos) {
                         const distToLast = Math.abs(pos.x - this.lastDigPos.x) + Math.abs(pos.z - this.lastDigPos.z);
                         if (distToLast === 1) {
-                            // Directly adjacent (cardinal direction) - highest priority
+                            // Directly adjacent (cardinal) - strong continuity
                             score += 1000;
-                        } else if (distToLast === 2 && Math.abs(pos.x - this.lastDigPos.x) === 1) {
-                            // Diagonal - still good for continuity
-                            score += 800;
-                        } else if (distToLast <= 3) {
-                            // Very close - maintain area
+                        } else if (distToLast <= 2) {
+                            // Diagonal or very close
                             score += 500;
+                        } else if (distToLast <= 4) {
+                            // Nearby - maintain area
+                            score += 200;
                         }
                     }
 
-                    // Secondary: systematic row-by-row pattern from dirtpit center
-                    // Lower x first, then lower z (creates a consistent sweep pattern)
-                    // Score decreases as we move away from the starting corner
-                    const rowScore = 100 - Math.abs(dx) - Math.abs(dz) * 0.1;
+                    // 5. Systematic pattern as tiebreaker (row-by-row from corner)
+                    // This creates a predictable sweep pattern when other scores are equal
+                    const rowScore = 50 - Math.abs(dx) - Math.abs(dz) * 0.5;
                     score += rowScore;
-
-                    // Small bonus for grass (surface blocks)
-                    if (block.name === 'grass_block') score += 10;
 
                     candidates.push({ pos: pos.clone(), score });
 
