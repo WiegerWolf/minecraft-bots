@@ -291,20 +291,56 @@ async function testFillsHoles() {
 // ═══════════════════════════════════════════════════════════════════════════
 // TEST: Gathers dirt by digging
 // ═══════════════════════════════════════════════════════════════════════════
+//
+// SPECIFICATION: Landscaper Dirt Gathering
+//
+// The landscaper gathers dirt proactively to prepare for terraform requests.
+// This test uses a pre-placed DIRTPIT sign so the bot learns the location
+// during sign study (testing the core gathering behavior without establishment).
+//
+// The dirt gathering flow is:
+// 1. StudySpawnSigns (utility 150) - Learn village center and dirtpit location
+// 2. GatherDirt (utility 30-50) - Dig dirt from the known dirtpit area
+//
+// GatherDirt requirements:
+// - Bot must have a shovel
+// - Bot must know a dirtpit location (from sign or establishment)
+// - Dirtpit area must have accessible dirt/grass blocks (air above)
 
 async function testGathersDirt() {
   const test = new SimulationTest('Gathers dirt by digging');
 
   const world = new MockWorld();
-  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
 
-  // Extra dirt to dig at y=64
-  world.fill(new Vec3(5, 64, 5), new Vec3(10, 64, 10), 'dirt');
+  // Village center at spawn area
+  const villageCenter = new Vec3(0, 64, 0);
 
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  // Dirtpit area - use a pre-placed DIRTPIT sign so bot learns location directly
+  // This tests the core dirt gathering without the complexity of dirtpit establishment
+  const dirtpitCenter = new Vec3(30, 63, 30);
+
+  // Create a compact dirt area at the dirtpit center for testing
+  // Place dirt at y=64 (above the default grass at y=63) for easy digging
+  // Using a 5x5 area - enough for testing continuous digging pattern
+  const dirtRadius = 2;
+  world.fill(
+    new Vec3(dirtpitCenter.x - dirtRadius, 64, dirtpitCenter.z - dirtRadius),
+    new Vec3(dirtpitCenter.x + dirtRadius, 64, dirtpitCenter.z + dirtRadius),
+    'dirt'
+  );
+
+  // Village sign at spawn
+  world.setBlock(new Vec3(2, 64, 2), 'oak_sign', {
+    signText: `[VILLAGE]\nX: ${villageCenter.x}\nY: ${villageCenter.y}\nZ: ${villageCenter.z}`,
+  });
+
+  // DIRTPIT sign - bot learns this location instead of establishing one
+  world.setBlock(new Vec3(3, 64, 2), 'oak_sign', {
+    signText: `[DIRTPIT]\nX: ${dirtpitCenter.x}\nY: ${dirtpitCenter.y}\nZ: ${dirtpitCenter.z}`,
+  });
 
   await test.setup(world, {
-    botPosition: new Vec3(3, 65, 3),
+    botPosition: new Vec3(0, 64, 3),
     botInventory: [{ name: 'iron_shovel', count: 1 }],
   });
 
@@ -314,10 +350,71 @@ async function testGathersDirt() {
   const role = new GOAPLandscaperRole();
   role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
 
-  await test.waitForInventory('dirt', 4, {
-    timeout: 90000,
-    message: 'Bot should gather at least 4 dirt blocks',
-  });
+  console.log('  📋 Dirt gathering flow:');
+  console.log('     1. StudySpawnSigns - Learn village center and dirtpit location');
+  console.log('     2. GatherDirt - Dig dirt from dirtpit area');
+  console.log(`  🏘️  Village center: (${villageCenter.x}, ${villageCenter.y}, ${villageCenter.z})`);
+  console.log(`  🕳️  Dirtpit location: (${dirtpitCenter.x}, ${dirtpitCenter.y}, ${dirtpitCenter.z})`);
+
+  // Track progress through the phases
+  let hasStudiedSigns = false;
+  let hasDirtpit = false;
+  let lastDirtCount = 0;
+
+  await test.waitUntil(
+    () => {
+      const bb = (role as any).blackboard;
+      if (!bb) return false;
+
+      // Track phase transitions
+      if (!hasStudiedSigns && bb.hasStudiedSigns) {
+        hasStudiedSigns = true;
+        console.log('  ✓ Studied signs - learned village center and dirtpit');
+      }
+
+      if (!hasDirtpit && bb.hasDirtpit) {
+        hasDirtpit = true;
+        const pos = bb.dirtpit;
+        console.log(`  ✓ Dirtpit known at (${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)})`);
+      }
+
+      // Check dirt in inventory - only log when count changes
+      const dirtCount = bb.dirtCount || 0;
+      if (dirtCount > lastDirtCount) {
+        console.log(`  [progress] Gathered ${dirtCount}/4 dirt`);
+        lastDirtCount = dirtCount;
+      }
+
+      return dirtCount >= 4;
+    },
+    {
+      timeout: 90000,
+      interval: 2000,
+      message: 'Bot should gather at least 4 dirt blocks',
+    }
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FINAL ASSERTIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const bb = (role as any).blackboard;
+
+  // 1. Signs should have been studied
+  test.assert(bb.hasStudiedSigns === true, 'Bot should have studied spawn signs');
+
+  // 2. Dirtpit should be known (learned from sign)
+  test.assert(bb.hasDirtpit === true, 'Bot should have learned dirtpit location from sign');
+
+  // 3. Should have gathered dirt
+  const finalDirtCount = bb.dirtCount || 0;
+  test.assert(finalDirtCount >= 4, `Bot should have at least 4 dirt (had ${finalDirtCount})`);
+  console.log(`  ✓ Gathered ${finalDirtCount} dirt blocks`);
+
+  const botPos = test.botPosition();
+  if (botPos) {
+    console.log(`  📍 Bot final position: (${Math.floor(botPos.x)}, ${Math.floor(botPos.y)}, ${Math.floor(botPos.z)})`);
+  }
 
   role.stop(test.bot);
   return test.cleanup();

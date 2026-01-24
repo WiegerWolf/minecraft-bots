@@ -16,6 +16,9 @@ function sleep(ms: number): Promise<void> {
  *
  * When the landscaper has nothing better to do, gathering dirt ensures
  * they're ready for incoming terraform requests without delay.
+ *
+ * Digging pattern: Digs in continuous patterns to create a proper pit,
+ * not scattered holes. Tracks last dig position to continue where left off.
  */
 export class GatherDirt implements BehaviorNode {
     name = 'GatherDirt';
@@ -29,6 +32,9 @@ export class GatherDirt implements BehaviorNode {
     private readonly MIN_DISTANCE_FROM_VILLAGE = 50;
     private readonly MIN_DISTANCE_FROM_FARMS = 30;
     private readonly MIN_DISTANCE_FROM_FORESTS = 20;
+
+    // Track last dig position for continuity (stored on blackboard)
+    private lastDigPos: Vec3 | null = null;
 
     async tick(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
         bb.lastAction = 'gather_dirt';
@@ -109,6 +115,10 @@ export class GatherDirt implements BehaviorNode {
                 const digPos = block.position.clone();
                 await bot.dig(block);
                 gathered++;
+
+                // Track last dig position for continuity
+                this.lastDigPos = digPos.clone();
+
                 bb.log?.debug(
                     { pos: candidate.pos.floored().toString(), gathered, needed: neededDirt },
                     'Dug dirt block'
@@ -175,7 +185,8 @@ export class GatherDirt implements BehaviorNode {
 
     /**
      * Find dirt/grass blocks suitable for gathering.
-     * Prefers surface blocks (grass) and avoids areas near water and protected zones.
+     * Prefers continuous digging patterns to create a proper pit.
+     * Uses last dig position to continue where left off.
      */
     private findDirtCandidates(
         bot: Bot,
@@ -184,7 +195,6 @@ export class GatherDirt implements BehaviorNode {
         radius: number
     ): { pos: Vec3; score: number }[] {
         const candidates: { pos: Vec3; score: number }[] = [];
-        const botPos = bot.entity.position;
 
         for (let dx = -radius; dx <= radius; dx++) {
             for (let dz = -radius; dz <= radius; dz++) {
@@ -245,10 +255,32 @@ export class GatherDirt implements BehaviorNode {
                     );
                     if (nearForest) continue;
 
-                    // Score based on: surface preference, distance to bot
-                    let score = 50;
-                    if (block.name === 'grass_block') score += 20; // Prefer grass (surface)
-                    score -= pos.distanceTo(botPos) * 0.5; // Closer is better
+                    // === SCORING FOR CONTINUOUS DIGGING ===
+                    let score = 0;
+
+                    // High priority: adjacent to last dig position (continuity)
+                    if (this.lastDigPos) {
+                        const distToLast = Math.abs(pos.x - this.lastDigPos.x) + Math.abs(pos.z - this.lastDigPos.z);
+                        if (distToLast === 1) {
+                            // Directly adjacent (cardinal direction) - highest priority
+                            score += 1000;
+                        } else if (distToLast === 2 && Math.abs(pos.x - this.lastDigPos.x) === 1) {
+                            // Diagonal - still good for continuity
+                            score += 800;
+                        } else if (distToLast <= 3) {
+                            // Very close - maintain area
+                            score += 500;
+                        }
+                    }
+
+                    // Secondary: systematic row-by-row pattern from dirtpit center
+                    // Lower x first, then lower z (creates a consistent sweep pattern)
+                    // Score decreases as we move away from the starting corner
+                    const rowScore = 100 - Math.abs(dx) - Math.abs(dz) * 0.1;
+                    score += rowScore;
+
+                    // Small bonus for grass (surface blocks)
+                    if (block.name === 'grass_block') score += 10;
 
                     candidates.push({ pos: pos.clone(), score });
 
