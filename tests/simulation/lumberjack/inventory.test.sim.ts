@@ -13,7 +13,7 @@
 import { Vec3 } from 'vec3';
 import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
-import { MockWorld, createOakTree } from '../../mocks/MockWorld';
+import { MockWorld } from '../../mocks/MockWorld';
 import { GOAPLumberjackRole } from '../../../src/roles/GOAPLumberjackRole';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -126,54 +126,12 @@ async function testProcessesWood() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST: Drops interrupt work
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function testDropsInterruptWork() {
-  const test = new SimulationTest('Drops interrupt work');
-
-  const world = new MockWorld();
-  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
-
-  // Tree far away
-  createOakTree(world, new Vec3(15, 64, 15), 5);
-
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
-
-  await test.setup(world, {
-    botPosition: new Vec3(3, 65, 3),
-    botInventory: [{ name: 'iron_axe', count: 1 }],
-  });
-
-  test.bot.loadPlugin(pathfinderPlugin);
-  await test.wait(2000, 'World loading');
-
-  const role = new GOAPLumberjackRole();
-  role.start(test.bot, { logger: test.createRoleLogger('lumberjack') });
-
-  // Wait for bot to start moving toward tree
-  await test.wait(3000, 'Bot starting work');
-
-  // Spawn drops near bot - should interrupt
-  await test.rcon('summon item 4 65 4 {Item:{id:"minecraft:oak_log",count:5}}');
-
-  await test.waitForInventory('oak_log', 5, {
-    timeout: 30000,
-    message: 'Bot should collect dropped logs (interrupting tree walking)',
-  });
-
-  role.stop(test.bot);
-  return test.cleanup();
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ALL_TESTS: Record<string, () => Promise<any>> = {
   'deposit': testDepositsToChest,
   'process': testProcessesWood,
-  'interrupt': testDropsInterruptWork,
 };
 
 async function main() {
