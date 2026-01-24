@@ -308,41 +308,13 @@ async function testGathersDirt() {
 
   const world = new MockWorld();
 
-  // Village center at origin
+  // === LOCATIONS ===
   const villageCenter = new Vec3(0, 64, 0);
-
-  // Farm near village (within normal village bounds)
   const farmCenter = new Vec3(15, 63, 15);
-
-  // Build farm ground
-  world.fill(new Vec3(11, 62, 11), new Vec3(19, 62, 19), 'stone'); // Foundation
-  world.fill(new Vec3(11, 63, 11), new Vec3(19, 63, 19), 'dirt');  // Farm surface
-
-  // Water source at farm center
-  world.setBlock(farmCenter, 'water');
-
-  // Create holes in the farm (these need dirt to fill)
-  const holePositions = [
-    new Vec3(13, 63, 15),
-    new Vec3(17, 63, 15),
-    new Vec3(15, 63, 13),
-  ];
-  for (const pos of holePositions) {
-    world.setBlock(pos, 'air');
-  }
-
-  // Dirtpit area - MUST be:
-  // - 50+ blocks from village (0,0)
-  // - 30+ blocks from farm (15,15)
-  // Place at (60, 63, 60): ~85 blocks from village, ~64 blocks from farm
+  // Dirtpit: 50+ from village, 30+ from farm
   const dirtpitCenter = new Vec3(60, 63, 60);
-  world.fill(
-    new Vec3(dirtpitCenter.x - 4, 63, dirtpitCenter.z - 4),
-    new Vec3(dirtpitCenter.x + 4, 63, dirtpitCenter.z + 4),
-    'dirt'
-  );
 
-  // Signs at spawn
+  // === SIGNS at spawn (placed via MockWorld for sign reading) ===
   world.setBlock(new Vec3(2, 64, 0), 'oak_sign', {
     signText: `[VILLAGE]\nX: ${villageCenter.x}\nY: ${villageCenter.y}\nZ: ${villageCenter.z}`,
   });
@@ -353,10 +325,38 @@ async function testGathersDirt() {
     signText: `[DIRTPIT]\nX: ${dirtpitCenter.x}\nY: ${dirtpitCenter.y}\nZ: ${dirtpitCenter.z}`,
   });
 
+  // === HOLES in the farm surface (y=63) - mark in MockWorld ===
+  const holePositions = [
+    new Vec3(13, 63, 15),
+    new Vec3(17, 63, 15),
+    new Vec3(15, 63, 13),
+  ];
+  for (const pos of holePositions) {
+    world.setBlock(pos, 'air');
+  }
+
   await test.setup(world, {
     botPosition: new Vec3(0, 64, 2),
     botInventory: [{ name: 'iron_shovel', count: 1 }], // Shovel but NO dirt!
+    clearRadius: 80,
   });
+
+  // === CUSTOM WORLD via RCON (6 fill commands) ===
+  // Structure: bedrock(y=58), dirt(y=59-62), grass(y=63)
+  await test.rcon('fill -80 58 -80 80 58 80 minecraft:bedrock');
+  await test.rcon('fill -80 59 -80 80 59 80 minecraft:dirt');
+  await test.rcon('fill -80 60 -80 80 60 80 minecraft:dirt');
+  await test.rcon('fill -80 61 -80 80 61 80 minecraft:dirt');
+  await test.rcon('fill -80 62 -80 80 62 80 minecraft:dirt');
+  await test.rcon('fill -80 63 -80 80 63 80 minecraft:grass_block');
+
+  // === FARM: water source at center ===
+  await test.rcon(`setblock ${farmCenter.x} ${farmCenter.y} ${farmCenter.z} minecraft:water`);
+
+  // === HOLES in the farm surface ===
+  for (const pos of holePositions) {
+    await test.rcon(`setblock ${pos.x} ${pos.y} ${pos.z} minecraft:air`);
+  }
 
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
@@ -364,9 +364,10 @@ async function testGathersDirt() {
   const role = new GOAPLandscaperRole();
   role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
 
-  console.log('  📋 Dirt Gathering Test:');
-  console.log(`     - Farm at (${farmCenter.x}, ${farmCenter.y}, ${farmCenter.z}) with ${holePositions.length} holes`);
+  console.log('  📋 Dirt Gathering Test (Deep World):');
+  console.log(`     - World: bedrock(y=58), dirt(y=59-62), grass(y=63)`);
   console.log(`     - Dirtpit at (${dirtpitCenter.x}, ${dirtpitCenter.y}, ${dirtpitCenter.z})`);
+  console.log(`     - Farm at (${farmCenter.x}, ${farmCenter.y}, ${farmCenter.z}) with ${holePositions.length} holes`);
   console.log(`     - Bot has shovel but NO dirt - must gather first`);
 
   // Track progress
