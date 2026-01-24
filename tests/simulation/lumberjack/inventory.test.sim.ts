@@ -284,8 +284,9 @@ async function testCraftsAxeFromScratch() {
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
 
-  // Village sign only - no other infrastructure
+  // Village sign and forest sign - no other infrastructure
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(1, 64, 0), 'oak_sign', { signText: '[FOREST]\nX: 15\nY: 64\nZ: 15' });
 
   // Forest for eventual work
   const forestCenter = new Vec3(15, 64, 15);
