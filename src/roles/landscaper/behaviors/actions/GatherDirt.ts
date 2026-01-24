@@ -25,6 +25,11 @@ export class GatherDirt implements BehaviorNode {
     // How much to gather per action
     private readonly GATHER_BATCH = 16;
 
+    // Exclusion zone distances (must match EstablishDirtpit)
+    private readonly MIN_DISTANCE_FROM_VILLAGE = 50;
+    private readonly MIN_DISTANCE_FROM_FARMS = 30;
+    private readonly MIN_DISTANCE_FROM_FORESTS = 20;
+
     async tick(bot: Bot, bb: LandscaperBlackboard): Promise<BehaviorStatus> {
         bb.lastAction = 'gather_dirt';
 
@@ -39,12 +44,18 @@ export class GatherDirt implements BehaviorNode {
             return 'failure';
         }
 
-        // Prefer gathering from established dirtpit, otherwise use village center
-        const searchCenter = bb.dirtpit || bb.villageCenter || bot.entity.position;
-        const searchRadius = bb.dirtpit ? 30 : 40; // Smaller radius if gathering at dirtpit
+        // REQUIRE a dirtpit before gathering - prevents digging near protected areas
+        // If no dirtpit, EstablishDirtpit goal should run first
+        if (!bb.dirtpit) {
+            bb.log?.debug('[Landscaper] Need to establish dirtpit before gathering dirt');
+            return 'failure';
+        }
+
+        const searchCenter = bb.dirtpit;
+        const searchRadius = 30;
 
         // Find dirt/grass blocks to dig
-        const candidates = this.findDirtCandidates(bot, searchCenter, searchRadius);
+        const candidates = this.findDirtCandidates(bot, bb, searchCenter, searchRadius);
 
         if (candidates.length === 0) {
             bb.log?.debug('[Landscaper] No dirt found nearby');
@@ -164,10 +175,11 @@ export class GatherDirt implements BehaviorNode {
 
     /**
      * Find dirt/grass blocks suitable for gathering.
-     * Prefers surface blocks (grass) and avoids areas near water.
+     * Prefers surface blocks (grass) and avoids areas near water and protected zones.
      */
     private findDirtCandidates(
         bot: Bot,
+        bb: LandscaperBlackboard,
         center: Vec3,
         radius: number
     ): { pos: Vec3; score: number }[] {
@@ -214,6 +226,24 @@ export class GatherDirt implements BehaviorNode {
                         }
                     }
                     if (nearWater) continue;
+
+                    // === EXCLUSION ZONES (safety net) ===
+                    // Avoid village center
+                    if (bb.villageCenter && pos.distanceTo(bb.villageCenter) < this.MIN_DISTANCE_FROM_VILLAGE) {
+                        continue;
+                    }
+
+                    // Avoid farms
+                    const nearFarm = bb.knownFarms.some(
+                        farm => pos.distanceTo(farm) < this.MIN_DISTANCE_FROM_FARMS
+                    );
+                    if (nearFarm) continue;
+
+                    // Avoid forests
+                    const nearForest = bb.knownForests.some(
+                        forest => pos.distanceTo(forest) < this.MIN_DISTANCE_FROM_FORESTS
+                    );
+                    if (nearForest) continue;
 
                     // Score based on: surface preference, distance to bot
                     let score = 50;

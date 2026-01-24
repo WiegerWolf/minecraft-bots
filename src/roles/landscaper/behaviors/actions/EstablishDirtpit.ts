@@ -99,6 +99,12 @@ export class EstablishDirtpit implements BehaviorNode {
                 );
                 if (tooCloseToFarm) continue;
 
+                // Check distance from forests
+                const tooCloseToForest = bb.knownForests.some(
+                    forest => samplePos.distanceTo(forest) < this.MIN_DISTANCE_FROM_FORESTS
+                );
+                if (tooCloseToForest) continue;
+
                 // Calculate dirt density in this area
                 const density = this.calculateDirtDensity(bot, samplePos);
                 if (density < this.MIN_DIRT_DENSITY) continue;

@@ -107,6 +107,9 @@ export interface LandscaperBlackboard {
     dirtpit: Vec3 | null;                 // Established dirtpit location (from sign or discovered)
     hasDirtpit: boolean;                  // Whether a dirtpit has been established
 
+    // Known protected areas (from signs)
+    knownForests: Vec3[];                 // Forest locations to avoid when gathering dirt
+
     // ═══════════════════════════════════════════════════════════════
     // TRADE STATE
     // ═══════════════════════════════════════════════════════════════
@@ -178,6 +181,9 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
         // Dirtpit - dedicated dirt gathering location
         dirtpit: null,
         hasDirtpit: false,
+
+        // Known protected areas (from signs)
+        knownForests: [],
 
         // Trade state
         tradeableItems: [],

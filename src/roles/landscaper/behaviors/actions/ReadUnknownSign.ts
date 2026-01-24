@@ -168,8 +168,16 @@ export class ReadUnknownSign implements BehaviorNode {
                 bb.log?.debug({ pos: entry.pos.toString() }, 'Noted water source');
                 break;
 
-            // Other landmark types noted but not critical for landscaper
             case 'FOREST':
+                // Track forest locations to avoid when gathering dirt
+                const forestExists = bb.knownForests.some(f => f.distanceTo(entry.pos) < 20);
+                if (!forestExists) {
+                    bb.knownForests.push(entry.pos.clone());
+                    bb.log?.info({ pos: entry.pos.floored().toString() }, 'Learned forest location from sign');
+                }
+                break;
+
+            // Other landmark types noted but not critical for landscaper
             case 'MINE':
                 bb.log?.debug({ type: entry.type, pos: entry.pos.toString() }, 'Noted landmark');
                 break;
