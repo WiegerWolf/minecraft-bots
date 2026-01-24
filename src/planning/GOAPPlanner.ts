@@ -330,6 +330,7 @@ export class GOAPPlanner {
     const importantFacts = [
       'has.hoe', 'has.sword', 'has.axe', 'has.craftingTable',
       'has.shovel', 'has.pickaxe', // Landscaper tools
+      'has.dirtpit', // Landscaper dirtpit establishment
       'has.sign', // For sign crafting/writing
       'has.studiedSigns', 'has.checkedStorage', // Startup behaviors
       'has.knownForest', // Lumberjack forest discovery

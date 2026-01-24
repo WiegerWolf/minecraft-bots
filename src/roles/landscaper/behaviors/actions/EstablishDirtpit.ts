@@ -83,11 +83,14 @@ export class EstablishDirtpit implements BehaviorNode {
         // Sample grid positions in a large radius around village
         for (let dx = -this.SEARCH_RADIUS; dx <= this.SEARCH_RADIUS; dx += this.SAMPLE_GRID_SIZE) {
             for (let dz = -this.SEARCH_RADIUS; dz <= this.SEARCH_RADIUS; dz += this.SAMPLE_GRID_SIZE) {
-                const samplePos = new Vec3(
-                    Math.floor(villageCenter.x) + dx,
-                    Math.floor(villageCenter.y),
-                    Math.floor(villageCenter.z) + dz
-                );
+                const x = Math.floor(villageCenter.x) + dx;
+                const z = Math.floor(villageCenter.z) + dz;
+
+                // Find the actual surface level at this position
+                const surfaceY = this.findSurfaceLevel(bot, x, Math.floor(villageCenter.y), z);
+                if (surfaceY === null) continue;
+
+                const samplePos = new Vec3(x, surfaceY, z);
 
                 // Check distance constraints
                 const distFromVillage = samplePos.distanceTo(villageCenter);
@@ -124,6 +127,29 @@ export class EstablishDirtpit implements BehaviorNode {
         candidates.sort((a, b) => b.score - a.score);
 
         return candidates[0]!.pos;
+    }
+
+    /**
+     * Find the surface Y level at a given X, Z position.
+     * Returns the Y of the topmost dirt/grass block with air above it.
+     */
+    private findSurfaceLevel(bot: Bot, x: number, startY: number, z: number): number | null {
+        // Scan from high to low to find the surface
+        for (let dy = 10; dy >= -10; dy--) {
+            const y = startY + dy;
+            const block = bot.blockAt(new Vec3(x, y, z));
+            const above = bot.blockAt(new Vec3(x, y + 1, z));
+
+            if (!block || !above) continue;
+
+            // Surface: dirt/grass with air or plants above
+            if ((block.name === 'dirt' || block.name === 'grass_block') &&
+                (above.name === 'air' || above.name === 'short_grass' || above.name === 'tall_grass')) {
+                return y;
+            }
+        }
+
+        return null;
     }
 
     /**

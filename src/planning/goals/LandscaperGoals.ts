@@ -444,6 +444,10 @@ export class GatherDirtGoal extends BaseGoal {
     const hasShovel = ws.getBool('has.shovel');
     if (!hasShovel) return 0;
 
+    // Don't gather if we don't have a dirtpit yet (establish first)
+    const hasDirtpit = ws.getBool('has.dirtpit');
+    if (!hasDirtpit) return 0;
+
     // Don't gather if inventory is full
     const inventoryFull = ws.getBool('state.inventoryFull');
     if (inventoryFull) return 0;
@@ -457,7 +461,8 @@ export class GatherDirtGoal extends BaseGoal {
   override isValid(ws: WorldState): boolean {
     const dirtCount = ws.getNumber('inv.dirt');
     const hasShovel = ws.getBool('has.shovel');
-    return dirtCount < 64 && hasShovel;
+    const hasDirtpit = ws.getBool('has.dirtpit');
+    return dirtCount < 64 && hasShovel && hasDirtpit;
   }
 }
 

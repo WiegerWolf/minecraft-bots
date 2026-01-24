@@ -455,6 +455,7 @@ export class GatherDirtAction extends BaseGOAPAction {
 
   preconditions = [
     booleanPrecondition('has.shovel', true, 'has shovel'),
+    booleanPrecondition('has.dirtpit', true, 'has established dirtpit'),
     numericPrecondition('inv.dirt', v => v < 64, 'needs more dirt'),
     booleanPrecondition('state.inventoryFull', false, 'inventory not full'),
   ];
