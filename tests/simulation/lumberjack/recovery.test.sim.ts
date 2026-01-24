@@ -256,8 +256,12 @@ async function testCraftsAxeFromLogs() {
   createOakTree(world, forestCenter.offset(0, 0, 0), 5);
   createOakTree(world, forestCenter.offset(4, 0, 2), 5);
 
+  // Pre-placed crafting table so bot doesn't waste materials on infrastructure
+  world.setBlock(new Vec3(3, 64, 0), 'crafting_table');
+
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
   world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FOREST]\nX: 15\nY: 64\nZ: 15' });
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[CRAFT]\nX: 3\nY: 64\nZ: 0' });
 
   const spawnPos = new Vec3(0, 64, 0);
 
@@ -265,7 +269,8 @@ async function testCraftsAxeFromLogs() {
     botPosition: spawnPos.clone(),
     botInventory: [
       // NO AXE, only raw logs - bot needs to process and craft
-      { name: 'oak_log', count: 4 },  // Enough logs to make planks for table + axe
+      // 2 logs = 8 planks, need 7 for axe (3 planks + 4 for sticks)
+      { name: 'oak_log', count: 2 },
     ],
   });
 

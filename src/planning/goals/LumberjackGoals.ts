@@ -229,7 +229,25 @@ export class ChopTreeGoal extends BaseGoal {
     // Scale with available forest trees, but reduce if already have lots of logs
     const baseUtility = Math.min(70, 50 + forestTreeCount * 2);
     const logPenalty = Math.min(20, logCount / 4);
-    return Math.max(0, baseUtility - logPenalty);
+    let utility = Math.max(0, baseUtility - logPenalty);
+
+    // Prefer crafting axe first - chopping with axe is much faster
+    // Reduce utility significantly when bot could craft an axe but doesn't have one
+    const hasAxe = ws.getBool('has.axe');
+    if (!hasAxe) {
+      const canCraft = ws.getBool('derived.canCraftAxe');
+      const plankCount = ws.getNumber('inv.planks');
+      // 1 log = 4 planks, need ~9 planks for crafting table + axe
+      const plankEquivalent = plankCount + (logCount * 4);
+      const couldCraftAxe = canCraft || plankEquivalent >= 9;
+
+      if (couldCraftAxe) {
+        // Halve utility so ObtainAxe (90-95) wins easily once off cooldown
+        utility = Math.floor(utility / 2);
+      }
+    }
+
+    return utility;
   }
 }
 
