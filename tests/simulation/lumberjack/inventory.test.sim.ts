@@ -144,6 +144,9 @@ async function testCraftsAndPlacesChest() {
   world.setBlock(new Vec3(2, 64, 0), 'crafting_table');
   world.setBlock(new Vec3(3, 64, 0), 'oak_sign', { signText: '[CRAFT]\nX: 2\nY: 64\nZ: 0' });
 
+  // Forest sign so bot doesn't waste time exploring
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[FOREST]\nX: 50\nY: 64\nZ: 50' });
+
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),
     botInventory: [
