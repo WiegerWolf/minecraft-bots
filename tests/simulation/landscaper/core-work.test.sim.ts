@@ -172,22 +172,37 @@ async function testFillsHoles() {
   const test = new SimulationTest('Fills holes in farm');
 
   const world = new MockWorld();
-  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
 
-  // Farm with holes
+  // Farm center at (12, 63, 12)
   const farmCenter = new Vec3(12, 63, 12);
+
+  // Build complete ground with foundation
+  world.fill(new Vec3(4, 62, 4), new Vec3(20, 62, 20), 'stone'); // Solid foundation
+  world.fill(new Vec3(4, 63, 4), new Vec3(20, 63, 20), 'grass_block'); // Ground level
+
+  // Water source at farm center
   world.setBlock(farmCenter, 'water');
 
-  // Holes at y=63
-  world.setBlock(new Vec3(10, 63, 12), 'air');
-  world.setBlock(new Vec3(14, 63, 12), 'air');
-  world.setBlock(new Vec3(12, 63, 10), 'air');
+  // Create holes in the farm area at y=63 (these need to be filled)
+  // Spread them around the farm to test the bot handles multiple locations
+  const holePositions = [
+    new Vec3(10, 63, 12), // West side
+    new Vec3(14, 63, 12), // East side
+    new Vec3(12, 63, 10), // North side
+    new Vec3(12, 63, 14), // South side
+    new Vec3(9, 63, 9),   // Corner
+  ];
 
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
-  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 12\nY: 63\nZ: 12' });
+  for (const pos of holePositions) {
+    world.setBlock(pos, 'air');
+  }
+
+  // Village and farm signs
+  world.setBlock(new Vec3(5, 64, 5), 'oak_sign', { signText: '[VILLAGE]\nX: 5\nY: 64\nZ: 5' });
+  world.setBlock(new Vec3(6, 64, 5), 'oak_sign', { signText: '[FARM]\nX: 12\nY: 63\nZ: 12' });
 
   await test.setup(world, {
-    botPosition: new Vec3(3, 65, 3),
+    botPosition: new Vec3(5, 64, 6),
     botInventory: [
       { name: 'iron_shovel', count: 1 },
       { name: 'dirt', count: 32 },
@@ -200,16 +215,74 @@ async function testFillsHoles() {
   const role = new GOAPLandscaperRole();
   role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
 
+  console.log(`  🕳️  Created ${holePositions.length} holes in farm area - bot should fill all`);
+
+  // Wait for ALL holes to be filled
   await test.waitUntil(
     () => {
-      const block = test.blockAt(new Vec3(10, 63, 12));
-      return block !== 'air' && block !== 'water';
+      const remaining = holePositions.filter(pos => {
+        const block = test.blockAt(pos);
+        return block === 'air';
+      });
+
+      if (remaining.length > 0) {
+        const summary = remaining.map(p => `(${p.x},${p.z})`).join(', ');
+        console.log(`  [check] ${remaining.length} holes remaining: ${summary}`);
+      }
+
+      return remaining.length === 0;
     },
     {
       timeout: 90000,
-      message: 'Bot should fill hole at 10, 63, 12',
+      interval: 3000,
+      message: 'Bot should fill all holes in farm area',
     }
   );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FINAL ASSERTIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // 1. Verify all holes are filled with solid blocks
+  for (const pos of holePositions) {
+    const block = test.blockAt(pos);
+    test.assert(
+      block === 'dirt' || block === 'grass_block' || block === 'farmland',
+      `Hole at (${pos.x}, ${pos.z}) should be filled (was ${block})`
+    );
+  }
+
+  // 2. Water source at center must be intact
+  const waterBlock = test.blockAt(farmCenter);
+  test.assert(waterBlock === 'water', 'Water source at farm center should remain intact');
+
+  // 3. Verify the entire 9x9 farm surface is solid (no holes)
+  let solidCount = 0;
+  let totalChecked = 0;
+  for (let dx = -4; dx <= 4; dx++) {
+    for (let dz = -4; dz <= 4; dz++) {
+      // Skip center (water)
+      if (dx === 0 && dz === 0) continue;
+
+      const pos = new Vec3(farmCenter.x + dx, 63, farmCenter.z + dz);
+      const block = test.blockAt(pos);
+      totalChecked++;
+      if (block === 'dirt' || block === 'grass_block' || block === 'farmland') {
+        solidCount++;
+      }
+    }
+  }
+
+  console.log(`  ✓ Farm surface: ${solidCount}/${totalChecked} positions are solid`);
+  test.assert(
+    solidCount === totalChecked,
+    `All ${totalChecked} farm surface positions should be solid (${solidCount} were solid)`
+  );
+
+  const botPos = test.botPosition();
+  if (botPos) {
+    console.log(`  📍 Bot final position: (${Math.floor(botPos.x)}, ${Math.floor(botPos.y)}, ${Math.floor(botPos.z)})`);
+  }
 
   role.stop(test.bot);
   return test.cleanup();
