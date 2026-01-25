@@ -405,21 +405,35 @@ export class TerraformArea implements BehaviorNode {
         if (botBlockPos.x === fillBlockPos.x && botBlockPos.z === fillBlockPos.z &&
             (botBlockPos.y === fillBlockPos.y || botBlockPos.y === fillBlockPos.y + 1)) {
             bb.log?.debug(`[Landscaper] Standing in water fill position ${fillPos.floored()}, moving away first`);
+            // Find a safe spot to stand - try adjacent positions (closer first, then farther)
             const safeOffsets = [
+                new Vec3(1, 0, 0), new Vec3(-1, 0, 0),
+                new Vec3(0, 0, 1), new Vec3(0, 0, -1),
+                new Vec3(1, 0, 1), new Vec3(-1, 0, -1),
+                new Vec3(1, 0, -1), new Vec3(-1, 0, 1),
                 new Vec3(2, 0, 0), new Vec3(-2, 0, 0),
                 new Vec3(0, 0, 2), new Vec3(0, 0, -2),
             ];
             let moved = false;
             for (const offset of safeOffsets) {
-                const safePos = fillPos.plus(offset);
-                const groundBelow = bot.blockAt(safePos.offset(0, -1, 0));
-                const blockAtSafe = bot.blockAt(safePos);
-                if (groundBelow && groundBelow.boundingBox === 'block' &&
-                    blockAtSafe && (blockAtSafe.name === 'air' || blockAtSafe.transparent)) {
+                // Calculate position where bot would stand (on top of ground)
+                const groundPos = fillPos.plus(offset);
+                const groundBlock = bot.blockAt(groundPos);
+                const feetPos = groundPos.offset(0, 1, 0);
+                const headPos = groundPos.offset(0, 2, 0);
+                const blockAtFeet = bot.blockAt(feetPos);
+                const blockAtHead = bot.blockAt(headPos);
+
+                // Check: solid ground to stand on, and space for body (feet + head)
+                const hasGround = groundBlock && groundBlock.boundingBox === 'block';
+                const feetClear = !blockAtFeet || blockAtFeet.name === 'air' || !blockAtFeet.shapes?.length;
+                const headClear = !blockAtHead || blockAtHead.name === 'air' || !blockAtHead.shapes?.length;
+
+                if (hasGround && feetClear && headClear) {
                     const result = await smartPathfinderGoto(
                         bot,
-                        new GoalNear(safePos.x, safePos.y, safePos.z, 1),
-                        { timeoutMs: 10000 }
+                        new GoalNear(feetPos.x, feetPos.y, feetPos.z, 0),
+                        { timeoutMs: 5000 }
                     );
                     if (result.success) {
                         moved = true;
@@ -428,8 +442,28 @@ export class TerraformArea implements BehaviorNode {
                 }
             }
             if (!moved) {
-                bb.log?.debug(`[Landscaper] Could not move away from water fill position, skipping`);
-                task.waterBlocksToFill.shift();
+                // Last resort: just try to move a bit in any direction
+                bb.log?.debug(`[Landscaper] Could not find safe position for water fill, trying simple move`);
+                const simpleOffsets = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+                for (const offset of simpleOffsets) {
+                    const targetPos = bot.entity.position.plus(offset);
+                    try {
+                        await smartPathfinderGoto(bot, new GoalNear(targetPos.x, targetPos.y, targetPos.z, 0), { timeoutMs: 3000 });
+                        const newBotPos = bot.entity.position.floored();
+                        if (newBotPos.x !== fillBlockPos.x || newBotPos.z !== fillBlockPos.z) {
+                            moved = true;
+                            break;
+                        }
+                    } catch {
+                        // Try next direction
+                    }
+                }
+            }
+            if (!moved) {
+                bb.log?.debug(`[Landscaper] Could not move away from water fill position, will retry later`);
+                // Move this block to the end of the queue instead of skipping entirely
+                const skippedBlock = task.waterBlocksToFill.shift()!;
+                task.waterBlocksToFill.push(skippedBlock);
                 return 'running';
             }
         }
@@ -680,22 +714,35 @@ export class TerraformArea implements BehaviorNode {
         if (botBlockPos.x === fillBlockPos.x && botBlockPos.z === fillBlockPos.z &&
             (botBlockPos.y === fillBlockPos.y || botBlockPos.y === fillBlockPos.y + 1)) {
             bb.log?.debug(`[Landscaper] Standing in fill position ${fillPos.floored()}, moving away first`);
-            // Find a safe spot to stand - try adjacent positions
+            // Find a safe spot to stand - try adjacent positions (closer first, then farther)
             const safeOffsets = [
+                new Vec3(1, 0, 0), new Vec3(-1, 0, 0),
+                new Vec3(0, 0, 1), new Vec3(0, 0, -1),
+                new Vec3(1, 0, 1), new Vec3(-1, 0, -1),
+                new Vec3(1, 0, -1), new Vec3(-1, 0, 1),
                 new Vec3(2, 0, 0), new Vec3(-2, 0, 0),
                 new Vec3(0, 0, 2), new Vec3(0, 0, -2),
             ];
             let moved = false;
             for (const offset of safeOffsets) {
-                const safePos = fillPos.plus(offset);
-                const groundBelow = bot.blockAt(safePos.offset(0, -1, 0));
-                const blockAtSafe = bot.blockAt(safePos);
-                if (groundBelow && groundBelow.boundingBox === 'block' &&
-                    blockAtSafe && (blockAtSafe.name === 'air' || blockAtSafe.transparent)) {
+                // Calculate position where bot would stand (on top of ground)
+                const groundPos = fillPos.plus(offset);
+                const groundBlock = bot.blockAt(groundPos);
+                const feetPos = groundPos.offset(0, 1, 0);
+                const headPos = groundPos.offset(0, 2, 0);
+                const blockAtFeet = bot.blockAt(feetPos);
+                const blockAtHead = bot.blockAt(headPos);
+
+                // Check: solid ground to stand on, and space for body (feet + head)
+                const hasGround = groundBlock && groundBlock.boundingBox === 'block';
+                const feetClear = !blockAtFeet || blockAtFeet.name === 'air' || !blockAtFeet.shapes?.length;
+                const headClear = !blockAtHead || blockAtHead.name === 'air' || !blockAtHead.shapes?.length;
+
+                if (hasGround && feetClear && headClear) {
                     const result = await smartPathfinderGoto(
                         bot,
-                        new GoalNear(safePos.x, safePos.y, safePos.z, 1),
-                        { timeoutMs: 10000 }
+                        new GoalNear(feetPos.x, feetPos.y, feetPos.z, 0),
+                        { timeoutMs: 5000 }
                     );
                     if (result.success) {
                         moved = true;
@@ -704,8 +751,29 @@ export class TerraformArea implements BehaviorNode {
                 }
             }
             if (!moved) {
-                bb.log?.debug(`[Landscaper] Could not move away from fill position, skipping`);
-                task.blocksToFill.shift();
+                // Last resort: just try to move a bit in any direction
+                bb.log?.debug(`[Landscaper] Could not find safe position, trying simple move`);
+                const simpleOffsets = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+                for (const offset of simpleOffsets) {
+                    const targetPos = bot.entity.position.plus(offset);
+                    try {
+                        await smartPathfinderGoto(bot, new GoalNear(targetPos.x, targetPos.y, targetPos.z, 0), { timeoutMs: 3000 });
+                        // Check if we actually moved away from fill position
+                        const newBotPos = bot.entity.position.floored();
+                        if (newBotPos.x !== fillBlockPos.x || newBotPos.z !== fillBlockPos.z) {
+                            moved = true;
+                            break;
+                        }
+                    } catch {
+                        // Try next direction
+                    }
+                }
+            }
+            if (!moved) {
+                bb.log?.debug(`[Landscaper] Could not move away from fill position, will retry later`);
+                // Move this block to the end of the queue instead of skipping entirely
+                const skippedBlock = task.blocksToFill.shift()!;
+                task.blocksToFill.push(skippedBlock);
                 return 'running';
             }
         }
@@ -1055,21 +1123,35 @@ export class TerraformArea implements BehaviorNode {
             if (botBlockPos.x === fillBlockPos.x && botBlockPos.z === fillBlockPos.z &&
                 (botBlockPos.y === fillBlockPos.y || botBlockPos.y === fillBlockPos.y + 1)) {
                 bb.log?.debug(`[Landscaper] Standing in path fill position ${fillPos.floored()}, moving away first`);
+                // Find a safe spot to stand - try adjacent positions (closer first, then farther)
                 const safeOffsets = [
+                    new Vec3(1, 0, 0), new Vec3(-1, 0, 0),
+                    new Vec3(0, 0, 1), new Vec3(0, 0, -1),
+                    new Vec3(1, 0, 1), new Vec3(-1, 0, -1),
+                    new Vec3(1, 0, -1), new Vec3(-1, 0, 1),
                     new Vec3(2, 0, 0), new Vec3(-2, 0, 0),
                     new Vec3(0, 0, 2), new Vec3(0, 0, -2),
                 ];
                 let moved = false;
                 for (const offset of safeOffsets) {
-                    const safePos = fillPos.plus(offset);
-                    const groundBelow = bot.blockAt(safePos.offset(0, -1, 0));
-                    const blockAtSafe = bot.blockAt(safePos);
-                    if (groundBelow && groundBelow.boundingBox === 'block' &&
-                        blockAtSafe && (blockAtSafe.name === 'air' || blockAtSafe.transparent)) {
+                    // Calculate position where bot would stand (on top of ground)
+                    const groundPos = fillPos.plus(offset);
+                    const groundBlock = bot.blockAt(groundPos);
+                    const feetPos = groundPos.offset(0, 1, 0);
+                    const headPos = groundPos.offset(0, 2, 0);
+                    const blockAtFeet = bot.blockAt(feetPos);
+                    const blockAtHead = bot.blockAt(headPos);
+
+                    // Check: solid ground to stand on, and space for body (feet + head)
+                    const hasGround = groundBlock && groundBlock.boundingBox === 'block';
+                    const feetClear = !blockAtFeet || blockAtFeet.name === 'air' || !blockAtFeet.shapes?.length;
+                    const headClear = !blockAtHead || blockAtHead.name === 'air' || !blockAtHead.shapes?.length;
+
+                    if (hasGround && feetClear && headClear) {
                         const result = await smartPathfinderGoto(
                             bot,
-                            new GoalNear(safePos.x, safePos.y, safePos.z, 1),
-                            { timeoutMs: 10000 }
+                            new GoalNear(feetPos.x, feetPos.y, feetPos.z, 0),
+                            { timeoutMs: 5000 }
                         );
                         if (result.success) {
                             moved = true;
@@ -1078,8 +1160,28 @@ export class TerraformArea implements BehaviorNode {
                     }
                 }
                 if (!moved) {
-                    bb.log?.debug(`[Landscaper] Could not move away from path fill position, skipping`);
-                    task.pathBlocksToFill.shift();
+                    // Last resort: just try to move a bit in any direction
+                    bb.log?.debug(`[Landscaper] Could not find safe position for path fill, trying simple move`);
+                    const simpleOffsets = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+                    for (const offset of simpleOffsets) {
+                        const targetPos = bot.entity.position.plus(offset);
+                        try {
+                            await smartPathfinderGoto(bot, new GoalNear(targetPos.x, targetPos.y, targetPos.z, 0), { timeoutMs: 3000 });
+                            const newBotPos = bot.entity.position.floored();
+                            if (newBotPos.x !== fillBlockPos.x || newBotPos.z !== fillBlockPos.z) {
+                                moved = true;
+                                break;
+                            }
+                        } catch {
+                            // Try next direction
+                        }
+                    }
+                }
+                if (!moved) {
+                    bb.log?.debug(`[Landscaper] Could not move away from path fill position, will retry later`);
+                    // Move this block to the end of the queue instead of skipping entirely
+                    const skippedBlock = task.pathBlocksToFill.shift()!;
+                    task.pathBlocksToFill.push(skippedBlock);
                     return 'running';
                 }
             }

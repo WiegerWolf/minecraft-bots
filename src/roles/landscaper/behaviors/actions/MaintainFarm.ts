@@ -283,6 +283,78 @@ export class MaintainFarm implements BehaviorNode {
             return 'running';
         }
 
+        // Check if bot is standing in the position where we want to place a block
+        // If so, move away first to avoid placing block inside ourselves
+        const botBlockPos = bot.entity.position.floored();
+        const fillBlockPos = issue.pos.floored();
+        if (botBlockPos.x === fillBlockPos.x && botBlockPos.z === fillBlockPos.z &&
+            (botBlockPos.y === fillBlockPos.y || botBlockPos.y === fillBlockPos.y + 1)) {
+            bb.log?.debug({ pos: issue.pos.floored().toString() }, 'Standing in fill position, moving away first');
+            // Find a safe spot to stand - try adjacent positions
+            // Use closer offsets first (distance 1), then farther (distance 2)
+            const safeOffsets = [
+                new Vec3(1, 0, 0), new Vec3(-1, 0, 0),
+                new Vec3(0, 0, 1), new Vec3(0, 0, -1),
+                new Vec3(1, 0, 1), new Vec3(-1, 0, -1),
+                new Vec3(1, 0, -1), new Vec3(-1, 0, 1),
+                new Vec3(2, 0, 0), new Vec3(-2, 0, 0),
+                new Vec3(0, 0, 2), new Vec3(0, 0, -2),
+            ];
+            let moved = false;
+            for (const offset of safeOffsets) {
+                // Calculate position where bot would stand (on top of ground)
+                const groundPos = issue.pos.plus(offset);
+                const groundBlock = bot.blockAt(groundPos);
+                const feetPos = groundPos.offset(0, 1, 0);
+                const headPos = groundPos.offset(0, 2, 0);
+                const blockAtFeet = bot.blockAt(feetPos);
+                const blockAtHead = bot.blockAt(headPos);
+
+                // Check: solid ground to stand on, and space for body (feet + head)
+                const hasGround = groundBlock && groundBlock.boundingBox === 'block';
+                const feetClear = !blockAtFeet || blockAtFeet.name === 'air' || !blockAtFeet.shapes?.length;
+                const headClear = !blockAtHead || blockAtHead.name === 'air' || !blockAtHead.shapes?.length;
+
+                if (hasGround && feetClear && headClear) {
+                    const result = await smartPathfinderGoto(
+                        bot,
+                        new GoalNear(feetPos.x, feetPos.y, feetPos.z, 0),
+                        { timeoutMs: 5000 }
+                    );
+                    if (result.success) {
+                        moved = true;
+                        break;
+                    }
+                }
+            }
+            if (!moved) {
+                // Last resort: just try to move a bit in any direction
+                bb.log?.debug({ pos: issue.pos.floored().toString() }, 'Could not find safe position, trying simple move');
+                const simpleOffsets = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+                for (const offset of simpleOffsets) {
+                    const targetPos = bot.entity.position.plus(offset);
+                    try {
+                        await smartPathfinderGoto(bot, new GoalNear(targetPos.x, targetPos.y, targetPos.z, 0), { timeoutMs: 3000 });
+                        // Check if we actually moved away from fill position
+                        const newBotPos = bot.entity.position.floored();
+                        if (newBotPos.x !== fillBlockPos.x || newBotPos.z !== fillBlockPos.z) {
+                            moved = true;
+                            break;
+                        }
+                    } catch {
+                        // Try next direction
+                    }
+                }
+            }
+            if (!moved) {
+                bb.log?.debug({ pos: issue.pos.floored().toString() }, 'Could not move away from fill position, will retry later');
+                // Move this issue to the end of the queue instead of skipping entirely
+                const skippedIssue = this.issuesToFix.shift()!;
+                this.issuesToFix.push(skippedIssue);
+                return 'running';
+            }
+        }
+
         // Place dirt to fix the issue
         try {
             const dirtToPlace = bot.inventory.items().find(i => i.name === 'dirt');
