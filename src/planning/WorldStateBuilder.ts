@@ -236,6 +236,9 @@ export class WorldStateBuilder {
     ws.set('state.knownFarmCount', bb.knownFarms.length);
     ws.set('state.farmsNeedingCheck', bb.farmsNeedingCheck.length);
 
+    // Curious bot - unknown sign discovery
+    ws.set('nearby.unknownSigns', bb.unknownSigns.length);
+
     // Dirtpit - dedicated dirt gathering location
     ws.set('has.dirtpit', bb.hasDirtpit);
 

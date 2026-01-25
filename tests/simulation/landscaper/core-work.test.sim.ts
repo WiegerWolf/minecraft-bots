@@ -715,18 +715,8 @@ async function testReadsUnknownSigns() {
   await test.rcon('fill 46 63 46 54 63 54 minecraft:grass_block');
   await test.rcon(`setblock ${secondFarmCenter.x} ${secondFarmCenter.y} ${secondFarmCenter.z} minecraft:water`);
 
-  // === PLACE UNKNOWN SIGN VIA RCON ===
-  // This sign is placed NEAR the first farm (not at spawn), so the bot
-  // will discover it when visiting the farm, NOT during StudySpawnSigns
-  const ux = Math.floor(unknownSignPos.x);
-  const uy = Math.floor(unknownSignPos.y);
-  const uz = Math.floor(unknownSignPos.z);
-
-  await test.rcon(`setblock ${ux} ${uy} ${uz} minecraft:oak_sign replace`);
-  await test.rcon(`data modify block ${ux} ${uy} ${uz} front_text.messages[0] set value {text:"[FARM]"}`);
-  await test.rcon(`data modify block ${ux} ${uy} ${uz} front_text.messages[1] set value {text:"X: 50"}`);
-  await test.rcon(`data modify block ${ux} ${uy} ${uz} front_text.messages[2] set value {text:"Y: 63"}`);
-  await test.rcon(`data modify block ${ux} ${uy} ${uz} front_text.messages[3] set value {text:"Z: 50"}`);
+  // Unknown sign is already placed via MockWorld (synced during setup)
+  // No need to place via RCON - MockWorld signs are synced before bot connects
 
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
