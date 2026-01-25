@@ -56,18 +56,23 @@ export class GOAPLandscaperRole extends GOAPRole {
     movements.allowParkour = true;
     movements.allowSprinting = true;
 
-    // Only allow wooden slabs for scaffolding - preserve dirt for terraforming
+    // Allow slabs and cobblestone for scaffolding - preserve DIRT for terraforming
     // Wooden slabs are ideal: easy to break, logs are abundant, less obstructive
+    // Cobblestone is also fine - landscapers dig up stone and it shouldn't be wasted
     const mcData = require('minecraft-data')(bot.version);
-    const woodenSlabTypes = [
+    const scaffoldingBlockTypes = [
+      // Wooden slabs
       'oak_slab', 'spruce_slab', 'birch_slab', 'jungle_slab',
       'acacia_slab', 'dark_oak_slab', 'mangrove_slab', 'cherry_slab',
-      'bamboo_slab', 'crimson_slab', 'warped_slab'
+      'bamboo_slab', 'crimson_slab', 'warped_slab',
+      // Stone materials (from digging)
+      'cobblestone', 'stone', 'andesite', 'diorite', 'granite',
+      'cobbled_deepslate', 'deepslate',
     ];
-    const slabIds = woodenSlabTypes
+    const scaffoldingIds = scaffoldingBlockTypes
       .map(name => mcData.blocksByName[name]?.id)
       .filter((id): id is number => id !== undefined);
-    movements.scafoldingBlocks = slabIds;
+    movements.scafoldingBlocks = scaffoldingIds;
 
     bot.pathfinder.setMovements(movements);
 

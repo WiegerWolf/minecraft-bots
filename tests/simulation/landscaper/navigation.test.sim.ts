@@ -89,34 +89,39 @@ async function testPreservesDirtForTerraforming() {
   const test = new SimulationTest('Preserves dirt for terraforming');
 
   const world = new MockWorld();
+
+  // Ground level at y=63
   world.fill(new Vec3(-30, 63, -30), new Vec3(30, 63, 30), 'grass_block');
 
-  // Create a gap that requires bridging/scaffolding
-  // Clear a 5-block wide gap
-  for (let x = 10; x <= 14; x++) {
-    for (let z = -2; z <= 2; z++) {
-      world.setBlock(new Vec3(x, 63, z), 'air');
-    }
-  }
+  // === ELEVATED FARM ON A HILL ===
+  // Farm is 4 blocks above ground - requires some climbing/scaffolding
+  // but within pathfinder's practical limits
 
-  // Farm on the other side of the gap (to give bot a reason to cross)
-  const farmCenter = new Vec3(20, 63, 0);
-  world.fill(new Vec3(16, 63, -4), new Vec3(24, 63, 4), 'grass_block');
+  const platformY = 67; // 4 blocks above ground (63)
+  const farmCenter = new Vec3(20, platformY, 0);
+
+  // Create a steep hill that can't be walked up directly
+  // The sides are too steep (3 block walls) so bot must scaffold
+  world.fill(new Vec3(17, 64, -3), new Vec3(23, 66, 3), 'stone'); // Solid base
+  world.fill(new Vec3(18, 67, -2), new Vec3(22, 67, 2), 'grass_block'); // Farm surface
+
+  // Water source on top
   world.setBlock(farmCenter, 'water');
 
   // Create a hole in the farm that needs filling
-  world.setBlock(new Vec3(18, 63, 0), 'air');
+  const holePos = new Vec3(19, platformY, 0);
+  world.setBlock(holePos, 'air');
 
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
-  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 20\nY: 63\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: `[FARM]\nX: 20\nY: ${platformY}\nZ: 0` });
 
   await test.setup(world, {
     botPosition: new Vec3(5, 64, 0),
     botInventory: [
       { name: 'iron_shovel', count: 1 },
       { name: 'iron_pickaxe', count: 1 },
-      { name: 'dirt', count: 32 }, // Dirt should be preserved
-      { name: 'oak_slab', count: 16 }, // Slabs should be used for bridging
+      { name: 'dirt', count: 16 }, // Dirt should be preserved for filling holes
+      { name: 'cobblestone', count: 64 }, // Cobble available for scaffolding
     ],
     clearRadius: 40,
   });
@@ -125,41 +130,36 @@ async function testPreservesDirtForTerraforming() {
   await test.wait(2000, 'World loading');
 
   const initialDirt = test.botInventoryCount('dirt');
-  const initialSlabs = test.bot.inventory.items()
-    .filter(i => i.name.includes('_slab'))
-    .reduce((sum, i) => sum + i.count, 0);
 
-  console.log(`  🎒 Initial: ${initialDirt} dirt, ${initialSlabs} slabs`);
+  console.log(`  🏔️  Farm is on hill at y=${platformY} (4 blocks above ground)`);
+  console.log(`  🎒 Initial dirt: ${initialDirt}`);
 
   const role = new GOAPLandscaperRole();
   role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
 
-  // Wait for bot to fill the hole in the farm (proves it crossed the gap)
+  // Wait for bot to reach the elevated farm and fill the hole
   await test.waitUntil(
     () => {
-      const block = test.blockAt(new Vec3(18, 63, 0));
+      const block = test.blockAt(holePos);
       return block === 'dirt' || block === 'grass_block';
     },
     {
       timeout: 120000,
-      message: 'Bot should cross gap and fill farm hole',
+      message: 'Bot should reach elevated farm and fill hole',
     }
   );
 
-  // Check that dirt was used for FILLING, not scaffolding
+  // Check that dirt was used for FILLING the hole, not wasted
   const finalDirt = test.botInventoryCount('dirt');
-  const finalSlabs = test.bot.inventory.items()
-    .filter(i => i.name.includes('_slab'))
-    .reduce((sum, i) => sum + i.count, 0);
-
-  console.log(`  🎒 Final: ${finalDirt} dirt, ${finalSlabs} slabs`);
-
-  // Dirt should be used for the hole fill (1 block)
-  // If pathfinder used dirt for bridging, we'd see much more loss
   const dirtUsed = initialDirt - finalDirt;
+
+  console.log(`  🎒 Final dirt: ${finalDirt} (used ${dirtUsed})`);
+
+  // Dirt should only be used for the hole fill (1 block)
+  // Allow up to 3 in case bot filled extra spots
   test.assert(
-    dirtUsed <= 5, // Allow some tolerance for hole filling
-    `Dirt should be preserved for terraforming, not scaffolding (used ${dirtUsed}, expected <=5)`
+    dirtUsed <= 3,
+    `Dirt should be preserved for terraforming (used ${dirtUsed}, expected <=3)`
   );
 
   role.stop(test.bot);
