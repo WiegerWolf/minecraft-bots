@@ -498,9 +498,11 @@ export class ReadUnknownSignGoal extends BaseGoal {
     const hasPendingRequest = ws.getBool('has.pendingTerraformRequest');
     if (hasPendingRequest) return 20; // Very low priority - finish terraform first
 
-    // Base utility of 45 - higher than explore (0) but lower than most work
-    // Increases slightly with more signs to encourage batch reading
-    return 45 + Math.min(unknownCount * 5, 15);
+    // Base utility of 60 - high enough to read signs before wandering off
+    // to establish dirtpits or do low-priority exploration.
+    // Signs are quick to read and provide valuable knowledge, so prioritize them
+    // over tasks that would make the bot walk away and come back later.
+    return 60 + Math.min(unknownCount * 5, 15);
   }
 
   override isValid(ws: WorldState): boolean {
