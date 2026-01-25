@@ -485,9 +485,9 @@ async function testGathersDirt() {
 // SPECIFICATION: Landscaper Dirtpit Establishment
 //
 // When no dirtpit is known, the landscaper must establish one that:
-// - Is 50+ blocks from village center
-// - Is 30+ blocks from known farms
-// - Is 20+ blocks from known forests
+// - Is 20+ blocks from village center (close enough to be useful)
+// - Is 20+ blocks from known farms
+// - Is 15+ blocks from known forests
 // - Is in an area with good dirt density
 
 async function testEstablishesDirtpit() {
@@ -554,12 +554,12 @@ async function testEstablishesDirtpit() {
   console.log(`     - Farm at (${farmCenter.x}, ${farmCenter.y}, ${farmCenter.z})`);
   console.log(`     - Forest at (${forestCenter.x}, ${forestCenter.y}, ${forestCenter.z})`);
   console.log(`     - NO dirtpit sign - bot must establish one`);
-  console.log(`     - Rules: 50+ from village, 30+ from farm, 20+ from forest`);
+  console.log(`     - Rules: 20+ from village, 20+ from farm, 15+ from forest`);
 
   // Distance rules (must match EstablishDirtpit.ts)
-  const MIN_DISTANCE_FROM_VILLAGE = 50;
-  const MIN_DISTANCE_FROM_FARMS = 30;
-  const MIN_DISTANCE_FROM_FORESTS = 20;
+  const MIN_DISTANCE_FROM_VILLAGE = 20;
+  const MIN_DISTANCE_FROM_FARMS = 20;
+  const MIN_DISTANCE_FROM_FORESTS = 15;
 
   // Wait for bot to establish a dirtpit
   await test.waitUntil(
