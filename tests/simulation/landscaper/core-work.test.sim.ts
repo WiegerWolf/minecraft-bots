@@ -61,7 +61,27 @@ async function testFlattensTerrain() {
       { name: 'iron_pickaxe', count: 1 },
       { name: 'dirt', count: 16 },
     ],
+    clearRadius: 30,
   });
+
+  // === BUILD WORLD VIA RCON ===
+  // Foundation and ground layer
+  await test.rcon('fill 4 62 4 20 62 20 minecraft:stone');
+  await test.rcon('fill 4 63 4 20 63 20 minecraft:grass_block');
+
+  // Water source at farm center
+  await test.rcon(`setblock ${farmCenter.x} ${farmCenter.y} ${farmCenter.z} minecraft:water`);
+
+  // Raised terrain that needs flattening (dirt at y=64)
+  await test.rcon('setblock 10 64 10 minecraft:dirt');
+  await test.rcon('setblock 10 64 11 minecraft:dirt');
+  await test.rcon('setblock 10 64 12 minecraft:dirt');
+  await test.rcon('setblock 11 64 10 minecraft:dirt');
+  await test.rcon('setblock 14 64 14 minecraft:dirt');
+  await test.rcon('setblock 14 64 13 minecraft:dirt');
+  await test.rcon('setblock 13 64 14 minecraft:dirt');
+
+  // Signs are placed via MockWorld buildWorldFromMockWorld (uses placeSign with proper text)
 
   test.bot.loadPlugin(pathfinderPlugin);
   await test.wait(2000, 'World loading');
