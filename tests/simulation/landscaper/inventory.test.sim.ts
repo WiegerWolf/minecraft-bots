@@ -145,12 +145,219 @@ async function testDepositsToChest() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TEST: High item count triggers deposit
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// SPECIFICATION: Deposit Threshold
+//
+// When dirt + cobblestone count exceeds threshold, bot should deposit.
+// This test verifies the DepositItemsGoal utility calculation.
+
+async function testHighItemCountTriggersDeposit() {
+  const test = new SimulationTest('High item count triggers deposit');
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+
+  const chestPos = new Vec3(-5, 64, 0);
+  world.setBlock(chestPos, 'chest');
+
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: -5\nY: 64\nZ: 0' });
+
+  await test.setup(world, {
+    botPosition: new Vec3(3, 65, 3),
+    botInventory: [
+      { name: 'iron_shovel', count: 1 },
+      { name: 'iron_pickaxe', count: 1 },
+      { name: 'dirt', count: 64 },       // High dirt count
+      { name: 'cobblestone', count: 64 }, // High cobble count
+    ],
+  });
+
+  test.bot.loadPlugin(pathfinderPlugin);
+
+  // Place chest via RCON
+  await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest`);
+  await test.wait(2000, 'World loading');
+
+  const initialDirt = test.botInventoryCount('dirt');
+  const initialCobble = test.botInventoryCount('cobblestone');
+  console.log(`  🎒 Initial: ${initialDirt} dirt, ${initialCobble} cobblestone`);
+
+  const role = new GOAPLandscaperRole();
+  role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
+
+  // Wait for deposit to happen
+  await test.waitForChestContains(chestPos, 'dirt', 1, {
+    timeout: 60000,
+    message: 'Bot should deposit dirt when inventory is high',
+  });
+
+  const finalDirt = test.botInventoryCount('dirt');
+  const finalCobble = test.botInventoryCount('cobblestone');
+  const chestDirt = await test.getChestItemCount(chestPos, 'dirt');
+  const chestCobble = await test.getChestItemCount(chestPos, 'cobblestone');
+
+  console.log(`  📊 Final: bot=${finalDirt} dirt, ${finalCobble} cobble | chest=${chestDirt} dirt, ${chestCobble} cobble`);
+
+  test.assert(
+    finalDirt < initialDirt || finalCobble < initialCobble,
+    `Bot inventory should decrease after deposit`
+  );
+
+  test.assertGreater(
+    chestDirt + chestCobble,
+    0,
+    `Chest should contain deposited items`
+  );
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEST: Inventory full triggers urgent deposit
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function testFullInventoryTriggersDeposit() {
+  const test = new SimulationTest('Full inventory triggers urgent deposit');
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+
+  const chestPos = new Vec3(-5, 64, 0);
+  world.setBlock(chestPos, 'chest');
+
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: -5\nY: 64\nZ: 0' });
+
+  // Fill most inventory slots to simulate near-full inventory
+  const inventoryItems = [
+    { name: 'iron_shovel', count: 1 },
+    { name: 'iron_pickaxe', count: 1 },
+    { name: 'dirt', count: 64 },
+    { name: 'dirt', count: 64 },
+    { name: 'cobblestone', count: 64 },
+    { name: 'cobblestone', count: 64 },
+    { name: 'oak_planks', count: 64 },
+    { name: 'oak_planks', count: 64 },
+    { name: 'stone', count: 64 },
+    { name: 'stone', count: 64 },
+    { name: 'gravel', count: 64 },
+    { name: 'sand', count: 64 },
+  ];
+
+  await test.setup(world, {
+    botPosition: new Vec3(3, 65, 3),
+    botInventory: inventoryItems,
+  });
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest`);
+  await test.wait(2000, 'World loading');
+
+  const bb_mock = { emptySlots: test.bot.inventory.emptySlotCount() };
+  console.log(`  🎒 Empty slots before: ${bb_mock.emptySlots}`);
+
+  const role = new GOAPLandscaperRole();
+  role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
+
+  // Bot should urgently deposit due to low empty slots
+  await test.waitForChestContains(chestPos, 'dirt', 1, {
+    timeout: 60000,
+    message: 'Bot should urgently deposit when inventory nearly full',
+  });
+
+  const finalEmptySlots = test.bot.inventory.emptySlotCount();
+  console.log(`  🎒 Empty slots after: ${finalEmptySlots}`);
+
+  test.assertGreater(
+    finalEmptySlots,
+    bb_mock.emptySlots,
+    'Bot should have more empty slots after depositing'
+  );
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEST: Preserves tools when depositing
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// SPECIFICATION: Tool Preservation
+//
+// When depositing items, the landscaper should NEVER deposit its tools
+// (shovel, pickaxe). Only dirt, cobblestone, and other materials.
+
+async function testPreservesToolsWhenDepositing() {
+  const test = new SimulationTest('Preserves tools when depositing');
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+
+  const chestPos = new Vec3(-5, 64, 0);
+  world.setBlock(chestPos, 'chest');
+
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: -5\nY: 64\nZ: 0' });
+
+  await test.setup(world, {
+    botPosition: new Vec3(3, 65, 3),
+    botInventory: [
+      { name: 'iron_shovel', count: 1 },
+      { name: 'iron_pickaxe', count: 1 },
+      { name: 'dirt', count: 128 }, // High count to trigger deposit
+      { name: 'cobblestone', count: 64 },
+    ],
+  });
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest`);
+  await test.wait(2000, 'World loading');
+
+  const role = new GOAPLandscaperRole();
+  role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
+
+  // Wait for deposit
+  await test.waitForChestContains(chestPos, 'dirt', 1, {
+    timeout: 60000,
+    message: 'Bot should deposit dirt',
+  });
+
+  // Verify tools are still in inventory
+  const hasShovel = test.bot.inventory.items().some(i => i.name.includes('_shovel'));
+  const hasPickaxe = test.bot.inventory.items().some(i => i.name.includes('_pickaxe'));
+
+  console.log(`  🛠️  After deposit: shovel=${hasShovel}, pickaxe=${hasPickaxe}`);
+
+  test.assert(hasShovel, 'Bot should still have shovel after depositing');
+  test.assert(hasPickaxe, 'Bot should still have pickaxe after depositing');
+
+  // Verify chest does NOT contain tools
+  const chestShovels = await test.getChestItemCount(chestPos, 'iron_shovel');
+  const chestPickaxes = await test.getChestItemCount(chestPos, 'iron_pickaxe');
+
+  test.assert(
+    chestShovels === 0 && chestPickaxes === 0,
+    `Chest should not contain tools (found ${chestShovels} shovels, ${chestPickaxes} pickaxes)`
+  );
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ALL_TESTS: Record<string, () => Promise<any>> = {
   'drops': testCollectsDrops,
   'deposit': testDepositsToChest,
+  'high-count': testHighItemCountTriggersDeposit,
+  'full-inv': testFullInventoryTriggersDeposit,
+  'preserve-tools': testPreservesToolsWhenDepositing,
 };
 
 async function main() {

@@ -635,11 +635,331 @@ async function testEstablishesDirtpit() {
   return test.cleanup();
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TEST: Reads unknown signs discovered while working
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// SPECIFICATION: Curious Bot Behavior
+//
+// When the landscaper spots a sign it hasn't read, it should investigate
+// and read it. This helps discover new farms or useful information.
+//
+// Test setup:
+// - Spawn area has only VILLAGE sign (bot studies this first)
+// - A known farm exists at (30, 63, 30) - bot will travel there to check it
+// - An UNKNOWN sign is placed at (28, 64, 28) - near the farm, NOT at spawn
+// - Bot should discover this sign while visiting the farm and read it
+// - The unknown sign points to a SECOND farm at (50, 63, 50)
+
+async function testReadsUnknownSigns() {
+  const test = new SimulationTest('Reads unknown signs discovered while working');
+
+  const world = new MockWorld();
+
+  // Large ground area
+  world.fill(new Vec3(-20, 63, -20), new Vec3(60, 63, 60), 'grass_block');
+
+  // === SPAWN AREA SIGNS (only VILLAGE + first FARM) ===
+  // These are the signs the bot studies on startup
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 30\nY: 63\nZ: 30' });
+
+  // === FIRST FARM at (30, 63, 30) ===
+  // Bot will travel here after studying signs (CheckKnownFarms goal)
+  const firstFarmCenter = new Vec3(30, 63, 30);
+  world.fill(new Vec3(26, 62, 26), new Vec3(34, 62, 34), 'stone');
+  world.fill(new Vec3(26, 63, 26), new Vec3(34, 63, 34), 'grass_block');
+  world.setBlock(firstFarmCenter, 'water');
+
+  // === UNKNOWN SIGN placed NEAR the first farm (NOT at spawn) ===
+  // This sign is 30+ blocks from spawn, so it won't be found during StudySpawnSigns
+  // But the bot will encounter it when visiting the first farm
+  const unknownSignPos = new Vec3(28, 64, 28);
+  world.setBlock(unknownSignPos, 'oak_sign', { signText: '[FARM]\nX: 50\nY: 63\nZ: 50' });
+
+  // === SECOND FARM at (50, 63, 50) - referenced by the unknown sign ===
+  const secondFarmCenter = new Vec3(50, 63, 50);
+  world.fill(new Vec3(46, 62, 46), new Vec3(54, 62, 54), 'stone');
+  world.fill(new Vec3(46, 63, 46), new Vec3(54, 63, 54), 'grass_block');
+  world.setBlock(secondFarmCenter, 'water');
+
+  await test.setup(world, {
+    botPosition: new Vec3(3, 64, 3),
+    botInventory: [
+      { name: 'iron_shovel', count: 1 },
+      { name: 'iron_pickaxe', count: 1 },
+      { name: 'dirt', count: 32 }, // Has dirt to fill holes
+    ],
+    clearRadius: 70,
+  });
+
+  // Build farms via RCON
+  await test.rcon('fill 26 62 26 34 62 34 minecraft:stone');
+  await test.rcon('fill 26 63 26 34 63 34 minecraft:grass_block');
+  await test.rcon(`setblock ${firstFarmCenter.x} ${firstFarmCenter.y} ${firstFarmCenter.z} minecraft:water`);
+
+  // === CREATE HOLES IN FIRST FARM ===
+  // These holes will make the bot stay at the farm longer to fix them,
+  // giving it time to notice the unknown sign nearby
+  const holePositions = [
+    new Vec3(28, 63, 30), // Near the unknown sign
+    new Vec3(32, 63, 30),
+    new Vec3(30, 63, 28), // Very close to unknown sign
+    new Vec3(30, 63, 32),
+  ];
+  for (const pos of holePositions) {
+    await test.rcon(`setblock ${pos.x} ${pos.y} ${pos.z} minecraft:air`);
+  }
+
+  await test.rcon('fill 46 62 46 54 62 54 minecraft:stone');
+  await test.rcon('fill 46 63 46 54 63 54 minecraft:grass_block');
+  await test.rcon(`setblock ${secondFarmCenter.x} ${secondFarmCenter.y} ${secondFarmCenter.z} minecraft:water`);
+
+  // === PLACE UNKNOWN SIGN VIA RCON ===
+  // This sign is placed NEAR the first farm (not at spawn), so the bot
+  // will discover it when visiting the farm, NOT during StudySpawnSigns
+  const ux = Math.floor(unknownSignPos.x);
+  const uy = Math.floor(unknownSignPos.y);
+  const uz = Math.floor(unknownSignPos.z);
+
+  await test.rcon(`setblock ${ux} ${uy} ${uz} minecraft:oak_sign replace`);
+  await test.rcon(`data modify block ${ux} ${uy} ${uz} front_text.messages[0] set value {text:"[FARM]"}`);
+  await test.rcon(`data modify block ${ux} ${uy} ${uz} front_text.messages[1] set value {text:"X: 50"}`);
+  await test.rcon(`data modify block ${ux} ${uy} ${uz} front_text.messages[2] set value {text:"Y: 63"}`);
+  await test.rcon(`data modify block ${ux} ${uy} ${uz} front_text.messages[3] set value {text:"Z: 50"}`);
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  console.log('  📋 Unknown Sign Discovery Test:');
+  console.log('     - Spawn signs: VILLAGE(0,64,0), FARM(30,63,30)');
+  console.log(`     - Unknown sign at (${unknownSignPos.x}, ${unknownSignPos.y}, ${unknownSignPos.z}) pointing to farm at (50,63,50)`);
+  console.log('     - First farm has 4 holes to fill (keeps bot near the sign)');
+  console.log('     - Bot should: study signs → go fix farm → discover unknown sign → read it');
+
+  const role = new GOAPLandscaperRole();
+  role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
+
+  // Track progress
+  let studiedInitialSigns = false;
+  let visitedFirstFarm = false;
+  let discoveredSecondFarm = false;
+  let initialFarmCount = 0;
+
+  await test.waitUntil(
+    () => {
+      const bb = (role as any).blackboard;
+      if (!bb) return false;
+
+      // Phase 1: Study initial signs
+      if (!studiedInitialSigns && bb.hasStudiedSigns) {
+        studiedInitialSigns = true;
+        initialFarmCount = bb.knownFarms?.length ?? 0;
+        console.log(`  ✓ Phase 1: Studied spawn signs (knows ${initialFarmCount} farm(s))`);
+      }
+
+      // Phase 2: Visit first farm (bot should move toward it)
+      if (studiedInitialSigns && !visitedFirstFarm) {
+        const distToFirstFarm = test.botDistanceTo(firstFarmCenter);
+        if (distToFirstFarm < 15) {
+          visitedFirstFarm = true;
+          console.log(`  ✓ Phase 2: Visited first farm (distance: ${distToFirstFarm.toFixed(1)})`);
+        }
+      }
+
+      // Phase 3: Discover the second farm from the unknown sign
+      // The unknown sign at (28,64,28) points to farm at (50,63,50)
+      if (visitedFirstFarm && !discoveredSecondFarm) {
+        const knownFarms = bb.knownFarms ?? [];
+        // Check if the bot learned about the second farm (50, 63, 50)
+        if (knownFarms.some((f: any) => f.x === 50 && f.z === 50)) {
+          discoveredSecondFarm = true;
+          console.log(`  ✓ Phase 3: Read unknown sign - now knows ${knownFarms.length} farms`);
+        }
+      }
+
+      return discoveredSecondFarm;
+    },
+    {
+      timeout: 120000,
+      interval: 3000,
+      message: 'Bot should discover and read unknown sign near the first farm',
+    }
+  );
+
+  // Final assertions
+  test.assert(studiedInitialSigns, 'Bot should have studied initial spawn signs');
+  test.assert(visitedFirstFarm, 'Bot should have visited the first farm');
+  test.assert(discoveredSecondFarm, 'Bot should have read unknown sign and learned about second farm');
+
+  // Verify bot knows about both farms now
+  const bb = (role as any).blackboard;
+  const finalFarmCount = bb.knownFarms?.length ?? 0;
+  console.log(`  📊 Final state: knows ${finalFarmCount} farms (started with ${initialFarmCount})`);
+
+  test.assertGreater(
+    finalFarmCount,
+    initialFarmCount,
+    `Bot should have learned about more farms (was ${initialFarmCount}, now ${finalFarmCount})`
+  );
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEST: Complete maintenance cycle (detect → gather dirt → fix)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// SPECIFICATION: Complete Maintenance Workflow
+//
+// Tests the full flow: bot detects farm issues, gathers dirt if needed,
+// and fixes all issues in the farm area.
+
+async function testCompleteMaintenanceCycle() {
+  const test = new SimulationTest('Complete maintenance cycle');
+
+  const world = new MockWorld();
+
+  // Locations
+  const villageCenter = new Vec3(0, 64, 0);
+  const farmCenter = new Vec3(15, 63, 15);
+  const dirtpitCenter = new Vec3(60, 63, 60);
+
+  // Ground
+  world.fill(new Vec3(-10, 62, -10), new Vec3(70, 62, 70), 'stone');
+  world.fill(new Vec3(-10, 63, -10), new Vec3(70, 63, 70), 'grass_block');
+
+  // Farm with water source
+  world.setBlock(farmCenter, 'water');
+
+  // Multiple issues in the farm:
+  // 1. Holes (missing surface blocks)
+  const holePositions = [
+    new Vec3(13, 63, 15),
+    new Vec3(17, 63, 15),
+    new Vec3(15, 63, 13),
+    new Vec3(15, 63, 17),
+  ];
+  for (const pos of holePositions) {
+    world.setBlock(pos, 'air');
+  }
+
+  // 2. Raised dirt (obstructions)
+  const obstructionPositions = [
+    new Vec3(14, 64, 14),
+    new Vec3(16, 64, 16),
+  ];
+  for (const pos of obstructionPositions) {
+    world.setBlock(pos, 'dirt');
+  }
+
+  // Signs
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', {
+    signText: `[VILLAGE]\nX: ${villageCenter.x}\nY: ${villageCenter.y}\nZ: ${villageCenter.z}`,
+  });
+  world.setBlock(new Vec3(3, 64, 0), 'oak_sign', {
+    signText: `[FARM]\nX: ${farmCenter.x}\nY: ${farmCenter.y}\nZ: ${farmCenter.z}`,
+  });
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', {
+    signText: `[DIRTPIT]\nX: ${dirtpitCenter.x}\nY: ${dirtpitCenter.y}\nZ: ${dirtpitCenter.z}`,
+  });
+
+  await test.setup(world, {
+    botPosition: new Vec3(0, 64, 2),
+    botInventory: [
+      { name: 'iron_shovel', count: 1 },
+      { name: 'iron_pickaxe', count: 1 },
+      // Start with NO dirt - must gather from dirtpit
+    ],
+    clearRadius: 80,
+  });
+
+  // Build world via RCON
+  await test.rcon('fill -10 62 -10 70 62 70 minecraft:stone');
+  await test.rcon('fill -10 63 -10 70 63 70 minecraft:grass_block');
+  await test.rcon(`setblock ${farmCenter.x} ${farmCenter.y} ${farmCenter.z} minecraft:water`);
+
+  // Create holes
+  for (const pos of holePositions) {
+    await test.rcon(`setblock ${pos.x} ${pos.y} ${pos.z} minecraft:air`);
+  }
+
+  // Create obstructions
+  for (const pos of obstructionPositions) {
+    await test.rcon(`setblock ${pos.x} ${pos.y} ${pos.z} minecraft:dirt`);
+  }
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  const role = new GOAPLandscaperRole();
+  role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
+
+  console.log('  📋 Complete Maintenance Cycle Test:');
+  console.log(`     - Farm at (${farmCenter.x}, ${farmCenter.y}, ${farmCenter.z})`);
+  console.log(`     - ${holePositions.length} holes to fill`);
+  console.log(`     - ${obstructionPositions.length} obstructions to clear`);
+  console.log(`     - Bot starts with NO dirt - must gather first`);
+
+  // Wait for all issues to be resolved
+  await test.waitUntil(
+    () => {
+      // Check holes filled
+      const holesRemaining = holePositions.filter(pos => {
+        const block = test.blockAt(pos);
+        return block === 'air';
+      });
+
+      // Check obstructions cleared
+      const obstructionsRemaining = obstructionPositions.filter(pos => {
+        const block = test.blockAt(pos);
+        return block !== 'air';
+      });
+
+      if (holesRemaining.length > 0 || obstructionsRemaining.length > 0) {
+        console.log(`  [check] ${holesRemaining.length} holes, ${obstructionsRemaining.length} obstructions remaining`);
+      }
+
+      return holesRemaining.length === 0 && obstructionsRemaining.length === 0;
+    },
+    {
+      timeout: 180000,
+      interval: 5000,
+      message: 'Bot should fix all farm issues (holes and obstructions)',
+    }
+  );
+
+  // Final verification
+  for (const pos of holePositions) {
+    const block = test.blockAt(pos);
+    test.assert(
+      block === 'dirt' || block === 'grass_block',
+      `Hole at (${pos.x}, ${pos.z}) should be filled (was ${block})`
+    );
+  }
+
+  for (const pos of obstructionPositions) {
+    const block = test.blockAt(pos);
+    test.assert(
+      block === 'air',
+      `Obstruction at (${pos.x}, ${pos.z}) should be cleared (was ${block})`
+    );
+  }
+
+  console.log('  ✓ All farm issues resolved');
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
 const ALL_TESTS: Record<string, () => Promise<any>> = {
   'flatten': testFlattensTerrain,
   'holes': testFillsHoles,
   'dirt': testGathersDirt,
   'establish-dirtpit': testEstablishesDirtpit,
+  'unknown-signs': testReadsUnknownSigns,
+  'full-cycle': testCompleteMaintenanceCycle,
 };
 
 async function main() {

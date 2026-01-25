@@ -105,12 +105,211 @@ async function testObtainsToolsWithMaterials() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TEST: Waits at spawn when no work available
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// SPECIFICATION: Landscaper Idle Behavior
+//
+// Unlike lumberjacks who explore for forests, landscapers should mostly
+// wait at spawn for terraform requests. The ExploreGoal returns very low
+// utility (5-15) as a fallback - landscaper shouldn't wander off.
+
+async function testWaitsAtSpawnWhenIdle() {
+  const test = new SimulationTest('Waits at spawn when no work');
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-30, 63, -30), new Vec3(30, 63, 30), 'grass_block');
+
+  // Village signs but NO farms, NO terraform requests, NO issues
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: -5\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(-5, 64, 0), 'chest');
+
+  await test.setup(world, {
+    botPosition: new Vec3(3, 64, 3),
+    botInventory: [
+      { name: 'iron_shovel', count: 1 },
+      { name: 'iron_pickaxe', count: 1 },
+      { name: 'dirt', count: 16 },
+    ],
+    clearRadius: 40,
+  });
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  const spawnArea = new Vec3(0, 64, 0);
+  const initialDistFromSpawn = test.botDistanceTo(spawnArea);
+
+  const role = new GOAPLandscaperRole();
+  role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
+
+  // Let bot run for 30 seconds - it should stay near spawn
+  await test.wait(30000, 'Bot idling at spawn');
+
+  const finalDistFromSpawn = test.botDistanceTo(spawnArea);
+
+  console.log(`  📍 Distance from spawn: initial=${initialDistFromSpawn.toFixed(1)}, final=${finalDistFromSpawn.toFixed(1)}`);
+
+  // Bot should NOT have wandered far from spawn
+  // Unlike lumberjack's explore, landscaper should stay put
+  test.assert(
+    finalDistFromSpawn < 25,
+    `Bot should stay near spawn when idle (distance: ${finalDistFromSpawn.toFixed(1)}, expected <25)`
+  );
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEST: Proactively checks known farms after studying signs
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// SPECIFICATION: Proactive Farm Checking
+//
+// After reading signs, if a FARM sign is found, the landscaper should
+// visit that farm to check for terraform needs (CheckKnownFarmsGoal).
+
+async function testChecksKnownFarmsAfterStudy() {
+  const test = new SimulationTest('Checks known farms after studying signs');
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-40, 63, -40), new Vec3(40, 63, 40), 'grass_block');
+
+  // Farm at a distance from spawn
+  const farmCenter = new Vec3(25, 63, 25);
+  world.fill(new Vec3(21, 62, 21), new Vec3(29, 62, 29), 'stone');
+  world.fill(new Vec3(21, 63, 21), new Vec3(29, 63, 29), 'grass_block');
+  world.setBlock(farmCenter, 'water');
+
+  // Signs at spawn
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 25\nY: 63\nZ: 25' });
+
+  await test.setup(world, {
+    botPosition: new Vec3(3, 64, 3),
+    botInventory: [
+      { name: 'iron_shovel', count: 1 },
+      { name: 'iron_pickaxe', count: 1 },
+      { name: 'dirt', count: 16 },
+    ],
+    clearRadius: 50,
+  });
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  const role = new GOAPLandscaperRole();
+  role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
+
+  // Track phases
+  let studiedSigns = false;
+  let visitedFarm = false;
+
+  await test.waitUntil(
+    () => {
+      const bb = (role as any).blackboard;
+      if (!bb) return false;
+
+      if (!studiedSigns && bb.hasStudiedSigns) {
+        studiedSigns = true;
+        console.log('  ✓ Phase 1: Studied signs');
+        console.log(`     Known farms: ${bb.knownFarms?.length ?? 0}`);
+      }
+
+      // Check if bot has moved near the farm
+      const distToFarm = test.botDistanceTo(farmCenter);
+      if (studiedSigns && distToFarm < 10 && !visitedFarm) {
+        visitedFarm = true;
+        console.log(`  ✓ Phase 2: Visited farm (distance: ${distToFarm.toFixed(1)})`);
+      }
+
+      return visitedFarm;
+    },
+    {
+      timeout: 90000,
+      interval: 2000,
+      message: 'Bot should study signs and visit known farm to check it',
+    }
+  );
+
+  test.assert(studiedSigns, 'Bot should have studied signs');
+  test.assert(visitedFarm, 'Bot should have visited the known farm');
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEST: Learns farm locations from signs
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function testLearnsFarmLocationsFromSigns() {
+  const test = new SimulationTest('Learns farm locations from signs');
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
+
+  // Multiple farm signs
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 30\nY: 63\nZ: 30' });
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[FARM]\nX: -30\nY: 63\nZ: 30' });
+  world.setBlock(new Vec3(6, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 30\nY: 63\nZ: -30' });
+
+  await test.setup(world, {
+    botPosition: new Vec3(3, 64, 3),
+    botInventory: [
+      { name: 'iron_shovel', count: 1 },
+      { name: 'iron_pickaxe', count: 1 },
+    ],
+  });
+
+  test.bot.loadPlugin(pathfinderPlugin);
+  await test.wait(2000, 'World loading');
+
+  const role = new GOAPLandscaperRole();
+  role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
+
+  // Wait for bot to study signs
+  await test.waitUntil(
+    () => {
+      const bb = (role as any).blackboard;
+      return bb?.hasStudiedSigns === true;
+    },
+    {
+      timeout: 30000,
+      message: 'Bot should study spawn signs',
+    }
+  );
+
+  const bb = (role as any).blackboard;
+  const knownFarms = bb.knownFarms ?? [];
+
+  console.log(`  📋 Known farms after studying signs: ${knownFarms.length}`);
+  for (const farm of knownFarms) {
+    console.log(`     - (${farm.x}, ${farm.y}, ${farm.z})`);
+  }
+
+  test.assert(
+    knownFarms.length >= 3,
+    `Bot should have learned about 3 farms from signs (found ${knownFarms.length})`
+  );
+
+  role.stop(test.bot);
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ALL_TESTS: Record<string, () => Promise<any>> = {
   'signs': testStudiesSignsFirst,
   'tools': testObtainsToolsWithMaterials,
+  'idle': testWaitsAtSpawnWhenIdle,
+  'check-farms': testChecksKnownFarmsAfterStudy,
+  'learn-farms': testLearnsFarmLocationsFromSigns,
 };
 
 async function main() {
