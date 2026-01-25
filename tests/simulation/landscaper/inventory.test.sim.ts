@@ -76,7 +76,8 @@ async function testDepositsToChest() {
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
 
   // Chest for deposits
-  world.setBlock(new Vec3(-5, 64, 0), 'chest');
+  const chestPos = new Vec3(-5, 64, 0);
+  world.setBlock(chestPos, 'chest');
 
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
   world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: -5\nY: 64\nZ: 0' });
@@ -91,20 +92,52 @@ async function testDepositsToChest() {
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
+
+  // Place the chest via RCON (MockWorld doesn't translate chests to server)
+  await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest`);
+
   await test.wait(2000, 'World loading');
 
-  const initialDirt = test.botInventoryCount('dirt');
+  // Debug: verify signs are placed correctly in the world
+  console.log('  🔍 Verifying sign placement:');
+  await test.debugSign(new Vec3(0, 64, 0), 'VILLAGE');
+  await test.debugSign(new Vec3(2, 64, 0), 'CHEST');
+
+  // Verify chest starts empty
+  const initialChestDirt = await test.getChestItemCount(chestPos, 'dirt');
+  const initialChestCobble = await test.getChestItemCount(chestPos, 'cobblestone');
+  console.log(`  📦 Initial chest: ${initialChestDirt} dirt, ${initialChestCobble} cobblestone`);
+
+  const initialBotDirt = test.botInventoryCount('dirt');
+  const initialBotCobble = test.botInventoryCount('cobblestone');
+  console.log(`  🎒 Initial bot: ${initialBotDirt} dirt, ${initialBotCobble} cobblestone`);
 
   const role = new GOAPLandscaperRole();
   role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
 
-  await test.waitUntil(
-    () => test.botInventoryCount('dirt') < initialDirt ||
-          test.botInventoryCount('cobblestone') < 64,
-    {
-      timeout: 60000,
-      message: 'Bot should deposit items to chest',
-    }
+  // Wait for items to appear in chest (stronger assertion than inventory decrease)
+  const depositSuccess = await test.waitForChestContains(chestPos, 'dirt', 1, {
+    timeout: 60000,
+    message: 'Chest should receive deposited dirt',
+  });
+
+  // Also verify bot inventory decreased
+  const finalBotDirt = test.botInventoryCount('dirt');
+  const finalBotCobble = test.botInventoryCount('cobblestone');
+  const finalChestDirt = await test.getChestItemCount(chestPos, 'dirt');
+  const finalChestCobble = await test.getChestItemCount(chestPos, 'cobblestone');
+
+  console.log(`  📊 Final state: bot=${finalBotDirt} dirt, ${finalBotCobble} cobble | chest=${finalChestDirt} dirt, ${finalChestCobble} cobble`);
+
+  test.assert(
+    finalBotDirt < initialBotDirt || finalBotCobble < initialBotCobble,
+    `Bot inventory should decrease (dirt: ${initialBotDirt}→${finalBotDirt}, cobble: ${initialBotCobble}→${finalBotCobble})`
+  );
+
+  test.assertGreater(
+    finalChestDirt + finalChestCobble,
+    0,
+    `Chest should contain items (has ${finalChestDirt} dirt, ${finalChestCobble} cobble)`
   );
 
   role.stop(test.bot);
