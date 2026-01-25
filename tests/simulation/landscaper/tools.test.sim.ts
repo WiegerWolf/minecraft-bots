@@ -334,7 +334,7 @@ async function testPrioritizesToolsBeforeWork() {
       // Materials for tools but NO tools
       { name: 'oak_planks', count: 8 },
       { name: 'stick', count: 8 },
-      { name: 'dirt', count: 16 }, // Has dirt for filling but needs tools first
+      // No dirt - bot needs tools to dig some first
     ],
   });
 
