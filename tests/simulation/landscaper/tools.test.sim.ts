@@ -255,7 +255,8 @@ async function testChecksChestForToolMaterials() {
 
   test.bot.loadPlugin(pathfinderPlugin);
 
-  // Place crafting table via RCON to ensure it exists in the server
+  // Place chest and crafting table via RCON to ensure they exist in the server
+  await test.rcon('setblock -5 64 0 minecraft:chest');
   await test.rcon('setblock 5 64 0 minecraft:crafting_table');
 
   await test.wait(2000, 'World loading');
