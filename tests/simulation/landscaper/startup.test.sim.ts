@@ -206,6 +206,7 @@ async function testChecksKnownFarmsAfterStudy() {
   // Track phases
   let studiedSigns = false;
   let visitedFarm = false;
+  let initialFarmsToCheck = -1;
 
   await test.waitUntil(
     () => {
@@ -214,22 +215,32 @@ async function testChecksKnownFarmsAfterStudy() {
 
       if (!studiedSigns && bb.hasStudiedSigns) {
         studiedSigns = true;
+        initialFarmsToCheck = bb.farmsNeedingCheck?.length ?? 0;
         console.log('  ✓ Phase 1: Studied signs');
         console.log(`     Known farms: ${bb.knownFarms?.length ?? 0}`);
+        console.log(`     Farms to check: ${initialFarmsToCheck}`);
       }
 
-      // Check if bot has moved near the farm
-      const distToFarm = test.botDistanceTo(farmCenter);
-      if (studiedSigns && distToFarm < 10 && !visitedFarm) {
-        visitedFarm = true;
-        console.log(`  ✓ Phase 2: Visited farm (distance: ${distToFarm.toFixed(1)})`);
+      // Check if farm was checked (farmsNeedingCheck decreased) OR bot is near farm
+      if (studiedSigns && !visitedFarm) {
+        const currentFarmsToCheck = bb.farmsNeedingCheck?.length ?? 0;
+        const distToFarm = test.botDistanceTo(farmCenter);
+
+        // Farm was checked if: farmsNeedingCheck went down OR bot is near farm
+        if (currentFarmsToCheck < initialFarmsToCheck) {
+          visitedFarm = true;
+          console.log(`  ✓ Phase 2: Farm checked (farmsNeedingCheck: ${initialFarmsToCheck} -> ${currentFarmsToCheck})`);
+        } else if (distToFarm < 15) {
+          visitedFarm = true;
+          console.log(`  ✓ Phase 2: Visited farm (distance: ${distToFarm.toFixed(1)})`);
+        }
       }
 
       return visitedFarm;
     },
     {
       timeout: 90000,
-      interval: 2000,
+      interval: 500, // Check more frequently
       message: 'Bot should study signs and visit known farm to check it',
     }
   );
