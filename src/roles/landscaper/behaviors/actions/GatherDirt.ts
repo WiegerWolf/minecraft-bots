@@ -29,9 +29,9 @@ export class GatherDirt implements BehaviorNode {
     private readonly GATHER_BATCH = 16;
 
     // Exclusion zone distances (must match EstablishDirtpit)
-    private readonly MIN_DISTANCE_FROM_VILLAGE = 50;
-    private readonly MIN_DISTANCE_FROM_FARMS = 30;
-    private readonly MIN_DISTANCE_FROM_FORESTS = 20;
+    private readonly MIN_DISTANCE_FROM_VILLAGE = 20;
+    private readonly MIN_DISTANCE_FROM_FARMS = 20;
+    private readonly MIN_DISTANCE_FROM_FORESTS = 15;
 
     // Track last dig position for continuity (stored on blackboard)
     private lastDigPos: Vec3 | null = null;

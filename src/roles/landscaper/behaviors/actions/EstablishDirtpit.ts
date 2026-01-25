@@ -24,12 +24,15 @@ export class EstablishDirtpit implements BehaviorNode {
     name = 'EstablishDirtpit';
 
     // Minimum distance from village center and other resources
-    private readonly MIN_DISTANCE_FROM_VILLAGE = 50;
-    private readonly MIN_DISTANCE_FROM_FARMS = 30;
-    private readonly MIN_DISTANCE_FROM_FORESTS = 20;
+    // Keep the dirtpit relatively close to the village so the landscaper
+    // doesn't wander too far - they should stay useful where the action is
+    private readonly MIN_DISTANCE_FROM_VILLAGE = 20;
+    private readonly MAX_DISTANCE_FROM_VILLAGE = 40; // Don't go too far!
+    private readonly MIN_DISTANCE_FROM_FARMS = 20;
+    private readonly MIN_DISTANCE_FROM_FORESTS = 15;
 
     // Search parameters
-    private readonly SEARCH_RADIUS = 80;
+    private readonly SEARCH_RADIUS = 50;
     private readonly SAMPLE_GRID_SIZE = 10; // Check every 10 blocks
     private readonly MIN_DIRT_DENSITY = 0.4; // At least 40% of sampled blocks should be dirt/grass
 
@@ -92,9 +95,10 @@ export class EstablishDirtpit implements BehaviorNode {
 
                 const samplePos = new Vec3(x, surfaceY, z);
 
-                // Check distance constraints
+                // Check distance constraints - not too close, not too far
                 const distFromVillage = samplePos.distanceTo(villageCenter);
                 if (distFromVillage < this.MIN_DISTANCE_FROM_VILLAGE) continue;
+                if (distFromVillage > this.MAX_DISTANCE_FROM_VILLAGE) continue;
 
                 // Check distance from farms
                 const tooCloseToFarm = bb.knownFarms.some(
@@ -112,8 +116,9 @@ export class EstablishDirtpit implements BehaviorNode {
                 const density = this.calculateDirtDensity(bot, samplePos);
                 if (density < this.MIN_DIRT_DENSITY) continue;
 
-                // Score based on: dirt density and distance from village (prefer further)
-                const score = density * 100 + distFromVillage * 0.5;
+                // Score based on: dirt density (primary) and proximity to village (prefer closer)
+                // Landscaper should stay useful near the action, not wander off
+                const score = density * 100 + (this.MAX_DISTANCE_FROM_VILLAGE - distFromVillage);
 
                 candidates.push({ pos: samplePos, score });
             }

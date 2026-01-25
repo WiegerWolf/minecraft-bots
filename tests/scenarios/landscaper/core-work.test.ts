@@ -150,36 +150,65 @@ describe('Landscaper Core Work', () => {
   });
 
   describe('Dirt Gathering', () => {
-    test('SPEC: Low dirt when idle = gather', () => {
+    test('SPEC: Low dirt with known farms = high priority gather', () => {
+      // When there are known farms, landscaper should actively prepare with dirt
       const ws = landscaperIdleState();
       ws.set('inv.dirt', 16);
       ws.set('has.shovel', true);
+      ws.set('state.knownFarmCount', 2); // Known farms = work to prepare for
 
       const gatherGoal = goals.find((g) => g.name === 'GatherDirt')!;
       expect(gatherGoal.getUtility(ws)).toBeGreaterThan(30);
     });
 
+    test('SPEC: Low dirt without farms = low priority gather', () => {
+      // When truly idle with no farms, only gather minimal dirt
+      const ws = landscaperIdleState();
+      ws.set('inv.dirt', 10);
+      ws.set('has.shovel', true);
+      ws.set('state.knownFarmCount', 0); // No farms = truly idle
+
+      const gatherGoal = goals.find((g) => g.name === 'GatherDirt')!;
+      // Should still want some dirt (target 24 when idle), but low priority
+      expect(gatherGoal.getUtility(ws)).toBeGreaterThan(0);
+      expect(gatherGoal.getUtility(ws)).toBeLessThan(20); // Low priority
+    });
+
     test('SPEC: Less dirt = higher priority', () => {
       const gatherGoal = goals.find((g) => g.name === 'GatherDirt')!;
 
+      // Both with known farms to test relative priority
       const ws1 = landscaperIdleState();
       ws1.set('inv.dirt', 50);
       ws1.set('has.shovel', true);
+      ws1.set('state.knownFarmCount', 1);
 
       const ws2 = landscaperIdleState();
       ws2.set('inv.dirt', 10);
       ws2.set('has.shovel', true);
+      ws2.set('state.knownFarmCount', 1);
 
       expect(gatherGoal.getUtility(ws2)).toBeGreaterThan(gatherGoal.getUtility(ws1));
     });
 
-    test('SPEC: Enough dirt = zero utility', () => {
+    test('SPEC: Enough dirt = zero utility (with farms)', () => {
       const ws = landscaperIdleState();
       ws.set('inv.dirt', 64);
       ws.set('has.shovel', true);
+      ws.set('state.knownFarmCount', 1); // Even with farms, 64 is enough
 
       const gatherGoal = goals.find((g) => g.name === 'GatherDirt')!;
       expect(gatherGoal.getUtility(ws)).toBe(0);
+    });
+
+    test('SPEC: Idle threshold (24) is enough when no farms', () => {
+      const ws = landscaperIdleState();
+      ws.set('inv.dirt', 24);
+      ws.set('has.shovel', true);
+      ws.set('state.knownFarmCount', 0); // No farms
+
+      const gatherGoal = goals.find((g) => g.name === 'GatherDirt')!;
+      expect(gatherGoal.getUtility(ws)).toBe(0); // 24 is enough when idle
     });
 
     test('SPEC: Don\'t gather during terraform', () => {

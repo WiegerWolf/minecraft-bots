@@ -191,28 +191,28 @@ describe('GatherDirt Action Behavior', () => {
     describe('Dirtpit Preference', () => {
         test('SPEC: Should prefer digging near established dirtpit location', async () => {
             // Setup: Bot with an established dirtpit location
-            const dirtpitPos = new Vec3(100, 64, 100); // Far from village
+            // Dirtpit should be 20-40 blocks from village (new closer range)
+            const dirtpitPos = new Vec3(30, 64, 30); // Within new acceptable range (20-40 from village)
             const nearDirtpitBlocks = [
-                new Vec3(101, 64, 100),
-                new Vec3(102, 64, 100),
-            ];
-            const nearVillageBlocks = [
-                new Vec3(1, 64, 0), // Close to village at (0,64,0)
+                new Vec3(31, 64, 30),
+                new Vec3(32, 64, 30),
             ];
 
             const bot = createGatherDirtBot({
-                position: new Vec3(0, 64, 0),
+                position: new Vec3(30, 64, 30), // Bot at dirtpit
                 inventory: [{ name: 'stone_shovel', count: 1 }],
-                dirtBlocks: [...nearDirtpitBlocks, ...nearVillageBlocks],
+                dirtBlocks: nearDirtpitBlocks,
             });
 
             bb.villageCenter = new Vec3(0, 64, 0);
             bb.dirtpit = dirtpitPos;
+            bb.hasDirtpit = true;
 
             // Act: The action should prefer dirtpit area
-            // This test will fail until we implement dirtpit preference
+            // Dirtpit is now closer to village (20-40 blocks) for convenience
             expect(bb.dirtpit).toBeDefined();
-            expect(bb.dirtpit?.distanceTo(bb.villageCenter!)).toBeGreaterThan(50);
+            expect(bb.dirtpit?.distanceTo(bb.villageCenter!)).toBeGreaterThanOrEqual(20);
+            expect(bb.dirtpit?.distanceTo(bb.villageCenter!)).toBeLessThanOrEqual(50);
         });
 
         test('SPEC: Should discover and establish dirtpit when none exists', async () => {
@@ -224,17 +224,20 @@ describe('GatherDirt Action Behavior', () => {
 
     describe('Item Collection After Breaking', () => {
         test('SPEC: Should wait for items to be picked up after breaking dirt', async () => {
-            // Setup: Bot at position very close to dirt block (within auto-pickup range)
-            // This simulates the bot being close after pathfinding
-            const dirtPos = new Vec3(1, 64, 0);
+            // Setup: Bot at dirtpit location (outside village exclusion zone)
+            // Dirt blocks must be near dirtpit, not near village center
+            const dirtpitPos = new Vec3(50, 64, 50); // Outside village exclusion zone (20 blocks)
+            const dirtPos = new Vec3(51, 64, 50); // Near dirtpit
             const dirtBlocks = [dirtPos];
             const bot = createGatherDirtBot({
-                position: new Vec3(0, 64, 0), // 1 block away - within pickup range when item drops
+                position: new Vec3(50, 64, 50), // At dirtpit, close to dirt block
                 inventory: [{ name: 'stone_shovel', count: 1 }],
                 dirtBlocks,
             });
 
             bb.villageCenter = new Vec3(0, 64, 0);
+            bb.dirtpit = dirtpitPos; // REQUIRED: action needs established dirtpit
+            bb.hasDirtpit = true;
             bb.dirtCount = 0;
 
             // Act: Run the gather action
@@ -255,15 +258,18 @@ describe('GatherDirt Action Behavior', () => {
         });
 
         test('SPEC: Should increment dirt count after collecting dropped dirt', async () => {
-            // This test verifies that inventory is updated after collection
-            const dirtBlocks = [new Vec3(2, 64, 0)];
+            // Setup: Dirt blocks near established dirtpit (outside exclusion zone)
+            const dirtpitPos = new Vec3(50, 64, 50);
+            const dirtBlocks = [new Vec3(52, 64, 50)];
             const bot = createGatherDirtBot({
-                position: new Vec3(0, 64, 0),
+                position: new Vec3(50, 64, 50), // At dirtpit
                 inventory: [{ name: 'stone_shovel', count: 1 }],
                 dirtBlocks,
             });
 
             bb.villageCenter = new Vec3(0, 64, 0);
+            bb.dirtpit = dirtpitPos; // REQUIRED: action needs established dirtpit
+            bb.hasDirtpit = true;
             const initialDirt = bb.dirtCount;
 
             // Act: Run the gather action

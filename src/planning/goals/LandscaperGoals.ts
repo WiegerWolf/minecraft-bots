@@ -393,9 +393,20 @@ export class EstablishDirtpitGoal extends BaseGoal {
     const hasShovel = ws.getBool('has.shovel');
     if (!hasShovel) return 0;
 
-    // Medium priority - do this before gathering random dirt
-    // Higher than GatherDirt (30-50) to ensure we establish first
-    return 55;
+    // Check if there's actual demand for dirt (known farms = potential work)
+    const knownFarmCount = ws.getNumber('state.knownFarmCount');
+    const hasKnownFarms = knownFarmCount > 0;
+
+    // When there are known farms or potential work, establishing a dirtpit
+    // is moderately important - be prepared for terraform requests
+    if (hasKnownFarms) {
+      return 45; // Higher than GatherDirt but below active work
+    }
+
+    // When truly idle with no farms known, establishing a dirtpit is
+    // very low priority - just slightly above Explore as a "nice to have"
+    // Don't send the bot off on a journey when there's nothing to prepare for
+    return 12;
   }
 
   override isValid(ws: WorldState): boolean {
@@ -418,9 +429,11 @@ export class GatherDirtGoal extends BaseGoal {
   name = 'GatherDirt';
   description = 'Gather dirt to prepare for terraforming';
 
+  // Condition uses lower threshold (24) - utility function handles higher targets
+  // when there are known farms. This prevents over-planning.
   conditions = [
-    numericGoalCondition('inv.dirt', v => v >= 64, 'has enough dirt', {
-      value: 64,
+    numericGoalCondition('inv.dirt', v => v >= 24, 'has enough dirt', {
+      value: 24,
       comparison: 'gte',
       estimatedDelta: 16, // GatherDirt gives ~16 dirt per action
     }),
@@ -428,9 +441,6 @@ export class GatherDirtGoal extends BaseGoal {
 
   getUtility(ws: WorldState): number {
     const dirtCount = ws.getNumber('inv.dirt');
-
-    // Already have enough dirt
-    if (dirtCount >= 64) return 0;
 
     // Don't gather if we have pending terraform work
     const hasPendingRequest = ws.getBool('has.pendingTerraformRequest');
@@ -452,17 +462,39 @@ export class GatherDirtGoal extends BaseGoal {
     const inventoryFull = ws.getBool('state.inventoryFull');
     if (inventoryFull) return 0;
 
-    // Higher priority when we have less dirt
-    // Range: 30-50 (below farming checking but above idle)
-    const urgency = Math.max(0, (64 - dirtCount) / 64);
-    return 30 + urgency * 20;
+    // Check if there's actual demand for dirt
+    const knownFarmCount = ws.getNumber('state.knownFarmCount');
+    const hasKnownFarms = knownFarmCount > 0;
+
+    // When there are known farms, keep a full stock of dirt (64)
+    // Be prepared for terraform requests that might come
+    if (hasKnownFarms) {
+      if (dirtCount >= 64) return 0;
+      const urgency = Math.max(0, (64 - dirtCount) / 64);
+      return 30 + urgency * 15; // Range: 30-45
+    }
+
+    // When truly idle (no farms known), just maintain a small reserve (16-24)
+    // No point hoarding dirt if there's nothing to terraform
+    // This prevents the infinite gather-deposit loop
+    const IDLE_DIRT_TARGET = 24;
+    if (dirtCount >= IDLE_DIRT_TARGET) return 0;
+
+    // Very low priority - just slightly above Explore
+    // Having some dirt is nice but not worth wandering off for
+    const urgency = Math.max(0, (IDLE_DIRT_TARGET - dirtCount) / IDLE_DIRT_TARGET);
+    return 8 + urgency * 4; // Range: 8-12
   }
 
   override isValid(ws: WorldState): boolean {
     const dirtCount = ws.getNumber('inv.dirt');
     const hasShovel = ws.getBool('has.shovel');
     const hasDirtpit = ws.getBool('has.dirtpit');
-    return dirtCount < 64 && hasShovel && hasDirtpit;
+    const knownFarmCount = ws.getNumber('state.knownFarmCount');
+
+    // Target depends on whether there's actual work ahead
+    const target = knownFarmCount > 0 ? 64 : 24;
+    return dirtCount < target && hasShovel && hasDirtpit;
   }
 }
 

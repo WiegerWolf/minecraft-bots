@@ -62,13 +62,29 @@ describe('Landscaper Idle Behavior', () => {
 
   describe('Proactive Tasks When Idle', () => {
     test('SPEC: Can gather dirt proactively when low', () => {
+      // With known farms, landscaper should actively gather dirt to prepare
       const ws = landscaperIdleState();
       ws.set('inv.dirt', 10);
       ws.set('has.shovel', true);
       ws.set('terraform.active', false);
+      ws.set('state.knownFarmCount', 2); // Known farms = work to prepare for
 
       const gatherGoal = goals.find((g) => g.name === 'GatherDirt')!;
       expect(gatherGoal.getUtility(ws)).toBeGreaterThan(30);
+    });
+
+    test('SPEC: Without farms, only maintain minimal dirt reserve', () => {
+      // When truly idle with no farms, only want enough dirt to stay ready
+      const ws = landscaperIdleState();
+      ws.set('inv.dirt', 10);
+      ws.set('has.shovel', true);
+      ws.set('terraform.active', false);
+      ws.set('state.knownFarmCount', 0); // No farms
+
+      const gatherGoal = goals.find((g) => g.name === 'GatherDirt')!;
+      // Should still want some dirt, but low priority
+      expect(gatherGoal.getUtility(ws)).toBeGreaterThan(0);
+      expect(gatherGoal.getUtility(ws)).toBeLessThan(15);
     });
 
     test('SPEC: Can craft slabs proactively when low', () => {
