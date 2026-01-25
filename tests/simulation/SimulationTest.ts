@@ -507,17 +507,38 @@ export class SimulationTest {
       // Get the chest's Items NBT data
       const result = await this.rcon(`data get block ${x} ${y} ${z} Items`);
 
-      // Parse the result - it looks like:
-      // "0, 64, 0 has the following block data: [{Slot: 0b, id: "minecraft:oak_log", count: 32}]"
-      // or "... block data: []" if empty
+      // Parse the result - formats vary by Minecraft version:
+      // Old: "{...block data: [{Slot: 0b, id: "minecraft:oak_log", count: 32}]"
+      // New: "{...block data: [{Slot: 0b, count: 32, id: "minecraft:oak_log"}]"
+      // Newer: May use Count: (capitalized) or different ordering
 
-      // Count occurrences of the item using non-greedy match
-      // The .*? ensures we don't consume the count: part
-      const itemPattern = new RegExp(`id:\\s*"minecraft:${itemName}".*?count:\\s*(\\d+)`, 'g');
+      // Try multiple patterns to handle different NBT formats
       let total = 0;
+
+      // Pattern 1: id before count (old format)
+      const pattern1 = new RegExp(`id:\\s*"minecraft:${itemName}"[^}]*?count:\\s*(\\d+)`, 'gi');
       let match;
-      while ((match = itemPattern.exec(result)) !== null) {
+      while ((match = pattern1.exec(result)) !== null) {
         total += parseInt(match[1]!, 10);
+      }
+
+      // Pattern 2: count before id (newer format)
+      if (total === 0) {
+        const pattern2 = new RegExp(`count:\\s*(\\d+)[^}]*?id:\\s*"minecraft:${itemName}"`, 'gi');
+        while ((match = pattern2.exec(result)) !== null) {
+          total += parseInt(match[1]!, 10);
+        }
+      }
+
+      // Debug: always log RCON response for chest queries if no items found
+      if (total === 0) {
+        const hasItem = result.includes(itemName);
+        const isEmpty = result.includes('block data: []') || result.includes('Items: []');
+        if (hasItem) {
+          console.log(`  🔍 RCON found '${itemName}' in response but regex didn't match. Response: ${result.slice(0, 500)}`);
+        } else if (!isEmpty) {
+          console.log(`  📦 RCON chest response (looking for ${itemName}): ${result.slice(0, 300)}`);
+        }
       }
 
       return total;

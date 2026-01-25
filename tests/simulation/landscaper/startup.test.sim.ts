@@ -48,11 +48,32 @@ async function testStudiesSignsFirst() {
   const role = new GOAPLandscaperRole();
   role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
 
-  // Let the bot read signs
-  await test.wait(15000, 'Bot studying signs');
+  // Wait for the bot to study signs (check blackboard)
+  await test.waitUntil(
+    () => {
+      const bb = (role as any).blackboard;
+      return bb?.hasStudiedSigns === true;
+    },
+    {
+      timeout: 30000,
+      message: 'Bot should study spawn signs',
+    }
+  );
 
-  // Bot should have moved near signs to study them
-  test.assertNear(new Vec3(0, 64, 0), 10, 'Bot should have moved near signs to study them');
+  // Verify the bot learned from the signs
+  const bb = (role as any).blackboard;
+  const knownFarms = bb.knownFarms ?? [];
+  const villageCenter = bb.villageCenter;
+  const knownChests = bb.knownChests ?? [];
+
+  console.log(`  📋 After studying signs:`);
+  console.log(`     - Village center: ${villageCenter ? `(${villageCenter.x}, ${villageCenter.y}, ${villageCenter.z})` : 'none'}`);
+  console.log(`     - Known farms: ${knownFarms.length}`);
+  console.log(`     - Known chests: ${knownChests.length}`);
+
+  test.assert(bb.hasStudiedSigns, 'Bot should have studied signs');
+  test.assert(villageCenter !== null, 'Bot should have learned village center from VILLAGE sign');
+  test.assert(knownFarms.length >= 1, 'Bot should have learned about farm from FARM sign');
 
   role.stop(test.bot);
   return test.cleanup();

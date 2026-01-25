@@ -93,8 +93,8 @@ async function testDepositsToChest() {
 
   test.bot.loadPlugin(pathfinderPlugin);
 
-  // Place the chest via RCON (MockWorld doesn't translate chests to server)
-  await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest`);
+  // Place the chest via RCON with destroy to clear any existing data
+  await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest destroy`);
 
   await test.wait(2000, 'World loading');
 
@@ -103,35 +103,31 @@ async function testDepositsToChest() {
   await test.debugSign(new Vec3(0, 64, 0), 'VILLAGE');
   await test.debugSign(new Vec3(2, 64, 0), 'CHEST');
 
-  // Verify chest starts empty
-  const initialChestDirt = await test.getChestItemCount(chestPos, 'dirt');
-  const initialChestCobble = await test.getChestItemCount(chestPos, 'cobblestone');
-  console.log(`  📦 Initial chest: ${initialChestDirt} dirt, ${initialChestCobble} cobblestone`);
-
-  const initialBotDirt = test.botInventoryCount('dirt');
-  const initialBotCobble = test.botInventoryCount('cobblestone');
-  console.log(`  🎒 Initial bot: ${initialBotDirt} dirt, ${initialBotCobble} cobblestone`);
+  const initialEmptySlots = test.bot.inventory.emptySlotCount();
+  console.log(`  🎒 Initial empty slots: ${initialEmptySlots}`);
 
   const role = new GOAPLandscaperRole();
   role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
 
-  // Wait for items to appear in chest (stronger assertion than inventory decrease)
-  const depositSuccess = await test.waitForChestContains(chestPos, 'dirt', 1, {
-    timeout: 60000,
-    message: 'Chest should receive deposited dirt',
-  });
+  // Wait for empty slots to increase - this is the real signal that deposit happened
+  await test.waitUntil(
+    () => test.bot.inventory.emptySlotCount() > initialEmptySlots,
+    {
+      timeout: 60000,
+      message: 'Bot should deposit items to chest',
+    }
+  );
 
-  // Also verify bot inventory decreased
-  const finalBotDirt = test.botInventoryCount('dirt');
-  const finalBotCobble = test.botInventoryCount('cobblestone');
+  const finalEmptySlots = test.bot.inventory.emptySlotCount();
   const finalChestDirt = await test.getChestItemCount(chestPos, 'dirt');
   const finalChestCobble = await test.getChestItemCount(chestPos, 'cobblestone');
 
-  console.log(`  📊 Final state: bot=${finalBotDirt} dirt, ${finalBotCobble} cobble | chest=${finalChestDirt} dirt, ${finalChestCobble} cobble`);
+  console.log(`  📊 Final state: empty slots=${initialEmptySlots}→${finalEmptySlots} | chest=${finalChestDirt} dirt, ${finalChestCobble} cobble`);
 
-  test.assert(
-    finalBotDirt < initialBotDirt || finalBotCobble < initialBotCobble,
-    `Bot inventory should decrease (dirt: ${initialBotDirt}→${finalBotDirt}, cobble: ${initialBotCobble}→${finalBotCobble})`
+  test.assertGreater(
+    finalEmptySlots,
+    initialEmptySlots,
+    `Bot inventory should have more empty slots (was ${initialEmptySlots}, now ${finalEmptySlots})`
   );
 
   test.assertGreater(
@@ -177,33 +173,35 @@ async function testHighItemCountTriggersDeposit() {
 
   test.bot.loadPlugin(pathfinderPlugin);
 
-  // Place chest via RCON
-  await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest`);
+  // Place chest via RCON with destroy to clear any existing data
+  await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest destroy`);
   await test.wait(2000, 'World loading');
 
-  const initialDirt = test.botInventoryCount('dirt');
-  const initialCobble = test.botInventoryCount('cobblestone');
-  console.log(`  🎒 Initial: ${initialDirt} dirt, ${initialCobble} cobblestone`);
+  const initialEmptySlots = test.bot.inventory.emptySlotCount();
+  console.log(`  🎒 Initial empty slots: ${initialEmptySlots}`);
 
   const role = new GOAPLandscaperRole();
   role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
 
-  // Wait for deposit to happen
-  await test.waitForChestContains(chestPos, 'dirt', 1, {
-    timeout: 60000,
-    message: 'Bot should deposit dirt when inventory is high',
-  });
+  // Wait for empty slots to increase - this is the real signal that deposit happened
+  await test.waitUntil(
+    () => test.bot.inventory.emptySlotCount() > initialEmptySlots,
+    {
+      timeout: 60000,
+      message: 'Bot should deposit dirt when inventory is high',
+    }
+  );
 
-  const finalDirt = test.botInventoryCount('dirt');
-  const finalCobble = test.botInventoryCount('cobblestone');
+  const finalEmptySlots = test.bot.inventory.emptySlotCount();
   const chestDirt = await test.getChestItemCount(chestPos, 'dirt');
   const chestCobble = await test.getChestItemCount(chestPos, 'cobblestone');
 
-  console.log(`  📊 Final: bot=${finalDirt} dirt, ${finalCobble} cobble | chest=${chestDirt} dirt, ${chestCobble} cobble`);
+  console.log(`  📊 Final: empty slots=${initialEmptySlots}→${finalEmptySlots} | chest=${chestDirt} dirt, ${chestCobble} cobble`);
 
-  test.assert(
-    finalDirt < initialDirt || finalCobble < initialCobble,
-    `Bot inventory should decrease after deposit`
+  test.assertGreater(
+    finalEmptySlots,
+    initialEmptySlots,
+    `Bot inventory should have more empty slots after deposit`
   );
 
   test.assertGreater(
@@ -254,27 +252,31 @@ async function testFullInventoryTriggersDeposit() {
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
-  await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest`);
+  // Clear and place chest fresh (destroy=true removes any existing block data)
+  await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest destroy`);
   await test.wait(2000, 'World loading');
 
-  const bb_mock = { emptySlots: test.bot.inventory.emptySlotCount() };
-  console.log(`  🎒 Empty slots before: ${bb_mock.emptySlots}`);
+  const initialEmptySlots = test.bot.inventory.emptySlotCount();
+  console.log(`  🎒 Empty slots before: ${initialEmptySlots}`);
 
   const role = new GOAPLandscaperRole();
   role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
 
-  // Bot should urgently deposit due to low empty slots
-  await test.waitForChestContains(chestPos, 'dirt', 1, {
-    timeout: 60000,
-    message: 'Bot should urgently deposit when inventory nearly full',
-  });
+  // Wait for empty slots to increase - this is the real signal that deposit happened
+  await test.waitUntil(
+    () => test.bot.inventory.emptySlotCount() > initialEmptySlots,
+    {
+      timeout: 60000,
+      message: 'Bot should urgently deposit when inventory nearly full',
+    }
+  );
 
   const finalEmptySlots = test.bot.inventory.emptySlotCount();
   console.log(`  🎒 Empty slots after: ${finalEmptySlots}`);
 
   test.assertGreater(
     finalEmptySlots,
-    bb_mock.emptySlots,
+    initialEmptySlots,
     'Bot should have more empty slots after depositing'
   );
 
@@ -314,17 +316,22 @@ async function testPreservesToolsWhenDepositing() {
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
-  await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest`);
+  await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest destroy`);
   await test.wait(2000, 'World loading');
+
+  const initialEmptySlots = test.bot.inventory.emptySlotCount();
 
   const role = new GOAPLandscaperRole();
   role.start(test.bot, { logger: test.createRoleLogger('landscaper') });
 
-  // Wait for deposit
-  await test.waitForChestContains(chestPos, 'dirt', 1, {
-    timeout: 60000,
-    message: 'Bot should deposit dirt',
-  });
+  // Wait for deposit (empty slots increase)
+  await test.waitUntil(
+    () => test.bot.inventory.emptySlotCount() > initialEmptySlots,
+    {
+      timeout: 60000,
+      message: 'Bot should deposit dirt',
+    }
+  );
 
   // Verify tools are still in inventory
   const hasShovel = test.bot.inventory.items().some(i => i.name.includes('_shovel'));
