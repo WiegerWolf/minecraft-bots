@@ -6,6 +6,7 @@ import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { LOG_NAMES } from '../../../shared/TreeHarvest';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
+import { shouldPreemptForTrade } from '../../../../shared/TradePreemption';
 
 const { GoalNear } = goals;
 
@@ -88,6 +89,12 @@ export class PatrolForest implements BehaviorNode {
 
         // Try up to 3 candidates before giving up
         for (let i = 0; i < Math.min(3, viableCandidates.length); i++) {
+            // Check for preemption before each patrol attempt
+            if (shouldPreemptForTrade(bb, 'lumberjack')) {
+                bb.log?.debug('PatrolForest preempted for trade');
+                return 'failure';
+            }
+
             const target = viableCandidates[i]!;
             bb.log?.debug(`[Lumberjack] Patrolling to ${target.pos.floored()} (score: ${target.score}, dist: ${target.dist.toFixed(0)})`);
 
@@ -124,6 +131,13 @@ export class PatrolForest implements BehaviorNode {
 
                 if (result.success) {
                     recordExploredPosition(bb, bot.entity.position);
+
+                    // Check for preemption after pathfinding completes
+                    if (shouldPreemptForTrade(bb, 'lumberjack')) {
+                        bb.log?.debug('PatrolForest preempted for trade after pathfinding');
+                        return 'failure';
+                    }
+
                     return 'success';
                 } else {
                     // Path failed, record as explored and try next candidate

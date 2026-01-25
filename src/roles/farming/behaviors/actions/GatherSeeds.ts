@@ -4,6 +4,7 @@ import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
+import { shouldPreemptForTrade } from '../../../../shared/TradePreemption';
 
 const { GoalNear } = goals;
 
@@ -130,11 +131,22 @@ export class GatherSeeds implements BehaviorNode {
                     this.unreachableGrass.set(this.posKey(bestClusterCenter.position), now + UNREACHABLE_GRASS_COOLDOWN);
                     return 'failure';
                 }
+
+                // Check for preemption after pathfinding
+                if (shouldPreemptForTrade(bb, 'farmer')) {
+                    bb.log?.debug('GatherSeeds preempted for trade after pathfinding');
+                    return 'failure';
+                }
             }
 
             // Now break all grass blocks in the cluster that are within reach
             let brokenCount = 0;
             for (const grass of bestCluster) {
+                // Check for preemption - higher priority goal needs attention
+                if (shouldPreemptForTrade(bb, 'farmer')) {
+                    bb.log?.debug({ brokenCount }, 'GatherSeeds preempted for trade');
+                    return brokenCount > 0 ? 'success' : 'failure';
+                }
                 const grassDist = bot.entity.position.distanceTo(grass.position);
                 if (grassDist > 4.5) continue; // Too far to reach without moving
 

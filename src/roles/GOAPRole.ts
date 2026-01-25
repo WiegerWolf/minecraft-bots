@@ -645,12 +645,22 @@ export abstract class GOAPRole implements Role {
         'Goal preemption: higher priority goal interrupting'
       );
 
+      // Set preemption flag on blackboard so running actions can check and abort
+      if (this.blackboard && 'preemptionRequested' in this.blackboard) {
+        this.blackboard.preemptionRequested = true;
+      }
+
       // Cancel current execution and clear goal so planNextGoal picks the new one
       this.executor.cancel(ReplanReason.WORLD_CHANGED);
       this.arbiter.clearCurrentGoal();
 
       // Immediately plan for the new goal
       await this.planNextGoal();
+
+      // Clear preemption flag after handling
+      if (this.blackboard && 'preemptionRequested' in this.blackboard) {
+        this.blackboard.preemptionRequested = false;
+      }
     }
   }
 

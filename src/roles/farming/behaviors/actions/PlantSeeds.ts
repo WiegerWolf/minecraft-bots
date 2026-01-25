@@ -4,6 +4,7 @@ import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
+import { shouldPreemptForTrade } from '../../../../shared/TradePreemption';
 
 const { GoalNear } = goals;
 
@@ -30,6 +31,12 @@ export class PlantSeeds implements BehaviorNode {
         await bot.equip(seedItem, 'hand');
 
         for (const farmland of farmlandToPlant) {
+            // Check for preemption - higher priority goal needs attention
+            if (shouldPreemptForTrade(bb, 'farmer')) {
+                bb.log?.debug({ plantedAny }, 'PlantSeeds preempted for trade');
+                return plantedAny ? 'success' : 'failure';
+            }
+
             try {
                 // Get within 3 blocks (can place from this distance)
                 const dist = bot.entity.position.distanceTo(farmland.position);
@@ -41,6 +48,12 @@ export class PlantSeeds implements BehaviorNode {
                     );
                     if (!result.success) continue;
                     bot.pathfinder.stop();
+
+                    // Check for preemption after pathfinding
+                    if (shouldPreemptForTrade(bb, 'farmer')) {
+                        bb.log?.debug({ plantedAny }, 'PlantSeeds preempted for trade after pathfinding');
+                        return plantedAny ? 'success' : 'failure';
+                    }
                 }
 
                 // Verify farmland still has air above

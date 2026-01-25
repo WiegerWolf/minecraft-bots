@@ -111,6 +111,11 @@ export interface LumberjackBlackboard {
     activeTrade: ActiveTrade | null;            // Current trade state (if any)
     lastOfferTime: number;                      // When we last broadcast an offer (cooldown)
     consecutiveNoTakers: number;                // Consecutive "no takers" for trade backoff
+
+    // ═══════════════════════════════════════════════════════════════
+    // ACTION PREEMPTION (allows high-priority goals to interrupt)
+    // ═══════════════════════════════════════════════════════════════
+    preemptionRequested: boolean;               // Set by GOAP when higher-priority goal detected
 }
 
 export function createLumberjackBlackboard(): LumberjackBlackboard {
@@ -188,6 +193,9 @@ export function createLumberjackBlackboard(): LumberjackBlackboard {
         activeTrade: null,
         lastOfferTime: 0,
         consecutiveNoTakers: 0,
+
+        // Preemption
+        preemptionRequested: false,
     };
 }
 

@@ -129,6 +129,11 @@ export interface FarmingBlackboard {
     // ═══════════════════════════════════════════════════════════════
     lumberjackPosition: Vec3 | null;            // Last known position of a lumberjack
     lumberjackName: string | null;              // Name of the lumberjack being followed
+
+    // ═══════════════════════════════════════════════════════════════
+    // ACTION PREEMPTION (allows high-priority goals to interrupt)
+    // ═══════════════════════════════════════════════════════════════
+    preemptionRequested: boolean;               // Set by GOAP when higher-priority goal detected
 }
 
 export function createBlackboard(): FarmingBlackboard {
@@ -213,6 +218,9 @@ export function createBlackboard(): FarmingBlackboard {
         // Lumberjack tracking
         lumberjackPosition: null,
         lumberjackName: null,
+
+        // Action preemption
+        preemptionRequested: false,
     };
 }
 

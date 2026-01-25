@@ -4,6 +4,7 @@ import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
+import { shouldPreemptForTrade } from '../../../../shared/TradePreemption';
 
 const { GoalNear } = goals;
 
@@ -49,11 +50,23 @@ export class HarvestCrops implements BehaviorNode {
                 return 'failure';
             }
             bot.pathfinder.stop();
+
+            // Check for preemption after pathfinding
+            if (shouldPreemptForTrade(bb, 'farmer')) {
+                bb.log?.debug('HarvestCrops preempted for trade after pathfinding');
+                return 'failure';
+            }
         }
 
         // Harvest all reachable crops in the cluster
         let harvestedCount = 0;
         for (const crop of bestCluster) {
+            // Check for preemption - higher priority goal needs attention
+            if (shouldPreemptForTrade(bb, 'farmer')) {
+                bb.log?.debug({ harvestedCount }, 'HarvestCrops preempted for trade');
+                return harvestedCount > 0 ? 'success' : 'failure';
+            }
+
             const dist = bot.entity.position.distanceTo(crop.position);
             if (dist > 4.5) continue; // Too far to reach
 

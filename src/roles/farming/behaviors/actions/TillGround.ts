@@ -4,6 +4,7 @@ import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
+import { shouldPreemptForTrade } from '../../../../shared/TradePreemption';
 
 const { GoalNear } = goals;
 
@@ -112,11 +113,23 @@ export class TillGround implements BehaviorNode {
                 return 'failure';
             }
             bot.pathfinder.stop();
+
+            // Check for preemption after pathfinding (which can take a while)
+            if (shouldPreemptForTrade(bb, 'farmer')) {
+                bb.log?.debug('TillGround preempted for trade after pathfinding');
+                return 'failure';
+            }
         }
 
         // Till all reachable blocks in the cluster
         let tilledCount = 0;
         for (const targetPos of bestCluster) {
+            // Check for preemption - higher priority goal needs attention
+            if (shouldPreemptForTrade(bb, 'farmer')) {
+                bb.log?.debug({ tilledCount }, 'TillGround preempted for trade');
+                return tilledCount > 0 ? 'success' : 'failure';
+            }
+
             const dist = bot.entity.position.distanceTo(targetPos);
             if (dist > 4.5) continue; // Too far to reach
 

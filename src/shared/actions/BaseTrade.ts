@@ -12,7 +12,7 @@ const { GoalNear } = goals;
 export type BehaviorStatus = 'success' | 'failure' | 'running';
 
 // Trade timing constants
-const OFFER_COLLECTION_WINDOW = 5000;      // 5 seconds to collect WANT responses
+const OFFER_COLLECTION_WINDOW = 10000;     // 10 seconds to collect WANT responses (GOAP tick ~3s)
 const OFFER_COOLDOWN = 30000;               // 30 seconds between offers
 const TRADE_TIMEOUT = 120000;               // 2 minutes max for entire trade
 const MIN_TRADEABLE_ITEMS = 4;              // Minimum items to trigger an offer

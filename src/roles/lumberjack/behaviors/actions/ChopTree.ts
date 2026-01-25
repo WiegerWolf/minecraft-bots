@@ -6,6 +6,7 @@ import {
     startTreeHarvest,
     continueTreeHarvest,
 } from '../../../shared/TreeHarvest';
+import { shouldPreemptForTrade } from '../../../../shared/TradePreemption';
 
 /**
  * ChopTree - Find and chop trees, uses shared TreeHarvest logic
@@ -69,6 +70,13 @@ export class ChopTree implements BehaviorNode {
 
     private async continueHarvest(bot: Bot, bb: LumberjackBlackboard): Promise<BehaviorStatus> {
         if (!bb.currentTreeHarvest) return 'failure';
+
+        // Check for preemption before starting new operations
+        // Note: We still complete the current operation if already busy
+        if (!bb.currentTreeHarvest.busy && shouldPreemptForTrade(bb, 'lumberjack')) {
+            bb.log?.debug('ChopTree preempted for trade');
+            return 'failure';
+        }
 
         const result = await continueTreeHarvest(bot, bb.currentTreeHarvest, this.plantedSaplingPositions);
 
