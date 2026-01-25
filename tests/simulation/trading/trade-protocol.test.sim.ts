@@ -113,6 +113,7 @@ class TradingTest {
       username: name,
       version: '1.21.6',
       auth: 'offline',
+      checkTimeoutInterval: 120000, // Increase keepalive timeout to 120s for multi-bot tests
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -404,11 +405,11 @@ async function testLumberjackOffersSeedsToFarmer() {
     }
   );
 
-  // Wait for trade acceptance
+  // Wait for trade acceptance (must be longer than OFFER_COLLECTION_WINDOW of 15s)
   await test.waitUntil(
     () => test.hasChatMessage('[TRADE_ACCEPT]'),
     {
-      timeout: 15000,
+      timeout: 30000,
       message: 'Lumberjack should send [TRADE_ACCEPT]',
     }
   );

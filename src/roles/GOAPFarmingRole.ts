@@ -6,6 +6,7 @@ import { createBlackboard, updateBlackboard, type FarmingBlackboard } from './fa
 import { createFarmingActions } from '../planning/actions/FarmingActions';
 import { createFarmingGoals } from '../planning/goals/FarmingGoals';
 import { VillageChat } from '../shared/VillageChat';
+import { createChildLogger } from '../shared/logger';
 import type { GOAPAction } from '../planning/Action';
 import type { Goal } from '../planning/Goal';
 import { ReplanReason } from '../planning/PlanExecutor';
@@ -68,9 +69,9 @@ export class GOAPFarmingRole extends GOAPRole {
     return createBlackboard();
   }
 
-  protected updateBlackboard(): void {
+  protected async updateBlackboard(): Promise<void> {
     if (this.bot && this.blackboard) {
-      updateBlackboard(this.bot, this.blackboard);
+      await updateBlackboard(this.bot, this.blackboard);
     }
   }
 
@@ -97,7 +98,8 @@ export class GOAPFarmingRole extends GOAPRole {
 
     // Initialize village chat if blackboard was created
     if (this.blackboard) {
-      const villageChat = new VillageChat(bot);
+      const villageChatLogger = this.logger ? createChildLogger(this.logger, 'VillageChat') : undefined;
+      const villageChat = new VillageChat(bot, villageChatLogger);
       this.blackboard.villageChat = villageChat;
 
       // Store spawn position from options
@@ -164,6 +166,11 @@ export class GOAPFarmingRole extends GOAPRole {
     if (this.entitySpawnHandler) {
       bot.removeListener('entitySpawn', this.entitySpawnHandler);
       this.entitySpawnHandler = null;
+    }
+
+    // Cleanup VillageChat listeners before stopping
+    if (this.blackboard?.villageChat) {
+      this.blackboard.villageChat.cleanup();
     }
 
     super.stop(bot);

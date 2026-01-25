@@ -12,7 +12,7 @@ const { GoalNear } = goals;
 export type BehaviorStatus = 'success' | 'failure' | 'running';
 
 // Trade timing constants
-const OFFER_COLLECTION_WINDOW = 10000;     // 10 seconds to collect WANT responses (GOAP tick ~3s)
+const OFFER_COLLECTION_WINDOW = 15000;     // 15 seconds to collect WANT responses
 const OFFER_COOLDOWN = 30000;               // 30 seconds between offers
 const TRADE_TIMEOUT = 120000;               // 2 minutes max for entire trade
 const MIN_TRADEABLE_ITEMS = 4;              // Minimum items to trigger an offer
@@ -136,6 +136,8 @@ export abstract class BaseBroadcastOffer<TBlackboard extends TradeBlackboard> {
 
             if (elapsed < OFFER_COLLECTION_WINDOW) {
                 bb.lastAction = 'trade_collecting_wants';
+                // Yield to event loop to ensure keepalives are processed
+                await sleep(50);
                 return 'running';
             }
 
@@ -744,6 +746,8 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                 bb.villageChat.sendTradePosition(bot.entity.position);
 
                 if (!trade.partnerReady) {
+                    // Yield to event loop to allow chat messages to be processed
+                    await sleep(100);
                     return 'running';
                 }
 

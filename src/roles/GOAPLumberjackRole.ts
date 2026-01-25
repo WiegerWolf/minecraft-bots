@@ -9,6 +9,7 @@ import {
 import { createLumberjackActions } from '../planning/actions/LumberjackActions';
 import { createLumberjackGoals } from '../planning/goals/LumberjackGoals';
 import { VillageChat } from '../shared/VillageChat';
+import { createChildLogger } from '../shared/logger';
 import type { GOAPAction } from '../planning/Action';
 import type { Goal } from '../planning/Goal';
 
@@ -58,7 +59,8 @@ export class GOAPLumberjackRole extends GOAPRole {
 
     // Initialize village chat if blackboard was created
     if (this.blackboard) {
-      const villageChat = new VillageChat(bot);
+      const villageChatLogger = this.logger ? createChildLogger(this.logger, 'VillageChat') : undefined;
+      const villageChat = new VillageChat(bot, villageChatLogger);
       this.blackboard.villageChat = villageChat;
 
       // Store spawn position from options
@@ -72,6 +74,10 @@ export class GOAPLumberjackRole extends GOAPRole {
 
   override stop(bot: Bot): void {
     this.log?.info('Stopping GOAP lumberjack bot');
+    // Cleanup VillageChat listeners before stopping
+    if (this.blackboard?.villageChat) {
+      this.blackboard.villageChat.cleanup();
+    }
     super.stop(bot);
   }
 

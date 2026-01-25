@@ -436,6 +436,17 @@ export class VillageChat {
                     const targetBot = match[3]!;
                     const currentCount = parseInt(match[4]!);
 
+                    // Debug: log all WANT responses regardless of state
+                    this.log?.debug({
+                        from: username,
+                        targetBot,
+                        myUsername: this.bot.username,
+                        myTradeStatus: this.state.activeTrade?.status ?? 'no-trade',
+                        item,
+                        qty: quantity,
+                        have: currentCount,
+                    }, 'Received [WANT] message');
+
                     // Only process if this is directed at us (we're the offerer)
                     if (targetBot === this.bot.username && this.state.activeTrade?.status === 'offering') {
                         const response: WantResponse = {
@@ -444,7 +455,14 @@ export class VillageChat {
                             timestamp: Date.now(),
                         };
                         this.state.activeTrade.wantResponses.push(response);
-                        this.log?.debug({ from: username, item, qty: quantity, have: currentCount }, 'Trade want received');
+                        this.log?.info({ from: username, item, qty: quantity, have: currentCount }, 'Trade want received and stored');
+                    } else {
+                        this.log?.debug({
+                            reason: targetBot !== this.bot.username ? 'not-for-us' : 'not-offering',
+                            targetBot,
+                            myUsername: this.bot.username,
+                            myStatus: this.state.activeTrade?.status,
+                        }, 'Ignoring [WANT] message');
                     }
                 }
             }

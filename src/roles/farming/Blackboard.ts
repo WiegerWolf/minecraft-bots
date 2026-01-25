@@ -224,9 +224,19 @@ export function createBlackboard(): FarmingBlackboard {
     };
 }
 
-export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
+// Helper to yield to event loop, allowing keepalives to be processed
+const yieldToEventLoop = () => new Promise<void>(resolve => setImmediate(resolve));
+
+export async function updateBlackboard(bot: Bot, bb: FarmingBlackboard): Promise<void> {
     const pos = bot.entity.position;
     const inv = bot.inventory.items();
+
+    // Check if we're actively trading - if so, skip expensive world perception
+    const isTrading = bb.villageChat?.getActiveTrade()?.status !== undefined &&
+                      bb.villageChat?.getActiveTrade()?.status !== 'idle';
+
+    // Yield early to let keepalives through
+    await yieldToEventLoop();
 
     // ═══════════════════════════════════════════════
     // INVENTORY ANALYSIS (cheap, do first)
@@ -249,9 +259,26 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     bb.stickCount = inv.filter(i => i.name === 'stick').reduce((s, i) => s + i.count, 0);
 
     // ═══════════════════════════════════════════════
+    // TRADE STATE (must update even during trading)
+    // ═══════════════════════════════════════════════
+    if (bb.villageChat) {
+        bb.pendingTradeOffers = bb.villageChat.getActiveOffers()
+            .filter(o => isWantedByRole(o.item, 'farmer'));
+        bb.activeTrade = bb.villageChat.getActiveTrade();
+        bb.villageChat.periodicCleanup();
+    }
+
+    // ═══════════════════════════════════════════════
     // WORLD PERCEPTION (expensive, cache results)
     // ═══════════════════════════════════════════════
     const searchCenter = bb.farmCenter || pos;
+    // Skip expensive world perception during active trading to keep event loop responsive
+    if (isTrading) {
+        // Keep existing perception, just yield and return
+        await yieldToEventLoop();
+        return;
+    }
+
     const SEARCH_RADIUS = 64; // ~4 chunks for better navigation
     // Search further for water when we don't have a farm yet
     const WATER_SEARCH_RADIUS = bb.farmCenter ? SEARCH_RADIUS : 80;
@@ -267,6 +294,9 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
             return b.name === 'water' || b.name === 'flowing_water';
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
+
+    // Yield to event loop after expensive findBlocks operation
+    await yieldToEventLoop();
 
     // Ensure farm center water is included (chunks may be unloaded when bot is far away)
     if (bb.farmCenter && bb.nearbyWater.length === 0) {
@@ -523,7 +553,7 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     }
 
     // ═══════════════════════════════════════════════
-    // TRADE STATE
+    // TRADEABLE ITEMS
     // ═══════════════════════════════════════════════
     // Convert inventory to InventoryItem format
     const invItems: InventoryItem[] = inv.map(i => ({ name: i.name, count: i.count }));
@@ -532,15 +562,8 @@ export function updateBlackboard(bot: Bot, bb: FarmingBlackboard): void {
     bb.tradeableItems = getTradeableItems(invItems, 'farmer');
     bb.tradeableItemCount = bb.tradeableItems.reduce((sum, item) => sum + item.count, 0);
 
-    // Get trade state from villageChat
-    if (bb.villageChat) {
-        bb.pendingTradeOffers = bb.villageChat.getActiveOffers()
-            .filter(o => isWantedByRole(o.item, 'farmer')); // Only offers for items we want
-        bb.activeTrade = bb.villageChat.getActiveTrade();
-
-        // Clean up stale trade offers, needs, terraform requests
-        bb.villageChat.periodicCleanup();
-    }
+    // Note: Trade state from villageChat is updated at the start of this function
+    // (before the isTrading early-return) to ensure goals have fresh state
 
     // ═══════════════════════════════════════════════
     // LUMBERJACK TRACKING
