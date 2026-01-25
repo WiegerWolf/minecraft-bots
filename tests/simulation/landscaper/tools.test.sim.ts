@@ -30,11 +30,19 @@ async function testCraftsShovelFromMaterials() {
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
 
+  // Farm with issues - gives bot a reason to want tools
+  const farmCenter = new Vec3(15, 63, 15);
+  world.fill(new Vec3(12, 62, 12), new Vec3(18, 62, 18), 'stone');
+  world.fill(new Vec3(12, 63, 12), new Vec3(18, 63, 18), 'grass_block');
+  world.setBlock(farmCenter, 'water');
+  world.setBlock(new Vec3(14, 63, 15), 'air'); // Hole that needs filling
+
   // Crafting table
   world.setBlock(new Vec3(5, 64, 0), 'crafting_table');
 
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
   world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CRAFT]\nX: 5\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 15\nY: 63\nZ: 15' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),
@@ -42,10 +50,15 @@ async function testCraftsShovelFromMaterials() {
       // Materials for shovel (1 plank + 2 sticks)
       { name: 'oak_planks', count: 4 },
       { name: 'stick', count: 4 },
+      // No dirt - bot needs tools to dig some first
     ],
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
+
+  // Place crafting table via RCON to ensure it exists in the server
+  await test.rcon('setblock 5 64 0 minecraft:crafting_table');
+
   await test.wait(2000, 'World loading');
 
   // Verify bot starts without shovel
@@ -81,11 +94,19 @@ async function testCraftsPickaxeFromMaterials() {
   const world = new MockWorld();
   world.fill(new Vec3(-20, 63, -20), new Vec3(20, 63, 20), 'grass_block');
 
+  // Farm with issues - gives bot a reason to want tools
+  const farmCenter = new Vec3(15, 63, 15);
+  world.fill(new Vec3(12, 62, 12), new Vec3(18, 62, 18), 'stone');
+  world.fill(new Vec3(12, 63, 12), new Vec3(18, 63, 18), 'grass_block');
+  world.setBlock(farmCenter, 'water');
+  world.setBlock(new Vec3(14, 63, 15), 'air'); // Hole that needs filling
+
   // Crafting table
   world.setBlock(new Vec3(5, 64, 0), 'crafting_table');
 
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
   world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CRAFT]\nX: 5\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 15\nY: 63\nZ: 15' });
 
   await test.setup(world, {
     botPosition: new Vec3(3, 65, 3),
@@ -95,10 +116,15 @@ async function testCraftsPickaxeFromMaterials() {
       // Materials for pickaxe (3 planks + 2 sticks)
       { name: 'oak_planks', count: 6 },
       { name: 'stick', count: 4 },
+      // No dirt - bot needs tools to dig some first
     ],
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
+
+  // Place crafting table via RCON to ensure it exists in the server
+  await test.rcon('setblock 5 64 0 minecraft:crafting_table');
+
   await test.wait(2000, 'World loading');
 
   // Verify bot starts without pickaxe
@@ -228,6 +254,10 @@ async function testChecksChestForToolMaterials() {
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
+
+  // Place crafting table via RCON to ensure it exists in the server
+  await test.rcon('setblock 5 64 0 minecraft:crafting_table');
+
   await test.wait(2000, 'World loading');
 
   // Stock the chest with materials for tools
@@ -308,6 +338,10 @@ async function testPrioritizesToolsBeforeWork() {
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
+
+  // Place crafting table via RCON to ensure it exists in the server
+  await test.rcon('setblock 5 64 0 minecraft:crafting_table');
+
   await test.wait(2000, 'World loading');
 
   // Track what happens first
