@@ -44,6 +44,10 @@ async function testCraftsSlabsForNavigation() {
   });
 
   test.bot.loadPlugin(pathfinderPlugin);
+
+  // Place crafting table via RCON to ensure it exists in the server
+  await test.rcon('setblock 5 64 0 minecraft:crafting_table');
+
   await test.wait(2000, 'World loading');
 
   // Verify bot starts without slabs
