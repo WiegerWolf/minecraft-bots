@@ -371,6 +371,9 @@ export async function updateBlackboard(bot: Bot, bb: FarmingBlackboard): Promise
 
     bb.nearbyMatureCrops = allCrops.filter(b => isMatureCrop(b));
 
+    // Yield to event loop after crop search
+    await yieldToEventLoop();
+
     // Debug: show crop maturity status
     if (allCrops.length > 0 && bb.nearbyMatureCrops.length === 0) {
         const sample = allCrops.slice(0, 3).map(b => {
@@ -446,6 +449,9 @@ export async function updateBlackboard(bot: Bot, bb: FarmingBlackboard): Promise
         return true;
     });
 
+    // Yield to event loop after entity iteration
+    await yieldToEventLoop();
+
     // Find chests
     bb.nearbyChests = bot.findBlocks({
         point: pos,
@@ -484,6 +490,9 @@ export async function updateBlackboard(bot: Bot, bb: FarmingBlackboard): Promise
     bb.unknownSigns = nearbySigns
         .filter(signPos => !bb.readSignPositions.has(posToKey(signPos)))
         .map(p => new Vec3(p.x, p.y, p.z));
+
+    // Yield to event loop after remaining findBlocks operations
+    await yieldToEventLoop();
 
     // Get shared village state from chat
     if (bb.villageChat) {

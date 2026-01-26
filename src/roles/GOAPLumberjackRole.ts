@@ -20,21 +20,29 @@ import type { Goal } from '../planning/Goal';
 export class GOAPLumberjackRole extends GOAPRole {
   name = 'goap-lumberjack';
 
+  // Cache actions and goals to avoid recreating on every tick
+  private cachedActions: GOAPAction[] | null = null;
+  private cachedGoals: Goal[] | null = null;
+
   constructor(config?: GOAPRoleConfig) {
     super(config);
     this.log?.info('Initialized with GOAP planning system');
   }
 
   protected getActions(): GOAPAction[] {
-    const actions = createLumberjackActions();
-    this.log?.debug({ actions: actions.map(a => a.name) }, 'Registered actions');
-    return actions;
+    if (!this.cachedActions) {
+      this.cachedActions = createLumberjackActions();
+      this.log?.debug({ actions: this.cachedActions.map(a => a.name) }, 'Registered actions');
+    }
+    return this.cachedActions;
   }
 
   protected getGoals(): Goal[] {
-    const goals = createLumberjackGoals();
-    this.log?.debug({ goals: goals.map(g => g.name) }, 'Registered goals');
-    return goals;
+    if (!this.cachedGoals) {
+      this.cachedGoals = createLumberjackGoals();
+      this.log?.debug({ goals: this.cachedGoals.map(g => g.name) }, 'Registered goals');
+    }
+    return this.cachedGoals;
   }
 
   protected createBlackboard(): LumberjackBlackboard {

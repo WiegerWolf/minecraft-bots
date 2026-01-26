@@ -20,6 +20,10 @@ import type { Goal } from '../planning/Goal';
 export class GOAPLandscaperRole extends GOAPRole {
   name = 'goap-landscaper';
 
+  // Cache actions and goals to avoid recreating on every tick
+  private cachedActions: GOAPAction[] | null = null;
+  private cachedGoals: Goal[] | null = null;
+
   constructor(config?: GOAPRoleConfig) {
     // Enable debug mode for landscaper to troubleshoot planning issues
     super({ debug: true, ...config });
@@ -27,15 +31,19 @@ export class GOAPLandscaperRole extends GOAPRole {
   }
 
   protected getActions(): GOAPAction[] {
-    const actions = createLandscaperActions();
-    this.log?.debug({ actions: actions.map(a => a.name) }, 'Registered actions');
-    return actions;
+    if (!this.cachedActions) {
+      this.cachedActions = createLandscaperActions();
+      this.log?.debug({ actions: this.cachedActions.map(a => a.name) }, 'Registered actions');
+    }
+    return this.cachedActions;
   }
 
   protected getGoals(): Goal[] {
-    const goals = createLandscaperGoals();
-    this.log?.debug({ goals: goals.map(g => g.name) }, 'Registered goals');
-    return goals;
+    if (!this.cachedGoals) {
+      this.cachedGoals = createLandscaperGoals();
+      this.log?.debug({ goals: this.cachedGoals.map(g => g.name) }, 'Registered goals');
+    }
+    return this.cachedGoals;
   }
 
   protected createBlackboard(): LandscaperBlackboard {

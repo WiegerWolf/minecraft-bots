@@ -48,21 +48,29 @@ export class GOAPFarmingRole extends GOAPRole {
   private farmSafeMovements: Movements | null = null;
   private isInFarmMode = false;
 
+  // Cache actions and goals to avoid recreating on every tick
+  private cachedActions: GOAPAction[] | null = null;
+  private cachedGoals: Goal[] | null = null;
+
   constructor(config?: GOAPRoleConfig) {
     super(config);
     this.log?.info('Initialized with GOAP planning system');
   }
 
   protected getActions(): GOAPAction[] {
-    const actions = createFarmingActions();
-    this.log?.debug({ actions: actions.map(a => a.name) }, 'Registered actions');
-    return actions;
+    if (!this.cachedActions) {
+      this.cachedActions = createFarmingActions();
+      this.log?.debug({ actions: this.cachedActions.map(a => a.name) }, 'Registered actions');
+    }
+    return this.cachedActions;
   }
 
   protected getGoals(): Goal[] {
-    const goals = createFarmingGoals();
-    this.log?.debug({ goals: goals.map(g => g.name) }, 'Registered goals');
-    return goals;
+    if (!this.cachedGoals) {
+      this.cachedGoals = createFarmingGoals();
+      this.log?.debug({ goals: this.cachedGoals.map(g => g.name) }, 'Registered goals');
+    }
+    return this.cachedGoals;
   }
 
   protected createBlackboard(): FarmingBlackboard {
