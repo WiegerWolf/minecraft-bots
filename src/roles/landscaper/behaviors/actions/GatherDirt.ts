@@ -258,7 +258,7 @@ export class GatherDirt implements BehaviorNode {
         if (candidates.length === 0) return null;
 
         candidates.sort((a, b) => b.score - a.score);
-        return candidates[0].pos;
+        return candidates[0]!.pos;
     }
 
     /**

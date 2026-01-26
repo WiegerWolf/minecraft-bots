@@ -106,7 +106,7 @@ function readVarInt(buffer: Buffer, offset: number): { value: number; bytesRead:
 
   do {
     if (offset + bytesRead >= buffer.length) return null;
-    currentByte = buffer[offset + bytesRead];
+    currentByte = buffer[offset + bytesRead]!;
     value |= (currentByte & 0x7f) << (7 * bytesRead);
     bytesRead++;
     if (bytesRead > 5) return null;
