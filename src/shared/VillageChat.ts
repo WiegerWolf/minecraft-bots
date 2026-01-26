@@ -110,6 +110,7 @@ export interface ActiveTrade {
     giverDroppedCount: number;      // Items giver dropped (for verification)
     partnerPosition: Vec3 | null;   // Partner's position (for facing/proximity)
     lastPositionShareTime: number;  // When we last shared our position (for rate limiting)
+    lastReadyShareTime: number;     // When we last sent TRADE_READY (for re-send in stuck states)
     pickupStartCount: number;       // Receiver's inventory count when entering 'picking_up' (for verification)
 }
 
@@ -595,6 +596,7 @@ export class VillageChat {
                                 giverDroppedCount: 0,
                                 partnerPosition: null,
                                 lastPositionShareTime: 0,
+                                lastReadyShareTime: 0,
                                 pickupStartCount: 0,
                             };
 
@@ -1281,6 +1283,7 @@ export class VillageChat {
             giverDroppedCount: 0,
             partnerPosition: null,
             lastPositionShareTime: 0,
+            lastReadyShareTime: 0,
             pickupStartCount: 0,
         };
 
@@ -1323,6 +1326,7 @@ export class VillageChat {
             giverDroppedCount: 0,
             partnerPosition: null,
             lastPositionShareTime: 0,
+            lastReadyShareTime: 0,
             pickupStartCount: 0,
         };
 
@@ -1357,6 +1361,7 @@ export class VillageChat {
             giverDroppedCount: 0,
             partnerPosition: null,
             lastPositionShareTime: 0,
+            lastReadyShareTime: 0,
             pickupStartCount: currentCount, // Record inventory at start of trade for verification
         };
 
@@ -1398,15 +1403,41 @@ export class VillageChat {
 
     /**
      * Signal that we're ready at the meeting point.
+     * Can be called multiple times - tracks when last sent for rate limiting.
      */
     sendTradeReady(): void {
         if (!this.state.activeTrade) return;
 
         this.state.activeTrade.status = 'ready';
+        this.state.activeTrade.lastReadyShareTime = Date.now();
 
         const msg = '[TRADE_READY]';
         this.sendChat(msg);
         this.log?.debug('Sent trade ready');
+    }
+
+    /**
+     * Re-send TRADE_READY if we're in ready state but partner isn't ready.
+     * Rate-limited to prevent chat spam (every 5 seconds).
+     * Returns true if message was sent.
+     */
+    resendTradeReadyIfNeeded(): boolean {
+        if (!this.state.activeTrade) return false;
+        if (this.state.activeTrade.status !== 'ready') return false;
+        if (this.state.activeTrade.partnerReady) return false;
+
+        const now = Date.now();
+        const READY_RESEND_INTERVAL = 5000; // 5 seconds
+
+        if (now - this.state.activeTrade.lastReadyShareTime < READY_RESEND_INTERVAL) {
+            return false;
+        }
+
+        this.state.activeTrade.lastReadyShareTime = now;
+        const msg = '[TRADE_READY]';
+        this.sendChat(msg);
+        this.log?.debug('Re-sent trade ready (partner not ready yet)');
+        return true;
     }
 
     /**

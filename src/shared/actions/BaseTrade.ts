@@ -821,6 +821,10 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                 bb.villageChat.sendTradePosition(bot.entity.position);
 
                 if (!trade.partnerReady) {
+                    // Re-send TRADE_READY periodically in case partner missed the first one
+                    // This fixes the "stuck in ready state" bug where both bots wait for each other
+                    bb.villageChat.resendTradeReadyIfNeeded();
+
                     // Yield to event loop to allow chat messages to be processed
                     await sleep(100);
                     return 'running';

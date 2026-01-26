@@ -718,6 +718,104 @@ Plan: CheckSharedChest → CraftHoe → TillGround
 
 "Bot is going to chest first because it doesn't have materials for hoe."
 
+## Trade Stuck Detection and Recovery
+
+### Trade Ready State Deadlock
+
+**The Problem:**
+
+Two bots can get stuck in "ready" state during a trade:
+
+1. Bot A arrives at meeting point, sends `[TRADE_READY]`
+2. Bot B arrives at meeting point, sends `[TRADE_READY]`
+3. Both bots wait for `partnerReady` to become true
+4. If either message was missed (timing, network), both wait forever
+
+This was observed in logs: repeated "Sent trade position" messages every 2 seconds for 11+ minutes while both bots were at the meeting point.
+
+**Detection:**
+
+```typescript
+if (trade.status === 'ready' && !trade.partnerReady) {
+    // Potential deadlock - partner may have missed our TRADE_READY
+}
+```
+
+**Recovery - Periodic TRADE_READY Re-send:**
+
+```typescript
+// Re-send TRADE_READY every 5 seconds if partner hasn't acknowledged
+resendTradeReadyIfNeeded(): boolean {
+    if (trade.status !== 'ready') return false;
+    if (trade.partnerReady) return false;
+
+    const now = Date.now();
+    if (now - trade.lastReadyShareTime < 5000) return false;
+
+    trade.lastReadyShareTime = now;
+    sendChat('[TRADE_READY]');
+    return true;
+}
+```
+
+**Why 5 seconds?**
+
+- Short enough to recover quickly from missed messages
+- Long enough to not spam chat
+- Position sharing happens every 2 seconds, so TRADE_READY at 5 seconds is less frequent
+
+**Trade Timeout:**
+
+If recovery fails, the 2-minute trade timeout catches permanent failures:
+
+```typescript
+if (elapsed > TRADE_TIMEOUT) {
+    villageChat.cancelTrade();
+    return 'failure';
+}
+```
+
+### Proximity Verification
+
+After both bots are ready, proximity is verified before dropping items:
+
+```typescript
+if (trade.partnerPosition) {
+    const dist = bot.position.distanceTo(trade.partnerPosition);
+    if (dist > MAX_PARTNER_DISTANCE) {
+        // Too far apart - request retry
+        sendTradeRetry();
+    }
+}
+```
+
+**Why verify proximity?**
+
+- Bots might be at different "meeting points" due to message delays
+- Prevents item drops in wrong location
+- MAX_PARTNER_DISTANCE = 4 blocks
+
+### Trade Retry Mechanism
+
+When verification fails:
+
+```typescript
+sendTradeRetry(): void {
+    trade.retryCount++;
+    trade.status = 'traveling';
+    trade.partnerReady = false;
+    sendChat('[TRADE_RETRY]');
+}
+```
+
+After 3 retries, trade is cancelled:
+
+```typescript
+if (trade.retryCount >= MAX_TRADE_RETRIES) {
+    cancelTrade();
+}
+```
+
 ## Summary: Failure Recovery Strategies
 
 | Level | Detection | Recovery |
@@ -730,5 +828,6 @@ Plan: CheckSharedChest → CraftHoe → TillGround
 | Pathfinding | Timeout | Mark unreachable |
 | Stuck in hole | 3+ sides blocked | Break blocks, climb out |
 | Stranded on tree | Elevated, no adjacent blocks | Walk off, pillar down, or fall |
+| Trade ready deadlock | Both waiting for partner | Re-send TRADE_READY every 5s |
 
 The system assumes failures are **normal** and designs for graceful degradation rather than crash-free operation.
