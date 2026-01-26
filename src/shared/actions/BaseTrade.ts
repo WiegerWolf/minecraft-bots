@@ -858,23 +858,6 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                 // Giver: drop items
                 bb.lastAction = 'trade_dropping';
 
-                // Find the item to drop - must match trade item EXACTLY
-                const itemSlot = bot.inventory.items().find(i => i.name === trade.item);
-                if (!itemSlot) {
-                    bb.log?.warn({ item: trade.item, inventory: bot.inventory.items().map(i => i.name) },
-                        `[${this.config.roleLabel}] Trade item not found in inventory - cancelling`);
-                    bb.villageChat.cancelTrade();
-                    return 'failure';
-                }
-
-                // Defensive check: verify item name matches exactly
-                if (itemSlot.name !== trade.item) {
-                    bb.log?.warn({ expected: trade.item, found: itemSlot.name },
-                        `[${this.config.roleLabel}] Item mismatch - cancelling trade`);
-                    bb.villageChat.cancelTrade();
-                    return 'failure';
-                }
-
                 // Face the partner before dropping items (so items go towards them)
                 if (trade.partnerPosition) {
                     try {
@@ -898,35 +881,57 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                     }
                 }
 
-                // Record inventory count BEFORE dropping for verification
-                const countBeforeDrop = bot.inventory.items()
-                    .filter(i => i.name === trade.item)
-                    .reduce((sum, i) => sum + i.count, 0);
+                // Get list of items to drop - use trade.items if available, else single item
+                const itemsToDrop = trade.items ?? [{ name: trade.item, count: trade.quantity }];
 
-                // Drop ONLY the offered quantity, not the entire stack
-                const dropCount = Math.min(itemSlot.count, trade.quantity);
-                try {
-                    await bot.toss(itemSlot.type, itemSlot.metadata, dropCount);
-                    bb.log?.info({ item: trade.item, qty: dropCount, hadInStack: itemSlot.count },
-                        `[${this.config.roleLabel}] Dropped trade items`);
-                } catch (error) {
-                    bb.log?.warn({ err: error, item: trade.item },
-                        `[${this.config.roleLabel}] Drop failed`);
+                // Record total inventory before dropping for verification
+                const totalBeforeDrop = bot.inventory.items().reduce((sum, i) => sum + i.count, 0);
+
+                // Drop all items at once
+                let totalDropped = 0;
+                const droppedItems: string[] = [];
+
+                for (const itemToDrop of itemsToDrop) {
+                    // Find matching inventory slot
+                    const itemSlot = bot.inventory.items().find(i => i.name === itemToDrop.name);
+                    if (!itemSlot) {
+                        bb.log?.debug({ item: itemToDrop.name },
+                            `[${this.config.roleLabel}] Item not found in inventory, skipping`);
+                        continue;
+                    }
+
+                    // Drop the specified count (or whatever we have)
+                    const dropCount = Math.min(itemSlot.count, itemToDrop.count);
+                    try {
+                        await bot.toss(itemSlot.type, itemSlot.metadata, dropCount);
+                        totalDropped += dropCount;
+                        droppedItems.push(`${dropCount}x ${itemToDrop.name}`);
+                    } catch (error) {
+                        bb.log?.warn({ err: error, item: itemToDrop.name },
+                            `[${this.config.roleLabel}] Failed to drop item`);
+                    }
+                }
+
+                if (totalDropped === 0) {
+                    bb.log?.warn({ items: itemsToDrop.map(i => i.name) },
+                        `[${this.config.roleLabel}] No items dropped - cancelling trade`);
                     bb.villageChat.cancelTrade();
                     return 'failure';
                 }
 
-                // Wait for toss to complete and verify items left inventory
-                await sleep(300);
-                const countAfterDrop = bot.inventory.items()
-                    .filter(i => i.name === trade.item)
-                    .reduce((sum, i) => sum + i.count, 0);
+                bb.log?.info({ dropped: droppedItems.join(', ') },
+                    `[${this.config.roleLabel}] Dropped all trade items`);
 
-                const actualDropped = countBeforeDrop - countAfterDrop;
+                // Wait for toss to complete
+                await sleep(300);
+
+                // Verify items left inventory
+                const totalAfterDrop = bot.inventory.items().reduce((sum, i) => sum + i.count, 0);
+                const actualDropped = totalBeforeDrop - totalAfterDrop;
                 bb.villageChat.setGiverDroppedCount(actualDropped);
 
                 if (actualDropped <= 0) {
-                    bb.log?.warn({ countBefore: countBeforeDrop, countAfter: countAfterDrop },
+                    bb.log?.warn({ totalBefore: totalBeforeDrop, totalAfter: totalAfterDrop },
                         `[${this.config.roleLabel}] Items did not leave inventory - may have picked them up`);
 
                     // Check retry count
@@ -942,7 +947,7 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                     return 'running';
                 }
 
-                bb.log?.info({ droppedCount: actualDropped, expected: dropCount },
+                bb.log?.info({ droppedCount: actualDropped },
                     `[${this.config.roleLabel}] Verified items dropped`);
 
                 // Step back far enough to avoid accidentally picking up items

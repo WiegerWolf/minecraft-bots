@@ -99,6 +99,7 @@ export interface ActiveTrade {
     partner: string;
     item: string;
     quantity: number;
+    items?: Array<{ name: string; count: number }>;  // Full list of items for multi-item trades
     meetingPoint: Vec3 | null;
     role: 'giver' | 'receiver';
     status: TradeStatus;
@@ -564,7 +565,47 @@ export class VillageChat {
                 const match = message.match(/\[TRADE_ACCEPT\] (\S+)/);
                 if (match) {
                     const selectedPartner = match[1]!;
-                    // Check if we were selected (may be in 'wanting' or 'traveling' depending on message order)
+
+                    // Case 1: Direct trade for need fulfillment (we're not in a trade yet)
+                    // Check if the sender is an accepted provider for one of our needs
+                    if (selectedPartner === this.bot.username && !this.state.activeTrade) {
+                        const needWithProvider = this.state.activeNeeds.find(
+                            n => n.acceptedProvider === username && n.status === 'accepted'
+                        );
+
+                        if (needWithProvider) {
+                            // This is a direct trade from our accepted provider!
+                            // Set up trade state as receiver
+                            const acceptedOffer = needWithProvider.offers.find(o => o.from === username);
+                            const primaryItem = acceptedOffer?.items[0]?.name ?? 'items';
+                            const totalQty = acceptedOffer?.items.reduce((sum, i) => sum + i.count, 0) ?? 0;
+
+                            this.state.activeTrade = {
+                                partner: username,
+                                item: primaryItem,
+                                quantity: totalQty,
+                                meetingPoint: null,
+                                role: 'receiver',
+                                status: 'accepted',
+                                partnerReady: false,
+                                wantResponses: [],
+                                offerTimestamp: Date.now(),
+                                retryCount: 0,
+                                giverDroppedCount: 0,
+                                partnerPosition: null,
+                                lastPositionShareTime: 0,
+                                pickupStartCount: 0,
+                            };
+
+                            this.log?.info(
+                                { from: username, needId: needWithProvider.id },
+                                'Direct trade initiated for need fulfillment - we are the receiver'
+                            );
+                            return; // Handled
+                        }
+                    }
+
+                    // Case 2: Normal trade - we were selected (may be in 'wanting' or 'traveling' depending on message order)
                     if (selectedPartner === this.bot.username && this.state.activeTrade?.role === 'receiver') {
                         // If TRADE_AT came first, we're already in 'traveling' and have the meeting point
                         // Otherwise, we're in 'wanting' and will get the meeting point shortly
@@ -1199,6 +1240,61 @@ export class VillageChat {
     // ═══════════════════════════════════════════════════════════════════════════
     // TRADE MESSAGE SENDING
     // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Initiate a direct trade with a specific bot (used for need fulfillment).
+     * Skips the offer/want phases since the need system already established partners.
+     * Goes directly to the 'traveling' state with meeting point set.
+     *
+     * @param targetBot - The bot to trade with (the requester)
+     * @param items - Items to deliver
+     * @param needId - The need ID this is fulfilling (optional, for logging)
+     */
+    initiateDirectTrade(targetBot: string, items: Array<{ name: string; count: number }>, needId?: string): void {
+        // Don't offer if already in a trade
+        if (this.state.activeTrade && this.state.activeTrade.status !== 'idle') {
+            this.log?.debug('Cannot initiate direct trade: already in a trade');
+            return;
+        }
+
+        // Combine items into a summary (for display purposes, use first item as primary)
+        const primaryItem = items[0]?.name ?? 'items';
+        const totalQuantity = items.reduce((sum, i) => sum + i.count, 0);
+
+        // Choose meeting point - use bot position as base
+        const meetingPoint = this.getTradeMeetingPoint(this.bot.entity.position);
+
+        // Set up active trade state as giver, ready to travel
+        this.state.activeTrade = {
+            partner: targetBot,
+            item: primaryItem,
+            quantity: totalQuantity,
+            items: items,  // Store full list for multi-item drops
+            meetingPoint: meetingPoint,
+            role: 'giver',
+            status: 'traveling', // Skip offering/accepted, go straight to traveling
+            partnerReady: false,
+            wantResponses: [],
+            offerTimestamp: Date.now(),
+            retryCount: 0,
+            giverDroppedCount: 0,
+            partnerPosition: null,
+            lastPositionShareTime: 0,
+            pickupStartCount: 0,
+        };
+
+        // Send acceptance and meeting point messages
+        const acceptMsg = `[TRADE_ACCEPT] ${targetBot}`;
+        this.sendChat(acceptMsg);
+
+        const atMsg = `[TRADE_AT] ${Math.floor(meetingPoint.x)} ${Math.floor(meetingPoint.y)} ${Math.floor(meetingPoint.z)}`;
+        this.sendChat(atMsg);
+
+        this.log?.info(
+            { partner: targetBot, items: items.map(i => `${i.count}x ${i.name}`).join(', '), needId, meetingPoint: meetingPoint.toString() },
+            'Initiated direct trade for need fulfillment with meeting point'
+        );
+    }
 
     /**
      * Broadcast a trade offer for items we don't need.

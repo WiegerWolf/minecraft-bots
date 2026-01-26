@@ -219,7 +219,10 @@ export abstract class BaseRespondToNeed<TBlackboard extends RespondToNeedBlackbo
                 const result = await this.performDelivery(bot, bb, state);
                 if (result === 'success') {
                     state.status = 'delivered';
-                    bb.villageChat!.markNeedFulfilled(state.needId);
+                    // NOTE: Don't mark need as fulfilled here!
+                    // The REQUESTER should mark it fulfilled after they pick up the items.
+                    // This fixes the coordination bug where items were dropped but never picked up.
+                    bb.log?.info({ needId: state.needId }, 'Items dropped for delivery - requester should pick up');
                 }
                 return result;
             }
@@ -367,70 +370,67 @@ export abstract class BaseRespondToNeed<TBlackboard extends RespondToNeedBlackbo
     }
 
     /**
-     * Perform the actual delivery - walk to location and drop items.
+     * Perform the actual delivery - use the trade system for reliable handoff.
+     *
+     * Instead of just dropping items (which can be picked up by anyone, including
+     * the provider themselves), we initiate a direct trade with the requester.
+     * The trade system handles:
+     * - Meeting point coordination
+     * - Trade zones (preventing item theft)
+     * - Position verification
+     * - Drop and pickup confirmation
      */
     private async performDelivery(
         bot: Bot,
         bb: TBlackboard,
         state: RespondingNeedState
     ): Promise<BehaviorStatus> {
-        if (!state.deliveryLocation) {
+        if (!bb.villageChat) {
             return 'failure';
         }
 
-        const location = state.deliveryLocation;
-        const distanceToLocation = bot.entity.position.distanceTo(location);
-
-        // Walk to delivery location if not already there
-        if (distanceToLocation > 3) {
-            bb.log?.info(
-                { needId: state.needId, location: `(${location.x}, ${location.y}, ${location.z})`, distance: distanceToLocation.toFixed(1) },
-                `[${this.config.roleLabel}] Walking to delivery location`
+        // Check if we already have an active trade in progress
+        const activeTrade = bb.villageChat.getActiveTrade();
+        if (activeTrade && activeTrade.partner === state.from) {
+            // Trade already in progress - let the trade completion action handle it
+            bb.log?.debug(
+                { needId: state.needId, tradeStatus: activeTrade.status },
+                `[${this.config.roleLabel}] Trade in progress for need delivery`
             );
 
-            try {
-                await smartPathfinderGoto(bot, new GoalNear(location.x, location.y, location.z, 2));
-            } catch (error) {
-                bb.log?.warn(
-                    { err: error, location: `(${location.x}, ${location.y}, ${location.z})` },
-                    `[${this.config.roleLabel}] Failed to reach delivery location`
-                );
-                return 'running'; // Keep trying
+            // If trade is done, mark delivery complete
+            if (activeTrade.status === 'done') {
+                return 'success';
             }
+
+            // Otherwise keep running
+            return 'running';
         }
 
-        // Drop the items for the requester
-        for (const itemStack of state.offer.items) {
-            const item = bot.inventory.items().find(i => i.name === itemStack.name);
-            if (item) {
-                const dropCount = Math.min(item.count, itemStack.count);
-                try {
-                    await bot.toss(item.type, item.metadata, dropCount);
-                    bb.log?.info(
-                        { item: itemStack.name, count: dropCount },
-                        `[${this.config.roleLabel}] Dropped items for delivery`
-                    );
-                } catch (error) {
-                    bb.log?.warn(
-                        { err: error, item: itemStack.name },
-                        `[${this.config.roleLabel}] Failed to drop item`
-                    );
-                    return 'failure';
-                }
-            } else {
-                bb.log?.warn(
-                    { item: itemStack.name },
-                    `[${this.config.roleLabel}] Item not found in inventory for delivery`
-                );
-            }
+        // If no trade is active yet, initiate one
+        if (!activeTrade || activeTrade.status === 'idle') {
+            bb.log?.info(
+                { needId: state.needId, requester: state.from, items: state.offer.items.map(i => `${i.count}x ${i.name}`).join(', ') },
+                `[${this.config.roleLabel}] Initiating direct trade for need delivery`
+            );
+
+            // Initiate direct trade (skips offer/want phases, goes straight to accepted)
+            bb.villageChat.initiateDirectTrade(
+                state.from,
+                state.offer.items,
+                state.needId
+            );
+
+            return 'running';
         }
 
-        bb.log?.info(
-            { needId: state.needId },
-            `[${this.config.roleLabel}] Delivery complete`
+        // Trade is for someone else or in an unexpected state
+        bb.log?.warn(
+            { needId: state.needId, tradePartner: activeTrade.partner, tradeStatus: activeTrade.status },
+            `[${this.config.roleLabel}] Unexpected trade state during need delivery`
         );
 
-        return 'success';
+        return 'running';
     }
 
     /**

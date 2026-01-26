@@ -457,6 +457,42 @@ export class ExploreGoal extends BaseGoal {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
+// NEED DELIVERY GOALS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Goal: Pick up items from an accepted need delivery.
+ * VERY HIGH PRIORITY - when a provider has dropped items for us, go get them!
+ *
+ * This goal activates when:
+ * 1. We have an active need with status 'accepted'
+ * 2. The provider has announced a delivery location ([PROVIDE_AT])
+ * 3. We haven't picked up the items yet
+ *
+ * The bot will navigate to the delivery location and collect the dropped items.
+ */
+export class ReceiveNeedDeliveryGoal extends BaseGoal {
+  name = 'ReceiveNeedDelivery';
+  description = 'Pick up items from an accepted need delivery';
+
+  conditions = [
+    booleanGoalCondition('need.hasPendingDelivery', false, 'no pending delivery'),
+  ];
+
+  getUtility(ws: WorldState): number {
+    if (!ws.getBool('need.hasPendingDelivery')) return 0;
+
+    // Very high priority - items dropped for us might despawn!
+    // Higher than most goals but below active trades (150)
+    return 145;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    return ws.getBool('need.hasPendingDelivery');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TRADE GOALS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -575,6 +611,7 @@ export function createFarmingGoals(): BaseGoal[] {
   return [
     new CompleteTradeGoal(),      // Highest priority - finish active trades
     new StudySpawnSignsGoal(),    // Highest priority on spawn
+    new ReceiveNeedDeliveryGoal(),// Pick up items from accepted need deliveries
     new CollectDropsGoal(),
     new RespondToTradeOfferGoal(),// Respond to trade offers
     new HarvestCropsGoal(),

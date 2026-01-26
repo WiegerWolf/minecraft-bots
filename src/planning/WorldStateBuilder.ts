@@ -191,6 +191,15 @@ export class WorldStateBuilder {
     } else {
       ws.set('nearby.lumberjackDistance', -1);  // -1 means no lumberjack visible
     }
+
+    // Need delivery tracking (items to pick up from accepted needs)
+    ws.set('need.hasPendingDelivery', bb.pendingDelivery !== null);
+    if (bb.pendingDelivery) {
+      ws.set('need.deliveryDistance', bot.entity.position.distanceTo(bb.pendingDelivery.location));
+      ws.set('need.deliveryNeedId', bb.pendingDelivery.needId);
+    } else {
+      ws.set('need.deliveryDistance', -1);
+    }
   }
 
   /**

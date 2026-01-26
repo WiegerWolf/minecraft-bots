@@ -134,6 +134,16 @@ export interface FarmingBlackboard {
     // ACTION PREEMPTION (allows high-priority goals to interrupt)
     // ═══════════════════════════════════════════════════════════════
     preemptionRequested: boolean;               // Set by GOAP when higher-priority goal detected
+
+    // ═══════════════════════════════════════════════════════════════
+    // NEED DELIVERY TRACKING (for picking up items from accepted needs)
+    // ═══════════════════════════════════════════════════════════════
+    pendingDelivery: {
+        needId: string;
+        location: Vec3;
+        method: 'chest' | 'trade';
+        items: Array<{ name: string; count: number }>;
+    } | null;
 }
 
 export function createBlackboard(): FarmingBlackboard {
@@ -221,6 +231,9 @@ export function createBlackboard(): FarmingBlackboard {
 
         // Action preemption
         preemptionRequested: false,
+
+        // Need delivery tracking
+        pendingDelivery: null,
     };
 }
 
@@ -506,6 +519,30 @@ export async function updateBlackboard(bot: Bot, bb: FarmingBlackboard): Promise
                 bb.log?.info({ pos: bb.terraformRequestedAt.floored().toString() }, 'Terraform complete');
                 bb.waitingForTerraform = false;
                 bb.terraformRequestedAt = null;
+            }
+        }
+
+        // Check for pending need deliveries (items we need to pick up)
+        bb.pendingDelivery = null;
+        const activeNeeds = bb.villageChat.getActiveNeeds();
+        for (const need of activeNeeds) {
+            if (need.status === 'accepted' && need.deliveryLocation && need.acceptedProvider) {
+                // Find the offer from the accepted provider
+                const acceptedOffer = need.offers.find(o => o.from === need.acceptedProvider);
+                if (acceptedOffer) {
+                    bb.pendingDelivery = {
+                        needId: need.id,
+                        location: need.deliveryLocation,
+                        method: need.deliveryMethod ?? 'trade',
+                        items: acceptedOffer.items.map(i => ({ name: i.name, count: i.count })),
+                    };
+                    bb.log?.debug({
+                        needId: need.id,
+                        location: need.deliveryLocation.toString(),
+                        method: need.deliveryMethod,
+                    }, 'Found pending delivery to pick up');
+                    break; // Handle one delivery at a time
+                }
             }
         }
     }

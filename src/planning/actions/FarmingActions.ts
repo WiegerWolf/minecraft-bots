@@ -18,6 +18,7 @@ import { ReadUnknownSign } from '../../roles/farming/behaviors/actions/ReadUnkno
 import { WriteKnowledgeSign } from '../../roles/farming/behaviors/actions/WriteKnowledgeSign';
 import { BroadcastOffer, RespondToOffer, CompleteTrade } from '../../roles/farming/behaviors/actions/TradeActions';
 import { FollowLumberjack } from '../../roles/farming/behaviors/actions/FollowLumberjack';
+import { ReceiveNeedDelivery } from '../../roles/farming/behaviors/actions/ReceiveNeedDelivery';
 
 /**
  * GOAP Action: Pick up dropped items
@@ -588,6 +589,43 @@ export class WriteKnowledgeSignAction extends BaseGOAPAction {
 }
 
 /**
+ * GOAP Action: Receive items from an accepted need delivery.
+ *
+ * When another bot (e.g., lumberjack) responds to our need and drops items
+ * at a delivery location, this action navigates there and picks them up.
+ *
+ * This fixes the coordination bug where the provider would mark needs fulfilled
+ * before the requester actually received the items.
+ */
+export class ReceiveNeedDeliveryAction extends BaseGOAPAction {
+  name = 'ReceiveNeedDelivery';
+  private impl = new ReceiveNeedDelivery();
+
+  preconditions = [
+    booleanPrecondition('need.hasPendingDelivery', true, 'has pending delivery'),
+  ];
+
+  effects = [
+    setEffect('need.hasPendingDelivery', false, 'picked up delivery'),
+    // Optimistically assume we got materials (the actual check is in the action)
+    incrementEffect('inv.logs', 4, 'received materials'),
+    incrementEffect('inv.planks', 8, 'received planks'),
+  ];
+
+  override getCost(ws: WorldState): number {
+    const distance = ws.getNumber('need.deliveryDistance');
+    // Cost scales with distance
+    return 1.0 + (distance > 0 ? distance / 20 : 0);
+  }
+
+  override async execute(bot: Bot, bb: FarmingBlackboard, ws: WorldState): Promise<ActionResult> {
+    const result = await this.impl.tick(bot, bb);
+    if (result === 'running') return ActionResult.RUNNING;
+    return result === 'success' ? ActionResult.SUCCESS : ActionResult.FAILURE;
+  }
+}
+
+/**
  * GOAP Action: Broadcast a trade offer for unwanted items
  */
 export class BroadcastTradeOfferAction extends BaseGOAPAction {
@@ -705,6 +743,9 @@ export function createFarmingActions(): BaseGOAPAction[] {
     new CompleteTradeAction(),
     new RespondToTradeOfferAction(),
     new BroadcastTradeOfferAction(),
+
+    // Need delivery (pick up items from accepted needs)
+    new ReceiveNeedDeliveryAction(),
 
     // Regular actions
     new StudySpawnSignsAction(),  // High priority on spawn
