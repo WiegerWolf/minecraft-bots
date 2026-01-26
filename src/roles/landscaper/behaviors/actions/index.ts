@@ -13,6 +13,7 @@ export { EstablishDirtpit } from './EstablishDirtpit';
 export { CraftSlabs } from './CraftSlabs';
 export { MaintainFarm } from './MaintainFarm';
 export { ReadUnknownSign } from './ReadUnknownSign';
+export { FollowLumberjack } from './FollowLumberjack';
 
 // Trade behaviors
 export { BroadcastOffer, RespondToOffer, CompleteTrade } from './TradeActions';

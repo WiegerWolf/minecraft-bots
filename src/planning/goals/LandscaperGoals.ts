@@ -543,6 +543,69 @@ export class ReadUnknownSignGoal extends BaseGoal {
 }
 
 /**
+ * Goal: Follow the lumberjack during exploration phase.
+ * MEDIUM-LOW PRIORITY - when no village center exists, stay near the lumberjack.
+ *
+ * This keeps the landscaper in VillageChat range so they can hear about:
+ * - Village center location when established
+ * - Terraform requests when farms are created
+ *
+ * The goal is satisfied when:
+ * - Village center is established (hasVillage = true), OR
+ * - Bot is within 30 blocks of the lumberjack
+ *
+ * Unlike the farmer who follows lumberjack to hear about village center,
+ * the landscaper follows to be ready for terraform requests that come
+ * shortly after the farmer establishes a farm.
+ */
+export class FollowLumberjackGoal extends BaseGoal {
+  name = 'FollowLumberjack';
+  description = 'Stay near lumberjack during exploration phase';
+
+  conditions = [
+    numericGoalCondition('nearby.lumberjackDistance', v => v <= 30, 'near lumberjack', {
+      value: 30,
+      comparison: 'lte',
+      estimatedDelta: -20,
+    }),
+  ];
+
+  getUtility(ws: WorldState): number {
+    const hasVillage = ws.getBool('derived.hasVillage');
+    const hasStudiedSigns = ws.getBool('has.studiedSigns');
+    const hasLumberjack = ws.getBool('nearby.hasLumberjack');
+    const lumberjackDistance = ws.getNumber('nearby.lumberjackDistance');
+
+    // No need to follow if village is established
+    if (hasVillage) return 0;
+
+    // Must have studied signs first
+    if (!hasStudiedSigns) return 0;
+
+    // Can't follow if no lumberjack visible
+    if (!hasLumberjack || lumberjackDistance < 0) return 0;
+
+    // Already close enough (within 30 blocks)
+    if (lumberjackDistance <= 30) return 0;
+
+    // Higher utility when further away (need to catch up)
+    // Base 55 + up to 15 based on distance (max utility 70)
+    const distanceBonus = Math.min(15, (lumberjackDistance - 30) / 10);
+    return 55 + distanceBonus;
+  }
+
+  override isValid(ws: WorldState): boolean {
+    const hasVillage = ws.getBool('derived.hasVillage');
+    const hasStudiedSigns = ws.getBool('has.studiedSigns');
+    const hasLumberjack = ws.getBool('nearby.hasLumberjack');
+    const lumberjackDistance = ws.getNumber('nearby.lumberjackDistance');
+
+    // Valid when: no village, studied signs, lumberjack visible, and too far away
+    return !hasVillage && hasStudiedSigns && hasLumberjack && lumberjackDistance > 30;
+  }
+}
+
+/**
  * Goal: Wait at spawn for terraform requests.
  * The landscaper should mostly idle until called by other bots or until
  * materials are available in the shared chest.
@@ -730,6 +793,7 @@ export function createLandscaperGoals(): BaseGoal[] {
     new CraftSlabsGoal(),         // Craft slabs for navigation scaffolding
     new BroadcastTradeOfferGoal(),// Offer unwanted items when idle
     new ReadUnknownSignGoal(),    // Curious bot - read unknown signs
+    new FollowLumberjackGoal(),   // Follow lumberjack during exploration (no village yet)
     new ExploreGoal(),            // Always last - lowest priority fallback
   ];
 }

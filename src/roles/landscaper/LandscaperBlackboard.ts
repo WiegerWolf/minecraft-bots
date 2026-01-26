@@ -111,6 +111,12 @@ export interface LandscaperBlackboard {
     knownForests: Vec3[];                 // Forest locations to avoid when gathering dirt
 
     // ═══════════════════════════════════════════════════════════════
+    // LUMBERJACK TRACKING (for following during exploration)
+    // ═══════════════════════════════════════════════════════════════
+    lumberjackPosition: Vec3 | null;            // Last known position of a lumberjack
+    lumberjackName: string | null;              // Name of the lumberjack being followed
+
+    // ═══════════════════════════════════════════════════════════════
     // TRADE STATE
     // ═══════════════════════════════════════════════════════════════
     tradeableItems: InventoryItem[];            // Items we can offer for trade
@@ -191,6 +197,10 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
         // Known protected areas (from signs)
         knownForests: [],
 
+        // Lumberjack tracking
+        lumberjackPosition: null,
+        lumberjackName: null,
+
         // Trade state
         tradeableItems: [],
         tradeableItemCount: 0,
@@ -259,6 +269,53 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
         const updatedPending = bb.villageChat.getPendingTerraformRequests();
         // Consider it "pending" if there's a pending request OR we have an active task
         bb.hasPendingTerraformRequest = updatedPending.length > 0 || bb.currentTerraformTask !== null;
+    }
+
+    // ═══════════════════════════════════════════════
+    // LUMBERJACK TRACKING (for following during exploration)
+    // ═══════════════════════════════════════════════
+    // Track lumberjack position for following during exploration phase
+    // Only track if we don't have a village center yet (exploration phase)
+    if (!bb.villageCenter) {
+        bb.lumberjackPosition = null;
+        bb.lumberjackName = null;
+
+        // Find the closest lumberjack player
+        let lumberjackOutOfRange = false;
+        for (const [playerName, player] of Object.entries(bot.players)) {
+            // Skip ourselves and non-lumberjack players
+            if (playerName === bot.username) continue;
+            if (!playerName.toLowerCase().includes('lmbr') && !playerName.toLowerCase().includes('lumberjack')) continue;
+
+            const entity = player.entity;
+            if (!entity) {
+                // Player exists but entity is null - they're out of render distance
+                lumberjackOutOfRange = true;
+                continue;
+            }
+
+            const distance = pos.distanceTo(entity.position);
+
+            // Update if this is the first or closest lumberjack
+            if (!bb.lumberjackPosition || distance < pos.distanceTo(bb.lumberjackPosition)) {
+                bb.lumberjackPosition = entity.position.clone();
+                bb.lumberjackName = playerName;
+            }
+        }
+
+        if (bb.lumberjackPosition) {
+            bb.log?.debug({
+                lumberjack: bb.lumberjackName,
+                distance: pos.distanceTo(bb.lumberjackPosition).toFixed(1)
+            }, 'Tracking lumberjack');
+        } else if (lumberjackOutOfRange) {
+            // Log when lumberjack exists but is out of render distance
+            bb.log?.debug('Lumberjack out of render distance');
+        }
+    } else {
+        // Village established, no need to follow
+        bb.lumberjackPosition = null;
+        bb.lumberjackName = null;
     }
 
     // ═══════════════════════════════════════════════

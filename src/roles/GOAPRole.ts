@@ -11,6 +11,8 @@ import { createChildLogger, type Logger } from '../shared/logger';
 import {
   isInHole,
   escapeFromHole,
+  isStrandedOnTree,
+  descendFromHeight,
   recordPathfindingFailure,
   resetStuckTracker,
   type StuckTracker,
@@ -687,14 +689,39 @@ export abstract class GOAPRole implements Role {
     this.consecutivePlanningFailures++;
     this.lastPlanningFailureTime = now;
 
-    // After 3 consecutive planning failures, check if we're in a hole
+    // After 3 consecutive planning failures, check if we're stuck
     if (this.consecutivePlanningFailures >= 3) {
       // Check cooldown to avoid repeated escape spam
       if (now - this.lastHoleEscapeAttempt < GOAPRole.HOLE_ESCAPE_COOLDOWN) {
-        this.log?.debug('Skipping hole escape check (on cooldown)');
+        this.log?.debug('Skipping stuck escape check (on cooldown)');
         return;
       }
 
+      // Check for stranded on tree FIRST (more specific condition)
+      const strandedCheck = isStrandedOnTree(this.bot);
+      if (strandedCheck.stranded) {
+        this.lastHoleEscapeAttempt = now;
+        this.log?.warn(
+          { failures: this.consecutivePlanningFailures, height: strandedCheck.heightAboveGround },
+          'Bot stranded on tree (planning failures), attempting descent'
+        );
+
+        try {
+          const escaped = await descendFromHeight(this.bot, strandedCheck.heightAboveGround, this.log);
+          if (escaped) {
+            this.log?.info('Successfully descended from stranded position');
+            this.consecutivePlanningFailures = 0;
+            if (this.blackboard?.stuckTracker) {
+              resetStuckTracker(this.blackboard.stuckTracker);
+            }
+          }
+        } catch (err) {
+          this.log?.warn({ err }, 'Descent attempt failed');
+        }
+        return;
+      }
+
+      // Check for stuck in hole
       if (isInHole(this.bot)) {
         this.lastHoleEscapeAttempt = now;
         this.log?.warn(
@@ -728,7 +755,7 @@ export abstract class GOAPRole implements Role {
 
     this.log?.info({ reason, hadFailures }, 'Replan requested');
 
-    // Check for hole escape on action failures
+    // Check for stuck escape on action failures
     if (this.bot && hadFailures && this.blackboard?.stuckTracker) {
       const now = Date.now();
       const shouldAttemptEscape = recordPathfindingFailure(
@@ -740,20 +767,38 @@ export abstract class GOAPRole implements Role {
       // Check cooldown to avoid repeated escape spam
       const canAttemptEscape = now - this.lastHoleEscapeAttempt >= GOAPRole.HOLE_ESCAPE_COOLDOWN;
 
-      if (shouldAttemptEscape && canAttemptEscape && isInHole(this.bot)) {
-        this.lastHoleEscapeAttempt = now;
-        this.log?.warn('Bot appears stuck in a hole, attempting escape');
-        // Attempt escape asynchronously (don't block replan)
-        escapeFromHole(this.bot, this.log).then(escaped => {
-          if (escaped) {
-            this.log?.info('Successfully escaped from hole');
-            if (this.blackboard?.stuckTracker) {
-              resetStuckTracker(this.blackboard.stuckTracker);
+      if (shouldAttemptEscape && canAttemptEscape) {
+        // Check for stranded on tree FIRST (more specific condition)
+        const strandedCheck = isStrandedOnTree(this.bot);
+        if (strandedCheck.stranded) {
+          this.lastHoleEscapeAttempt = now;
+          this.log?.warn({ height: strandedCheck.heightAboveGround }, 'Bot stranded on tree, attempting descent');
+          // Attempt descent asynchronously (don't block replan)
+          descendFromHeight(this.bot, strandedCheck.heightAboveGround, this.log).then(escaped => {
+            if (escaped) {
+              this.log?.info('Successfully descended from stranded position');
+              if (this.blackboard?.stuckTracker) {
+                resetStuckTracker(this.blackboard.stuckTracker);
+              }
             }
-          }
-        }).catch(err => {
-          this.log?.warn({ err }, 'Hole escape attempt failed');
-        });
+          }).catch(err => {
+            this.log?.warn({ err }, 'Descent attempt failed');
+          });
+        } else if (isInHole(this.bot)) {
+          this.lastHoleEscapeAttempt = now;
+          this.log?.warn('Bot appears stuck in a hole, attempting escape');
+          // Attempt escape asynchronously (don't block replan)
+          escapeFromHole(this.bot, this.log).then(escaped => {
+            if (escaped) {
+              this.log?.info('Successfully escaped from hole');
+              if (this.blackboard?.stuckTracker) {
+                resetStuckTracker(this.blackboard.stuckTracker);
+              }
+            }
+          }).catch(err => {
+            this.log?.warn({ err }, 'Hole escape attempt failed');
+          });
+        }
       }
     }
 

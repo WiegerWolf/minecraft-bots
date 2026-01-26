@@ -463,6 +463,115 @@ Without timeout, pathfinding might:
 
 30 seconds is long enough for reasonable paths, short enough to fail fast on impossible ones.
 
+## Stuck Position Recovery
+
+### Stuck in Hole Detection
+
+```typescript
+function isInHole(bot: Bot): boolean {
+    // Check if solid blocks surround the bot on 3+ horizontal sides
+    const directions = [
+        { x: 1, z: 0 }, { x: -1, z: 0 },
+        { x: 0, z: 1 }, { x: 0, z: -1 },
+    ];
+    let blockedSides = 0;
+    for (const dir of directions) {
+        const feetBlock = bot.blockAt(pos.offset(dir.x, 0, dir.z));
+        const headBlock = bot.blockAt(pos.offset(dir.x, 1, dir.z));
+        if (feetBlock?.boundingBox === 'block' || headBlock?.boundingBox === 'block') {
+            blockedSides++;
+        }
+    }
+    return blockedSides >= 3;
+}
+```
+
+**When this triggers:**
+
+Bot fell into a 1x1 pit, surrounded by blocks. Pathfinder can't find exit.
+
+**Recovery strategy:**
+
+1. Break blocks above (clear vertical space)
+2. Break blocks to the side (create exit)
+3. Walk + jump toward cleared direction
+4. Place blocks to create stairs out
+
+### Stranded on Tree Detection
+
+```typescript
+function isStrandedOnTree(bot: Bot): { stranded: boolean; heightAboveGround: number } {
+    // Check if:
+    // 1. Standing on a single block (no adjacent walkable blocks)
+    // 2. Elevated 4+ blocks above ground
+    // 3. Not surrounded (open air on 3+ sides)
+}
+```
+
+**When this triggers:**
+
+Bot climbed tree while chopping/clearing leaves, ended up on single log block 5+ blocks in the air. All leaves cleared, nowhere to pathfind to.
+
+**Why this happens:**
+
+1. `clearLeaves()` uses `GoalLookAtBlock` which can put bot on tree
+2. Bot breaks leaves from elevated position
+3. All leaves cleared → no adjacent blocks to step to
+4. Pathfinder gives up (no path down from isolated pillar)
+
+**Recovery strategy (descendFromHeight):**
+
+| Height | Strategy |
+|--------|----------|
+| ≤ 4 blocks | Walk off edge, accept fall damage (0-0.5 hearts) |
+| 4-6 blocks | Try to pillar down by placing blocks adjacent |
+| 4-6 blocks | Last resort: break block underneath, fall |
+| > 6 blocks | Jump and hope for water |
+
+```typescript
+// Strategy prioritization
+if (heightAboveGround <= SAFE_FALL_HEIGHT) {
+    // Just walk off - safe enough
+    await walkOffEdge(bot);
+} else if (hasPlaceableBlocks(bot)) {
+    // Create scaffolding down
+    await pillarDown(bot);
+} else if (heightAboveGround <= 6) {
+    // Break block under feet, fall
+    await breakAndFall(bot);
+}
+```
+
+**Why break block underneath is acceptable:**
+
+- 5-6 block fall = 2-2.5 hearts damage
+- Bot has 20 hearts (10 hearts display)
+- Non-lethal, recoverable
+- Better than being permanently stuck
+
+### Integration with GOAP
+
+```typescript
+// In GOAPRole.checkHoleEscapeOnPlanningFailure
+if (this.consecutivePlanningFailures >= 3) {
+    // Check stranded FIRST (more specific)
+    const strandedCheck = isStrandedOnTree(this.bot);
+    if (strandedCheck.stranded) {
+        await descendFromHeight(this.bot, strandedCheck.heightAboveGround);
+    } else if (isInHole(this.bot)) {
+        await escapeFromHole(this.bot);
+    }
+}
+```
+
+**Why check stranded before hole:**
+
+Both conditions indicate pathfinding failure, but stranded requires different recovery (going DOWN) while hole requires going UP/OUT.
+
+**Cooldown protection:**
+
+10 second cooldown (`HOLE_ESCAPE_COOLDOWN`) prevents repeated escape attempts if recovery fails.
+
 ## Tick Guard
 
 ```typescript
@@ -619,5 +728,7 @@ Plan: CheckSharedChest → CraftHoe → TillGround
 | Execution | Action returns FAILURE | Retry, then replan |
 | World | State diff | Replan |
 | Pathfinding | Timeout | Mark unreachable |
+| Stuck in hole | 3+ sides blocked | Break blocks, climb out |
+| Stranded on tree | Elevated, no adjacent blocks | Walk off, pillar down, or fall |
 
 The system assumes failures are **normal** and designs for graceful degradation rather than crash-free operation.

@@ -713,6 +713,255 @@ export function resetStuckTracker(tracker: StuckTracker): void {
     tracker.lastPosition = null;
 }
 
+// ============================================================================
+// Stranded on Tree Detection and Recovery
+// ============================================================================
+
+/**
+ * Minimum height above ground to be considered "stranded" (blocks).
+ * 4 blocks is the minimum where pathfinder struggles with no adjacent blocks.
+ */
+const MIN_STRANDED_HEIGHT = 4;
+
+/**
+ * Maximum safe fall distance (blocks). Falls from this height or less
+ * cause minimal or no damage (3 blocks = no damage, 4 = 0.5 hearts).
+ */
+const SAFE_FALL_HEIGHT = 4;
+
+/**
+ * Check if the bot is stranded on top of a tree or pillar.
+ * This detects when the bot is elevated 4+ blocks above ground,
+ * standing on a single block with no adjacent blocks to pathfind to.
+ *
+ * This is different from isInHole() which detects being surrounded.
+ * This detects being isolated at height with nowhere to go.
+ */
+export function isStrandedOnTree(bot: Bot): { stranded: boolean; heightAboveGround: number } {
+    const pos = bot.entity.position;
+    const feetPos = pos.floored();
+
+    // Check the block the bot is standing on
+    const standingOn = bot.blockAt(feetPos.offset(0, -1, 0));
+    if (!standingOn || standingOn.boundingBox !== 'block') {
+        // Not standing on a solid block - not stranded (maybe falling)
+        return { stranded: false, heightAboveGround: 0 };
+    }
+
+    // Count how many adjacent blocks exist at feet level (potential escape routes)
+    const directions = [
+        { x: 1, z: 0 },
+        { x: -1, z: 0 },
+        { x: 0, z: 1 },
+        { x: 0, z: -1 },
+    ];
+
+    let adjacentSolids = 0;
+    let adjacentAir = 0;
+
+    for (const dir of directions) {
+        const adjacentFeet = bot.blockAt(feetPos.offset(dir.x, -1, dir.z));
+        const adjacentBody = bot.blockAt(feetPos.offset(dir.x, 0, dir.z));
+        const adjacentHead = bot.blockAt(feetPos.offset(dir.x, 1, dir.z));
+
+        // Check if this direction has a solid block to walk to
+        if (adjacentFeet && adjacentFeet.boundingBox === 'block') {
+            // Can potentially walk here if body and head are clear
+            if ((!adjacentBody || adjacentBody.boundingBox !== 'block') &&
+                (!adjacentHead || adjacentHead.boundingBox !== 'block')) {
+                adjacentSolids++;
+            }
+        } else if (!adjacentFeet || adjacentFeet.name === 'air') {
+            adjacentAir++;
+        }
+    }
+
+    // If there are walkable adjacent blocks, we're not stranded
+    if (adjacentSolids > 0) {
+        return { stranded: false, heightAboveGround: 0 };
+    }
+
+    // We're isolated - now check height above ground
+    let heightAboveGround = 0;
+    for (let dy = 1; dy <= 20; dy++) {
+        const below = bot.blockAt(feetPos.offset(0, -1 - dy, 0));
+        if (below && below.boundingBox === 'block' &&
+            !below.name.includes('log') && !below.name.includes('leaves')) {
+            // Found ground (not tree blocks)
+            heightAboveGround = dy;
+            break;
+        } else if (below && below.boundingBox === 'block' && below.name.includes('log')) {
+            // Still on tree trunk - keep counting
+            continue;
+        } else if (!below || below.name === 'air' || below.name === 'water') {
+            // Air or water below - keep counting
+            continue;
+        } else {
+            // Some other solid block (could be ground)
+            heightAboveGround = dy;
+            break;
+        }
+    }
+
+    // Default to max if we didn't find ground
+    if (heightAboveGround === 0) {
+        heightAboveGround = 20;
+    }
+
+    // Stranded if: no adjacent walkable blocks AND high enough above ground
+    const stranded = adjacentAir >= 3 && heightAboveGround >= MIN_STRANDED_HEIGHT;
+
+    return { stranded, heightAboveGround };
+}
+
+/**
+ * Attempt to descend from a height when stranded on top of a tree/pillar.
+ *
+ * Strategy:
+ * 1. If height is safe (4 blocks or less), just walk off/jump
+ * 2. If height is dangerous, try to pillar down by placing blocks
+ * 3. As last resort, break the block we're standing on and fall
+ *
+ * Returns true if successfully descended.
+ */
+export async function descendFromHeight(
+    bot: Bot,
+    heightAboveGround: number,
+    log?: Logger | null
+): Promise<boolean> {
+    const startPos = bot.entity.position.clone();
+    log?.info({ height: heightAboveGround }, 'Attempting to descend from height');
+
+    // Strategy 1: Safe fall - just walk off the edge
+    if (heightAboveGround <= SAFE_FALL_HEIGHT) {
+        log?.debug('Height is safe, attempting to walk off');
+
+        // Look for a direction to walk off
+        const directions = [
+            { x: 1, z: 0, name: 'east' },
+            { x: -1, z: 0, name: 'west' },
+            { x: 0, z: 1, name: 'south' },
+            { x: 0, z: -1, name: 'north' },
+        ];
+
+        for (const dir of directions) {
+            const yaw = Math.atan2(-dir.x, -dir.z);
+            await bot.look(yaw, 0);
+
+            bot.setControlState('forward', true);
+            await sleep(500);
+            bot.clearControlStates();
+            await sleep(500);
+
+            // Check if we moved down
+            if (bot.entity.position.y < startPos.y - 1) {
+                log?.info('Successfully walked off and descended');
+                return true;
+            }
+        }
+    }
+
+    // Strategy 2: Pillar down by placing blocks adjacent and stepping to them
+    log?.debug('Attempting pillar-down with block placement');
+    const placeableItems = bot.inventory.items().filter(i =>
+        i.name.includes('cobblestone') || i.name.includes('stone') ||
+        i.name.includes('dirt') || i.name.includes('_planks') ||
+        i.name.includes('netherrack')
+    );
+
+    if (placeableItems.length > 0) {
+        const placeableItem = placeableItems[0]!;
+        try {
+            await bot.equip(placeableItem, 'hand');
+
+            // Try to place a block adjacent to create a step down
+            const directions = [
+                { x: 1, z: 0 },
+                { x: -1, z: 0 },
+                { x: 0, z: 1 },
+                { x: 0, z: -1 },
+            ];
+
+            for (const dir of directions) {
+                const targetPos = bot.entity.position.floored().offset(dir.x, -1, dir.z);
+                const referenceBlock = bot.blockAt(bot.entity.position.floored().offset(0, -1, 0));
+
+                if (referenceBlock && referenceBlock.boundingBox === 'block') {
+                    try {
+                        // Place block adjacent and one down
+                        await bot.placeBlock(referenceBlock, new Vec3(dir.x, 0, dir.z));
+                        await sleep(200);
+
+                        // Try to step onto it
+                        const yaw = Math.atan2(-dir.x, -dir.z);
+                        await bot.look(yaw, 0);
+                        bot.setControlState('forward', true);
+                        await sleep(400);
+                        bot.clearControlStates();
+                        await sleep(200);
+
+                        if (bot.entity.position.distanceTo(startPos) > 0.5) {
+                            log?.debug('Placed block and stepped onto it');
+                            // Recursively continue descending
+                            const newHeight = heightAboveGround - 1;
+                            if (newHeight > 1) {
+                                return descendFromHeight(bot, newHeight, log);
+                            }
+                            log?.info('Successfully descended via block placement');
+                            return true;
+                        }
+                    } catch {
+                        // Block placement failed, try next direction
+                    }
+                }
+            }
+        } catch (err) {
+            log?.debug({ err }, 'Block placement approach failed');
+        }
+    }
+
+    // Strategy 3: Break the block we're standing on and fall
+    // This is risky but better than being permanently stuck
+    if (heightAboveGround <= 6) { // Only do this for heights that won't kill us
+        log?.warn({ height: heightAboveGround }, 'Last resort: breaking block underneath to fall');
+
+        const standingBlock = bot.blockAt(bot.entity.position.floored().offset(0, -1, 0));
+        if (standingBlock && standingBlock.boundingBox === 'block') {
+            try {
+                // Look down
+                await bot.look(0, Math.PI / 2);
+                await sleep(100);
+
+                await bot.dig(standingBlock);
+                await sleep(1000); // Wait for fall
+
+                if (bot.entity.position.y < startPos.y - 2) {
+                    log?.info('Successfully escaped by breaking block and falling');
+                    return true;
+                }
+            } catch (err) {
+                log?.warn({ err }, 'Failed to break block underneath');
+            }
+        }
+    }
+
+    // Strategy 4: Just jump and hope for water or something
+    log?.warn('All descent strategies failed, attempting jump');
+    bot.setControlState('jump', true);
+    bot.setControlState('forward', true);
+    await sleep(500);
+    bot.clearControlStates();
+    await sleep(1000);
+
+    if (bot.entity.position.y < startPos.y - 1) {
+        log?.info('Managed to escape via jump');
+        return true;
+    }
+
+    log?.error('Failed to descend from height');
+    return false;
+}
+
 export function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
