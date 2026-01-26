@@ -568,12 +568,256 @@ async function testLumberjackRespondsQuicklyWithMaterials() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TEST: Auto-accept offers after goal preemption
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * This test verifies the fix for the goal preemption bug:
+ *
+ * THE BUG (before fix):
+ * 1. Farmer broadcasts [NEED] hoe, BroadcastNeed action sets status='broadcasting'
+ * 2. Before 30s offer window, goal switches (e.g., CollectDrops preempts)
+ * 3. BroadcastNeed stops being ticked - offers arrive but never get accepted
+ * 4. Farmer stays stuck without tools
+ *
+ * THE FIX:
+ * - VillageChat.processNeedTimeouts() auto-accepts offers after window
+ * - Called during periodicCleanup() (blackboard updates)
+ * - Works independently of which goal is currently executing
+ *
+ * This test creates a scenario where goal preemption is likely:
+ * - Farmer has nearby drops (high priority goal CollectDrops)
+ * - Farmer also needs tools (broadcasts need)
+ * - Even with preemption, need should still be accepted
+ */
+async function testAutoAcceptAfterGoalPreemption() {
+  const test = new NeedDeliveryTest('Auto-accept offers after goal preemption');
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-30, 63, -30), new Vec3(30, 63, 30), 'grass_block');
+
+  // Village infrastructure
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(5, 64, 0), 'chest');
+  world.setBlock(new Vec3(5, 64, 2), 'crafting_table');
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: 5\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[CRAFT]\nX: 5\nY: 64\nZ: 2' });
+
+  // Farm sign
+  world.setBlock(new Vec3(-6, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 10\nY: 64\nZ: 10' });
+
+  // Water source for farm (establishes farm center)
+  world.setBlock(new Vec3(10, 63, 10), 'water');
+
+  // Forest for lumberjack
+  world.setBlock(new Vec3(8, 64, -5), 'oak_sign', { signText: '[FOREST]\nX: 15\nY: 64\nZ: 0' });
+  createOakTree(world, new Vec3(15, 64, 0), 5);
+  createOakTree(world, new Vec3(18, 64, 3), 5);
+
+  await test.setup(world);
+
+  // Lumberjack with materials to spare
+  const lumberjackBot = await test.addBot('Test_Lmbr', new Vec3(0, 65, 0), [
+    { name: 'iron_axe', count: 1 },
+    { name: 'oak_planks', count: 32 },
+    { name: 'stick', count: 16 },
+    { name: 'oak_log', count: 8 },
+  ]);
+
+  // Farmer with NO tools - will need to broadcast
+  const farmerBot = await test.addBot('Test_Farmer', new Vec3(3, 65, 3), [
+    { name: 'wheat_seeds', count: 8 },
+  ]);
+
+  await test.wait(3000, 'Bots loading');
+
+  // Start roles
+  const farmerRole = new GOAPFarmingRole();
+  const lumberjackRole = new GOAPLumberjackRole();
+
+  test.startRole('Test_Farmer', farmerRole, 'farmer');
+  test.startRole('Test_Lmbr', lumberjackRole, 'lumberjack');
+
+  // Wait for need broadcast
+  await test.waitUntil(
+    () => test.hasChatMessage('[NEED]') && test.hasChatMessage('hoe'),
+    {
+      timeout: 90000,
+      message: 'Farmer should broadcast [NEED] hoe',
+    }
+  );
+
+  // Spawn some drops near farmer to trigger goal preemption
+  // This creates the scenario where CollectDrops might preempt GatherSeeds/ObtainTools
+  console.log('  🎯 Spawning drops to trigger goal preemption...');
+  await test.rcon('summon item 4 65 4 {Item:{id:"minecraft:wheat_seeds",Count:3b}}');
+  await test.rcon('summon item 4 65 5 {Item:{id:"minecraft:wheat_seeds",Count:2b}}');
+
+  // Wait for lumberjack to offer
+  await test.waitUntil(
+    () => test.hasChatMessage('[CAN_PROVIDE]'),
+    {
+      timeout: 60000,
+      message: 'Lumberjack should respond with [CAN_PROVIDE]',
+    }
+  );
+
+  // KEY CHECK: Farmer should accept even with goal preemption happening
+  // The fix ensures processNeedTimeouts() is called during blackboard updates
+  const acceptReceived = await test.waitUntil(
+    () => test.hasChatMessage('[ACCEPT_PROVIDER]'),
+    {
+      timeout: 60000, // Give extra time for the offer window (30s) + processing
+      message: 'Farmer should auto-accept provider (even after goal preemption)',
+    }
+  );
+
+  if (acceptReceived) {
+    test.assert(true, 'Need acceptance works despite potential goal preemption');
+  } else {
+    // If we get here, the bug is NOT fixed
+    test.assert(false, 'Farmer failed to accept - goal preemption bug still present');
+  }
+
+  // Verify the delivery flow completes
+  await test.waitUntil(
+    () => test.hasChatMessage('[PROVIDE_AT]'),
+    {
+      timeout: 30000,
+      message: 'Lumberjack should announce delivery location',
+    }
+  );
+
+  // Wait for farmer to potentially receive items
+  await test.wait(30000, 'Waiting for farmer to receive delivered items');
+
+  // Check if farmer got materials
+  const farmerPlanks = test.getBotInventoryCount('Test_Farmer', 'planks');
+  const farmerSticks = test.getBotInventoryCount('Test_Farmer', 'stick');
+
+  console.log(`  📦 Farmer inventory after delivery: ${farmerPlanks} planks, ${farmerSticks} sticks`);
+
+  const farmerGotItems = farmerPlanks > 0 || farmerSticks > 0;
+  test.assert(
+    farmerGotItems,
+    `Farmer received items after goal preemption scenario (planks: ${farmerPlanks}, sticks: ${farmerSticks})`
+  );
+
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEST: ReceiveNeedDelivery goal preempts CollectDrops
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Test that ReceiveNeedDelivery (utility 185) preempts CollectDrops (max 150).
+ *
+ * When a delivery is pending, the farmer should prioritize picking up the
+ * need delivery over random drops, because the delivery is specifically
+ * for materials the farmer needs (and might despawn).
+ */
+async function testReceiveDeliveryPreemptsCollectDrops() {
+  const test = new NeedDeliveryTest('ReceiveNeedDelivery preempts CollectDrops');
+
+  const world = new MockWorld();
+  world.fill(new Vec3(-30, 63, -30), new Vec3(30, 63, 30), 'grass_block');
+
+  // Village infrastructure
+  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(5, 64, 0), 'chest');
+  world.setBlock(new Vec3(5, 64, 2), 'crafting_table');
+  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: 5\nY: 64\nZ: 0' });
+  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[CRAFT]\nX: 5\nY: 64\nZ: 2' });
+  world.setBlock(new Vec3(-6, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 10\nY: 64\nZ: 10' });
+  world.setBlock(new Vec3(10, 63, 10), 'water');
+
+  // Forest for lumberjack
+  world.setBlock(new Vec3(8, 64, -5), 'oak_sign', { signText: '[FOREST]\nX: 15\nY: 64\nZ: 0' });
+  createOakTree(world, new Vec3(15, 64, 0), 5);
+
+  await test.setup(world);
+
+  // Lumberjack with materials
+  const lumberjackBot = await test.addBot('Test_Lmbr', new Vec3(0, 65, 0), [
+    { name: 'iron_axe', count: 1 },
+    { name: 'oak_planks', count: 32 },
+    { name: 'stick', count: 16 },
+  ]);
+
+  // Farmer without tools
+  const farmerBot = await test.addBot('Test_Farmer', new Vec3(3, 65, 3), [
+    { name: 'wheat_seeds', count: 8 },
+  ]);
+
+  await test.wait(3000, 'Bots loading');
+
+  // Start roles
+  const farmerRole = new GOAPFarmingRole();
+  const lumberjackRole = new GOAPLumberjackRole();
+
+  test.startRole('Test_Farmer', farmerRole, 'farmer');
+  test.startRole('Test_Lmbr', lumberjackRole, 'lumberjack');
+
+  // Wait through the full need flow
+  await test.waitUntil(
+    () => test.hasChatMessage('[NEED]'),
+    { timeout: 90000, message: 'Farmer broadcasts need' }
+  );
+
+  await test.waitUntil(
+    () => test.hasChatMessage('[CAN_PROVIDE]'),
+    { timeout: 60000, message: 'Lumberjack offers' }
+  );
+
+  await test.waitUntil(
+    () => test.hasChatMessage('[ACCEPT_PROVIDER]'),
+    { timeout: 60000, message: 'Farmer accepts' }
+  );
+
+  await test.waitUntil(
+    () => test.hasChatMessage('[PROVIDE_AT]'),
+    { timeout: 30000, message: 'Delivery location announced' }
+  );
+
+  // Now spawn distracting drops NEAR farmer (not at delivery location)
+  // These should NOT prevent farmer from going to delivery location
+  console.log('  🎯 Spawning distracting drops near farmer...');
+  const farmerPos = test.getBotPosition('Test_Farmer');
+  if (farmerPos) {
+    await test.rcon(`summon item ${Math.floor(farmerPos.x) + 1} 65 ${Math.floor(farmerPos.z)} {Item:{id:"minecraft:wheat_seeds",Count:5b}}`);
+    await test.rcon(`summon item ${Math.floor(farmerPos.x) - 1} 65 ${Math.floor(farmerPos.z)} {Item:{id:"minecraft:wheat_seeds",Count:5b}}`);
+  }
+
+  await test.wait(2000, 'Drops spawned');
+
+  // Give time for farmer to decide - should go to delivery, not random drops
+  await test.wait(25000, 'Farmer should prioritize delivery over random drops');
+
+  // Check if farmer got the delivered items (planks/sticks, not just seeds)
+  const farmerPlanks = test.getBotInventoryCount('Test_Farmer', 'planks');
+  const farmerSticks = test.getBotInventoryCount('Test_Farmer', 'stick');
+
+  console.log(`  📦 Farmer: ${farmerPlanks} planks, ${farmerSticks} sticks`);
+
+  const farmerGotDelivery = farmerPlanks > 0 || farmerSticks > 0;
+  test.assert(
+    farmerGotDelivery,
+    `Farmer prioritized delivery pickup over random drops (planks: ${farmerPlanks}, sticks: ${farmerSticks})`
+  );
+
+  return test.cleanup();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ALL_TESTS: Record<string, () => Promise<TestResult>> = {
   'pickup-delivered': testFarmerPicksUpDeliveredItems,
   'quick-response': testLumberjackRespondsQuicklyWithMaterials,
+  'auto-accept-preemption': testAutoAcceptAfterGoalPreemption,
+  'delivery-preempts-drops': testReceiveDeliveryPreemptsCollectDrops,
 };
 
 async function runTests(tests: Array<() => Promise<TestResult>>): Promise<{ passed: number; failed: number }> {

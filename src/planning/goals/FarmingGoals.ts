@@ -482,9 +482,10 @@ export class ReceiveNeedDeliveryGoal extends BaseGoal {
   getUtility(ws: WorldState): number {
     if (!ws.getBool('need.hasPendingDelivery')) return 0;
 
-    // Very high priority - items dropped for us might despawn!
-    // Higher than most goals but below active trades (150)
-    return 145;
+    // CRITICAL priority - items dropped for us might despawn!
+    // Must be high enough to preempt CollectDrops (max 150) + hysteresis (30)
+    // This is essentially completing a trade/need, so it must finish.
+    return 185;
   }
 
   override isValid(ws: WorldState): boolean {

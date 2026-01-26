@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import type { Logger } from './logger';
 import type { Need, NeedOffer, NeedStatus, DeliveryMethod, ItemStack } from './needs/types.js';
-import { generateNeedId, rankOffers } from './needs/types.js';
+import { generateNeedId, rankOffers, DEFAULT_NEED_CONFIG } from './needs/types.js';
 
 // How often to share position with trade partner (prevents chat spam)
 const POSITION_SHARE_INTERVAL = 2000;  // 2 seconds
@@ -313,6 +313,7 @@ export class VillageChat {
         this.cleanupOldTradeOffers();
         this.cleanupOldNeeds();
         this.cleanupOldTerraformRequests();
+        this.processNeedTimeouts();
     }
 
     private setupChatListener() {
@@ -1888,5 +1889,44 @@ export class VillageChat {
             }
         }
         return 'trade';
+    }
+
+    /**
+     * Process need timeouts and auto-accept offers.
+     *
+     * This method is crucial for fixing the goal preemption bug:
+     * When a bot broadcasts a need, the BroadcastNeed action tracks the offer
+     * window timing. However, if goal preemption occurs (e.g., CollectDrops
+     * interrupts), the action stops being ticked and offers are never accepted.
+     *
+     * This method should be called during blackboard updates (periodicCleanup)
+     * to ensure offer acceptance happens independently of goal execution.
+     */
+    processNeedTimeouts(offerWindowMs: number = DEFAULT_NEED_CONFIG.offerWindowMs): void {
+        const now = Date.now();
+
+        for (const need of this.state.activeNeeds) {
+            // Only process needs in broadcasting status
+            if (need.status !== 'broadcasting') continue;
+
+            const elapsed = now - need.timestamp;
+
+            // If offer window has passed and we have offers, auto-accept the best one
+            if (elapsed >= offerWindowMs && need.offers.length > 0) {
+                const rankedOffers = rankOffers(need.offers);
+                const bestOffer = rankedOffers[0];
+
+                if (bestOffer) {
+                    this.log?.info({
+                        needId: need.id,
+                        provider: bestOffer.from,
+                        offerCount: need.offers.length,
+                        elapsed: Math.round(elapsed / 1000),
+                    }, 'Auto-accepting best offer after window');
+
+                    this.acceptProvider(need.id, bestOffer.from);
+                }
+            }
+        }
     }
 }
