@@ -495,6 +495,44 @@ The preemption threshold (30 utility points) is higher than normal hysteresis (2
 
 Since 120 > 80 + 30, `RespondToTradeOffer` preempts `CheckSharedChest`. The farmer stops waiting for materials and immediately responds to the trade offer.
 
+**Preemption implementation in GOAPRole:**
+
+```typescript
+// In checkGoalPreemption()
+if (bestUtility > currentUtility + PREEMPTION_UTILITY_THRESHOLD) {
+    // Signal action to abort cleanly
+    this.blackboard.preemptionRequested = true;
+
+    // Cancel current execution
+    this.executor.cancel(ReplanReason.WORLD_CHANGED);
+    this.arbiter.clearCurrentGoal();
+
+    // Immediately plan for new goal
+    await this.planNextGoal();
+
+    // Clear preemption flag
+    this.blackboard.preemptionRequested = false;
+}
+```
+
+**How actions respond to preemption:**
+
+Long-running actions should check `bb.preemptionRequested` periodically and exit cleanly:
+
+```typescript
+async execute(bot, bb, ws): Promise<ActionResult> {
+    while (!allItemsCollected) {
+        // Check for preemption
+        if (bb.preemptionRequested) {
+            return ActionResult.FAILURE; // Exit cleanly
+        }
+
+        await collectNextItem();
+    }
+    return ActionResult.SUCCESS;
+}
+```
+
 ## Debugging Tips
 
 ### Enable Debug Logging

@@ -14,41 +14,81 @@ Each test file focuses on one behavioral aspect (startup, trading, inventory, et
 tests/
   scenarios/           # Behavioral specs by role
     farmer/
-      startup.test.ts      # Boot sequence, sign study
-      trading.test.ts      # Trade completion, offers
-      core-work.test.ts    # Harvesting, planting, tilling
-      ...
+      startup.test.ts           # Boot sequence, sign study
+      trading.test.ts           # Trade completion, offers
+      core-work.test.ts         # Harvesting, planting, tilling
+      tools.test.ts             # Hoe acquisition
+      knowledge.test.ts         # FARM signs, sign reading
+      inventory.test.ts         # Drop collection, deposits
+      idle.test.ts              # Exploration behavior
+      goal-selection.test.ts    # Hysteresis tests
+      craft-hoe.test.ts         # Hoe crafting from materials
+      chest-backoff.test.ts     # Chest empty backoff behavior
+      exploration-cooldown.test.ts  # Explore cooldown behavior
+      follow-lumberjack.test.ts # Lumberjack tracking during exploration
+      need-acceptance.test.ts   # Need delivery acceptance
     lumberjack/
-      tree-detection.test.ts   # Tree vs stump detection
-      blackboard-world.test.ts # Full blackboard integration
-      ...
+      startup.test.ts           # Boot sequence, sign study
+      tree-detection.test.ts    # Tree vs stump detection
+      blackboard-world.test.ts  # Full blackboard integration
+      core-work.test.ts         # Tree chopping, processing
+      tools.test.ts             # Axe crafting
+      knowledge.test.ts         # FOREST signs, sign reading
+      inventory.test.ts         # Drop collection, deposits
+      idle.test.ts              # Exploration behavior
+      goal-selection.test.ts    # Hysteresis tests
+      infrastructure.test.ts    # Chest/crafting table placement
+      cooperation.test.ts       # Multi-bot cooperation
+      forest-safety.test.ts     # Forest detection safety
+      forest-search-backoff.test.ts # Forest search backoff
+      water-crossing.test.ts    # Boat-based water crossing
     landscaper/
-      ...
+      startup.test.ts           # Boot sequence, sign study
+      core-work.test.ts         # Terraforming, filling holes
+      tools.test.ts             # Shovel/pickaxe crafting
+      inventory.test.ts         # Drop collection, deposits
+      idle.test.ts              # Exploration behavior
+      goal-selection.test.ts    # Hysteresis tests
+      curiosity.test.ts         # Sign reading curiosity
+      dirt-gathering.test.ts    # Dirt collection behavior
+      trading.test.ts           # Trade behavior
+    shared/
+      trade-verification.test.ts # Trade verification logic
+      trade-execution.test.ts    # Trade execution flow
+  planning/            # Core planning system tests
+    WorldState.test.ts
+    Action.test.ts
+    Goal.test.ts
+    GOAPPlanner.test.ts
+    GoalArbiter.test.ts
+    PlanExecutor.test.ts
+  needs/               # Need system tests
+    NeedsFlow.test.ts
+    RecipeService.test.ts
+  shared/              # Shared utility tests
+    terrain-utils.test.ts
+    trade-backoff.test.ts
+    memory-cleanup.test.ts
   simulation/          # Integration tests with real Paper server
     farmer/              # Farmer role tests
-      startup.test.sim.ts      # Sign study, farm establishment
-      core-work.test.sim.ts    # Harvest, plant, till, gather seeds
-      inventory.test.sim.ts    # Drop collection, deposits
-      tools.test.sim.ts        # Hoe crafting
-      knowledge.test.sim.ts    # Sign reading
     lumberjack/          # Lumberjack role tests
-      startup.test.sim.ts      # Sign study, storage check
-      core-work.test.sim.ts    # Tree chopping, forest detection
-      inventory.test.sim.ts    # Drop collection, deposits
     landscaper/          # Landscaper role tests
-      startup.test.sim.ts      # Sign study, tool acquisition
-      core-work.test.sim.ts    # Terraform, fill holes
-      inventory.test.sim.ts    # Drop collection, deposits
     shared/              # Multi-bot and shared tests
-    multi-bot.test.sim.ts     # Multi-bot coordination tests
     PaperSimulationServer.ts  # Server management, world sync
     SimulationTest.ts         # Test framework with assertions
     ScenarioBuilder.ts        # Fluent API for building test worlds
     run-all-tests.ts          # Run all simulation test suites
   mocks/
     world-state/       # WorldState presets by role
+      base.ts                # createWorldState helper
+      farmer.ts              # freshSpawnFarmerState, etc.
+      lumberjack.ts
+      landscaper.ts
     MockWorld.ts       # 3D block grid for world simulation
     BotMock.ts         # Mineflayer bot mock
+    BlackboardMock.ts
+    ActionMock.ts
+    Vec3Mock.ts
     VisualTestServer.ts # Browser-based visual test harness
     visualize-world.ts  # Static world visualization
   visual/

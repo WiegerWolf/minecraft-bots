@@ -322,6 +322,49 @@ if (text.includes("✅ Bot has spawned!")) {
 
 Once the bot successfully spawns, the problem is solved. Reset to 0 so the next crash gets fast recovery.
 
+## Why Goal Preemption Over Simple Hysteresis?
+
+Standard hysteresis prevents goal thrashing during normal operation. But what about urgent goals that need to interrupt long-running actions?
+
+### The Problem
+
+Consider this scenario:
+- `CheckSharedChest` action returns `RUNNING` for 30+ seconds waiting for materials
+- Meanwhile, another bot broadcasts a trade offer
+- `RespondToTradeOffer` should have utility 120, but hysteresis keeps us on the current goal
+- Trade times out, opportunity missed
+
+### Preemption Solves This
+
+A separate preemption check runs every tick while an action is RUNNING:
+
+```typescript
+if (bestUtility > currentUtility + PREEMPTION_UTILITY_THRESHOLD) {
+    // Interrupt the running action
+    this.executor.cancel();
+    await this.planNextGoal();
+}
+```
+
+**Key differences from hysteresis:**
+- Hysteresis: "Is this goal still the best?" (relative comparison)
+- Preemption: "Is something MUCH better available?" (absolute threshold)
+
+The preemption threshold (30 utility) is intentionally high to avoid thrashing. Only truly urgent goals (like trades) trigger preemption.
+
+### Preemption Flag
+
+Actions can check `bb.preemptionRequested` to exit cleanly:
+
+```typescript
+if (bb.preemptionRequested) {
+    // Clean up any state
+    return ActionResult.FAILURE;
+}
+```
+
+This allows graceful interruption rather than abrupt cancellation.
+
 ## Why `isBotConnected()` Checks Socket State?
 
 The GOAP role checks connection health:

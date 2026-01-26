@@ -212,6 +212,7 @@ Press Enter on a bot to see full details:
 | FindForest base radius | 32 blocks | Starting exploration distance |
 | FindForest radius expansion | +8 blocks/4 attempts | Expands when nearby exhausted (max 80) |
 | Exploration memory TTL | 5 minutes | Time before explored area becomes "new" again |
+| Bad water memory TTL | 10 minutes | Longer TTL for cave water locations to avoid |
 | Cave avoidance penalty | -200 score | Positions without clear sky (prevents cave exploration) |
 | Unsafe Y penalty | -100 score | Positions below Y=55 or above Y=85 |
 | Min safe exploration Y | 55 | Below this is considered underground/caves |
@@ -225,6 +226,9 @@ Press Enter on a bot to see full details:
 | Trade step back distance | 4 blocks | Distance giver moves back after dropping (pickup range is ~2) |
 | Trade giver wait after drop | 3 seconds | Time giver waits for receiver confirmation |
 | Trade pickup verification wait | 1 second | Time to wait for items to settle before pickup |
+| Trade READY re-send interval | 5 seconds | Periodic re-send if partner hasn't acknowledged |
+| Lumberjack follow distance | 64 blocks | Max distance before losing lumberjack tracking |
+| Chest backoff duration | 30 seconds | Time to wait before rechecking empty chest |
 | CompleteTrade utility | 150 | Very high - finish active trades first |
 | RespondToTrade utility | 120 | High priority - can preempt RUNNING actions (120 > 80 + 30) |
 | BroadcastTrade utility | 30-50 | Low priority, when idle with clutter |
@@ -233,6 +237,11 @@ Press Enter on a bot to see full details:
 | Simulation server port | 25566 | Paper server game port |
 | Simulation RCON port | 25575 | RCON for world sync |
 | RCON throttle | 5ms | Delay between commands to prevent disconnect |
+| Hole escape cooldown | 15 seconds | Cooldown between stuck position recovery attempts |
+| Consecutive planning failures for escape | 3 | Failures before attempting hole/stranded escape |
+| Preemption utility threshold | 30 | New goal must beat current by this much to interrupt |
+| Safe fall height | 4 blocks | Maximum fall height considered safe (no recovery needed) |
+| Pathfinder stuck time threshold | 8 seconds | Time without progress before considered stuck |
 
 ### File Locations
 
@@ -250,8 +259,11 @@ Press Enter on a bot to see full details:
 | VillageChat | `src/shared/VillageChat.ts` |
 | SignKnowledge | `src/shared/SignKnowledge.ts` |
 | TerrainUtils | `src/shared/TerrainUtils.ts` |
+| PathfindingUtils | `src/shared/PathfindingUtils.ts` |
 | ItemCategories | `src/shared/ItemCategories.ts` |
 | Shared Trade Actions | `src/shared/actions/BaseTrade.ts` |
+| Need System Types | `src/shared/needs/types.ts` |
+| Recipe Service | `src/shared/needs/RecipeService.ts` |
 | Logger | `src/shared/logger.ts` |
 | TUI Manager | `src/manager/index.tsx` |
 | Old Process Manager | `src/index.ts` |

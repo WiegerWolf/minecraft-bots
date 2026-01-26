@@ -855,4 +855,35 @@ if (trade.retryCount >= MAX_TRADE_RETRIES) {
 | Stranded on tree | Elevated, no adjacent blocks | Walk off, pillar down, or fall |
 | Trade ready deadlock | Both waiting for partner | Re-send TRADE_READY every 5s |
 
+## Pathfinder Stuck Detection (Integrated)
+
+The pathfinder has built-in stuck detection that triggers after sustained lack of progress:
+
+```typescript
+const DEFAULT_STUCK_CONFIG: StuckDetectionConfig = {
+    checkIntervalMs: 500,          // Sample position every 500ms
+    minProgressPerSecond: 0.1,     // Very lenient - almost any movement counts
+    stuckTimeThresholdMs: 8000,    // 8 seconds of no progress = stuck
+    maxRecoveryAttempts: 0,        // Just timeout, no automatic recovery
+};
+```
+
+**Why lenient progress threshold?**
+
+The bot might be:
+- Jumping over obstacles
+- Walking around objects
+- Temporarily backtracking
+
+Any movement at all (0.1 blocks/sec) counts as progress. Only truly stuck bots fail this check.
+
+**Why disabled automatic recovery?**
+
+Recovery actions (jump, sprint_jump, clear_path) are disabled by default (`maxRecoveryAttempts: 0`). Instead, the GOAP layer handles stuck recovery through:
+- `isInHole()` detection
+- `isStrandedOnTree()` detection
+- Manual escape functions
+
+This separation keeps pathfinding simple and predictable.
+
 The system assumes failures are **normal** and designs for graceful degradation rather than crash-free operation.

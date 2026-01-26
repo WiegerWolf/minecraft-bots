@@ -348,6 +348,52 @@ Categories map to specific items:
 
 Broadcasting `[NEED] hoe` means "I need any item from the hoe category."
 
+### Need Delivery Flow
+
+Once a need is accepted, items must be delivered. The delivery can happen via chest or direct trade:
+
+```
+Farmer (Requester)               Lumberjack (Provider)
+    │                                  │
+    │ [NEED] hoe                       │
+    ├─────────────────────────────────►│
+    │                                  │
+    │                         Checks inventory...
+    │                         Has planks/sticks!
+    │                                  │
+    │◄──[OFFER_FOR_NEED] needId items──┤
+    │                                  │
+    │ (Offer collection window - 5s)   │
+    │ (Pick best offer by score)       │
+    │                                  │
+    ├──[ACCEPT_OFFER] needId provider─►│
+    │                                  │
+    │                         Deposits to chest or
+    │                         initiates direct trade
+    │                                  │
+    │◄─[PROVIDE_AT] needId method pos──┤
+    │                                  │
+    │ pendingDelivery = {             │
+    │   needId, location, method,     │
+    │   items                         │
+    │ }                               │
+    │                                  │
+    │ Travel to location...            │
+    │ Pick up items...                 │
+    │                                  │
+    │ Mark need as fulfilled          │
+```
+
+**Why track `pendingDelivery`?**
+
+After accepting an offer, the requester needs to:
+1. Know where items will be delivered
+2. Travel to that location
+3. Pick up the correct items
+4. Mark the need as complete
+
+Without explicit tracking, the requester might not know where to go or what to expect.
+
 ## Direct Trading (Hand-to-Hand)
 
 While the Request/Deposit pattern works well for dedicated exchanges, bots often accumulate items they don't need. Direct trading enables bots to hand off items without using shared storage.

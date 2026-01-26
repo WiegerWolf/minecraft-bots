@@ -454,6 +454,7 @@ bb.tradeableItemCount: number;          // Count of tradeable items
 bb.pendingTradeOffers: TradeOffer[];    // Active offers from other bots
 bb.activeTrade: ActiveTrade | null;     // Current trade in progress
 bb.lastOfferTime: number;               // Timestamp of last broadcast (cooldown)
+bb.consecutiveNoTakers: number;         // Consecutive "no takers" for trade backoff
 ```
 
 **Why track `tradeableItems` in blackboard?**
@@ -513,6 +514,80 @@ Without cooldown:
 - Allow work between offers
 - Not flood chat
 - Still clear inventory reasonably fast
+
+### Lumberjack Tracking (Farmer/Landscaper)
+
+During the exploration phase (before village center is established), farmers and landscapers can follow lumberjacks to stay together:
+
+```typescript
+// Lumberjack tracking fields
+bb.lumberjackPosition: Vec3 | null;     // Last known position of a lumberjack
+bb.lumberjackName: string | null;       // Name of the lumberjack being followed
+```
+
+**Why track lumberjacks?**
+
+In early game, bots spawn together but can easily separate. The lumberjack typically establishes the village center first. Without tracking:
+1. Farmer explores in random direction
+2. Lumberjack explores different direction
+3. They end up 200+ blocks apart
+4. Trading and coordination become impossible
+
+With tracking, farmers and landscapers follow lumberjacks during exploration, staying within ~64 blocks until village is established.
+
+**Why only during exploration phase?**
+
+Once village center is established (`bb.villageCenter !== null`), all bots have a common reference point. Tracking becomes unnecessary and could interfere with farming/terraforming work.
+
+### Need Delivery Tracking (Farmer)
+
+When a farmer broadcasts a need (like "I need a hoe") and a provider accepts, the farmer tracks the pending delivery:
+
+```typescript
+bb.pendingDelivery: {
+    needId: string;                           // ID of the active need
+    location: Vec3;                           // Where to pick up items
+    method: 'chest' | 'trade';                // How items will be delivered
+    items: Array<{ name: string; count: number }>;  // What to expect
+} | null;
+```
+
+**Why track pending deliveries?**
+
+After a need is accepted, the farmer must:
+1. Know where to go to receive items
+2. Know what to expect
+3. Mark the need as fulfilled after pickup
+
+Without explicit tracking, the farmer might:
+- Keep broadcasting the same need
+- Not know where the provider left items
+- Miss the delivery entirely
+
+### Action Preemption
+
+Actions can be interrupted by higher-priority goals:
+
+```typescript
+bb.preemptionRequested: boolean;    // Set by GOAP when higher-priority goal detected
+```
+
+When `preemptionRequested` is true, the current action should exit cleanly at the next opportunity. This allows urgent goals (like `RespondToTradeOffer`) to interrupt long-running actions (like `CheckSharedChest` waiting for materials).
+
+### Exploration Cooldown and Chest Backoff
+
+```typescript
+bb.chestEmptyUntil: number;           // Timestamp when chest backoff expires
+bb.exploreOnCooldownUntil: number;    // Timestamp when explore cooldown expires
+```
+
+**Why chest backoff?**
+
+If a farmer checks a shared chest and finds it empty, repeatedly checking wastes time. A 30-second backoff prevents spam checking.
+
+**Why explore cooldown?**
+
+Exploration is expensive (pathfinding, world loading). If exploration fails to find resources, a cooldown prevents rapid retry cycles that accomplish nothing.
 
 ## Farm Center: Critical Strategic State
 
@@ -636,6 +711,203 @@ But 5+ changes suggest major world shift:
 ### Why Not Hash Comparison?
 
 Hashing would only tell us "same" or "different". The count helps with threshold tuning and debugging.
+
+## WorldState Fact Reference
+
+The WorldStateBuilder extracts facts from blackboards into the following categories:
+
+### Common Facts (All Roles)
+
+```typescript
+// Inventory
+ws.set('inv.logs', number);           // Log count
+ws.set('inv.planks', number);         // Plank count
+ws.set('inv.sticks', number);         // Stick count
+ws.set('inv.emptySlots', number);     // Free inventory slots
+
+// Equipment
+ws.set('has.craftingTable', boolean); // Has crafting table in inventory
+
+// State
+ws.set('state.inventoryFull', boolean);
+ws.set('state.lastAction', string);
+ws.set('state.consecutiveIdleTicks', number);
+
+// Nearby
+ws.set('nearby.drops', number);       // Dropped items nearby
+ws.set('nearby.chests', number);      // Chests nearby
+ws.set('nearby.craftingTables', number);
+
+// Positions
+ws.set('pos.bot', Vec3);
+ws.set('pos.sharedChest', Vec3 | undefined);
+ws.set('pos.sharedCraftingTable', Vec3 | undefined);
+
+// Trade State
+ws.set('trade.status', string);       // Current trade phase
+ws.set('trade.inTrade', boolean);     // In active trade
+ws.set('trade.tradeableCount', number);
+ws.set('trade.pendingOffers', number);
+ws.set('trade.onCooldown', boolean);
+ws.set('trade.isActive', boolean);    // Computed: in an active trade needing completion
+ws.set('trade.canRespondToOffers', boolean);  // Computed: can accept offers
+ws.set('trade.canBroadcastOffer', boolean);   // Computed: can make offers
+```
+
+### Farmer-Specific Facts
+
+```typescript
+// Inventory
+ws.set('inv.seeds', number);
+ws.set('inv.produce', number);
+
+// Equipment
+ws.set('has.hoe', boolean);
+ws.set('has.sword', boolean);
+ws.set('has.axe', boolean);
+ws.set('has.sign', boolean);
+
+// Nearby
+ws.set('nearby.water', number);
+ws.set('nearby.farmland', number);
+ws.set('nearby.matureCrops', number);
+ws.set('nearby.grass', number);
+ws.set('nearby.unknownSigns', number);
+ws.set('nearby.hasLumberjack', boolean);      // Lumberjack visible
+ws.set('nearby.lumberjackDistance', number);  // Distance to lumberjack (-1 if not visible)
+
+// Positions
+ws.set('pos.farmCenter', Vec3 | undefined);
+
+// Capabilities
+ws.set('can.till', boolean);
+ws.set('can.plant', boolean);
+ws.set('can.harvest', boolean);
+ws.set('needs.tools', boolean);
+ws.set('needs.seeds', boolean);
+
+// Derived
+ws.set('derived.hasProduceToDeposit', boolean);
+ws.set('derived.canCraftHoe', boolean);
+ws.set('derived.needsWood', boolean);
+ws.set('derived.hasFarmEstablished', boolean);
+ws.set('derived.hasStorageAccess', boolean);
+ws.set('derived.hasVillage', boolean);
+ws.set('derived.chestRecentlyEmpty', boolean);
+ws.set('derived.exploreOnCooldown', boolean);
+ws.set('derived.canCraftSign', boolean);
+
+// Sign Knowledge
+ws.set('has.studiedSigns', boolean);
+ws.set('known.farms', number);
+ws.set('known.waterSources', number);
+ws.set('pending.signWrites', number);
+ws.set('pending.hasFarmSign', boolean);
+
+// Need Delivery
+ws.set('need.hasPendingDelivery', boolean);
+ws.set('need.deliveryDistance', number);
+ws.set('need.deliveryNeedId', string);
+```
+
+### Lumberjack-Specific Facts
+
+```typescript
+// Inventory
+ws.set('inv.saplings', number);
+
+// Equipment
+ws.set('has.axe', boolean);
+ws.set('has.sign', boolean);
+ws.set('has.boat', boolean);
+
+// Nearby
+ws.set('nearby.trees', number);
+ws.set('nearby.reachableTrees', number);  // Trees at/below bot level
+ws.set('nearby.forestTrees', number);     // Trees in verified forests
+ws.set('nearby.logs', number);
+ws.set('nearby.leaves', number);
+ws.set('nearby.unknownSigns', number);
+
+// Positions
+ws.set('pos.villageCenter', Vec3 | undefined);
+
+// Capabilities
+ws.set('can.chop', boolean);
+ws.set('needs.toDeposit', boolean);
+ws.set('has.incomingNeeds', boolean);
+ws.set('can.spareForNeeds', boolean);
+
+// Derived
+ws.set('derived.canCraftAxe', boolean);
+ws.set('derived.canCraftSign', boolean);
+ws.set('derived.hasStorageAccess', boolean);
+ws.set('derived.hasVillage', boolean);
+ws.set('derived.needsCraftingTable', boolean);
+ws.set('derived.needsChest', boolean);
+ws.set('derived.forestSearchRecentlyFailed', boolean);
+
+// Sign Knowledge
+ws.set('has.studiedSigns', boolean);
+ws.set('has.checkedStorage', boolean);
+ws.set('known.chests', number);
+ws.set('known.forests', number);
+ws.set('has.knownForest', boolean);
+ws.set('pending.signWrites', number);
+ws.set('pending.hasForestSign', boolean);
+
+// Exploration
+ws.set('exploration.waterAhead', number);
+ws.set('exploration.minWaterAhead', number);
+```
+
+### Landscaper-Specific Facts
+
+```typescript
+// Inventory
+ws.set('inv.dirt', number);
+ws.set('inv.cobblestone', number);
+ws.set('inv.slabs', number);
+
+// Equipment
+ws.set('has.shovel', boolean);
+ws.set('has.pickaxe', boolean);
+ws.set('derived.hasAnyTool', boolean);
+
+// Positions
+ws.set('pos.villageCenter', Vec3 | undefined);
+
+// Terraform
+ws.set('has.pendingTerraformRequest', boolean);
+ws.set('terraform.active', boolean);
+ws.set('terraform.phase', string);
+
+// Capabilities
+ws.set('can.terraform', boolean);
+ws.set('needs.tools', boolean);
+ws.set('needs.toDeposit', boolean);
+
+// Derived
+ws.set('derived.hasStorageAccess', boolean);
+ws.set('derived.hasVillage', boolean);
+ws.set('derived.canCraftShovel', boolean);
+ws.set('derived.canCraftPickaxe', boolean);
+
+// Sign Knowledge
+ws.set('has.studiedSigns', boolean);
+ws.set('known.farms', number);
+ws.set('has.dirtpit', boolean);
+
+// Farm Maintenance
+ws.set('state.knownFarmCount', number);
+ws.set('state.farmsNeedingCheck', number);
+ws.set('state.farmMaintenanceNeeded', boolean);
+ws.set('state.farmsWithIssues', number);
+
+// Lumberjack Tracking
+ws.set('nearby.hasLumberjack', boolean);
+ws.set('nearby.lumberjackDistance', number);
+```
 
 ## State Reset on Role Change
 
