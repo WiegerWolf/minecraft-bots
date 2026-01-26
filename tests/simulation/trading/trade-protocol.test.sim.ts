@@ -660,7 +660,9 @@ async function testNeediestSelection() {
   ]);
 
   // Farmer B with 5 seeds (should NOT be selected)
-  const farmerBBot = await test.addBot('Test_FarmerB', new Vec3(10, 65, 0), [
+  // Start far from the meeting point (village center + offset = ~3, 64, 3)
+  // so Farmer B can't accidentally pick up the dropped items
+  const farmerBBot = await test.addBot('Test_FarmerB', new Vec3(25, 65, 25), [
     { name: 'iron_hoe', count: 1 },
     { name: 'wheat_seeds', count: 5 },
   ]);

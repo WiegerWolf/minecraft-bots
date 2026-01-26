@@ -301,6 +301,9 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
         // Skip items marked as unreachable
         if (bb.unreachableDrops.has(e.id)) return false;
 
+        // Skip items in other bots' trade zones (don't steal traded items)
+        if (bb.villageChat?.isInOtherTradeZone(e.position)) return false;
+
         return true;
     });
 

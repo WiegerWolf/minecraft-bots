@@ -431,6 +431,9 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
         // Skip items marked as unreachable
         if (bb.unreachableDrops.has(e.id)) return false;
 
+        // Skip items in other bots' trade zones (don't steal traded items)
+        if (bb.villageChat?.isInOtherTradeZone(e.position)) return false;
+
         // Check if the item is on a walkable surface
         // Items floating on leaves/water are not reachable
         const itemPos = e.position;

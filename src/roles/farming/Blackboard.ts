@@ -409,6 +409,9 @@ export async function updateBlackboard(bot: Bot, bb: FarmingBlackboard): Promise
         // Skip items marked as unreachable
         if (bb.unreachableDrops.has(e.id)) return false;
 
+        // Skip items in other bots' trade zones (don't steal traded items)
+        if (bb.villageChat?.isInOtherTradeZone(e.position)) return false;
+
         // Skip landscaper materials - let the landscaper pick these up
         const metadata = (e as any).metadata;
         if (metadata && Array.isArray(metadata)) {

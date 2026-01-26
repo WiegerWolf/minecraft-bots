@@ -202,9 +202,9 @@ export abstract class BaseBroadcastOffer<TBlackboard extends TradeBlackboard> {
         // Fallback: offset from current position
         potentialPoints.push(bot.entity.position.offset(3, 0, 0));
 
-        // Find a meeting point that's clear of other bots/players
+        // Find a meeting point that's clear of other bots/players and trade zones
         for (const point of potentialPoints) {
-            if (this.isMeetingPointClear(bot, point, partnerName)) {
+            if (this.isMeetingPointClear(bot, bb, point, partnerName)) {
                 return point;
             }
         }
@@ -215,9 +215,15 @@ export abstract class BaseBroadcastOffer<TBlackboard extends TradeBlackboard> {
     }
 
     /**
-     * Check if a meeting point is clear of other bots/players (excluding our trade partner).
+     * Check if a meeting point is clear of other bots/players and active trade zones.
      */
-    protected isMeetingPointClear(bot: Bot, point: Vec3, partnerName?: string): boolean {
+    protected isMeetingPointClear(bot: Bot, bb: TBlackboard, point: Vec3, partnerName?: string): boolean {
+        // Check for active trade zones from other trades
+        if (bb.villageChat?.isInOtherTradeZone(point)) {
+            bb.log?.debug({ point: point.floored().toString() }, 'Meeting point rejected: in active trade zone');
+            return false;
+        }
+
         for (const entity of Object.values(bot.entities)) {
             if (!entity.position) continue;
             if (entity.username === bot.username) continue; // Skip self

@@ -112,6 +112,18 @@ export interface ActiveTrade {
     pickupStartCount: number;       // Receiver's inventory count when entering 'picking_up' (for verification)
 }
 
+/**
+ * Zone where another bot is conducting a trade.
+ * Items in these zones should not be picked up by non-participants.
+ */
+export interface TradeZone {
+    giver: string;
+    receiver: string;
+    position: Vec3;
+    radius: number;
+    timestamp: number;
+}
+
 export interface VillageChatState {
     villageCenter: Vec3 | null;
     sharedChest: Vec3 | null;           // Primary chest (for backwards compatibility)
@@ -124,6 +136,7 @@ export interface VillageChatState {
     // Trade state
     activeOffers: TradeOffer[];       // Offers from other bots
     activeTrade: ActiveTrade | null;  // Current trade (if any)
+    tradeZones: TradeZone[];          // Active trade zones from other bots (no-pickup areas)
 
     // Need state (intent-based fulfillment)
     activeNeeds: Need[];              // Needs we've broadcast
@@ -141,6 +154,7 @@ export class VillageChat {
         pendingTerraformRequests: [],
         activeOffers: [],
         activeTrade: null,
+        tradeZones: [],
         activeNeeds: [],
         incomingNeeds: [],
     };
@@ -197,6 +211,7 @@ export class VillageChat {
             pendingTerraformRequests: [],
             activeOffers: [],
             activeTrade: null,
+            tradeZones: [],
             activeNeeds: [],
             incomingNeeds: [],
         };
@@ -477,9 +492,13 @@ export class VillageChat {
                 const match = message.match(/\[TRADE_ACCEPT\] (\S+)/);
                 if (match) {
                     const selectedPartner = match[1]!;
-                    // Check if we were selected
-                    if (selectedPartner === this.bot.username && this.state.activeTrade?.status === 'wanting') {
-                        this.state.activeTrade.status = 'accepted';
+                    // Check if we were selected (may be in 'wanting' or 'traveling' depending on message order)
+                    if (selectedPartner === this.bot.username && this.state.activeTrade?.role === 'receiver') {
+                        // If TRADE_AT came first, we're already in 'traveling' and have the meeting point
+                        // Otherwise, we're in 'wanting' and will get the meeting point shortly
+                        if (this.state.activeTrade.status === 'wanting') {
+                            this.state.activeTrade.status = 'accepted';
+                        }
                         this.state.activeTrade.partner = username;
                         this.log?.info({ from: username }, 'We were selected for trade');
                         // Find the offer to get item/quantity
@@ -489,6 +508,24 @@ export class VillageChat {
                             this.state.activeTrade.quantity = offer.quantity;
                             this.onTradeAcceptCallback?.(username, offer.item, offer.quantity);
                         }
+                    } else if (this.state.activeTrade?.partner === username && this.state.activeTrade.role === 'receiver') {
+                        // We were NOT selected for this trade - clear our trade state
+                        this.log?.info({ selectedPartner, from: username }, 'Another bot was selected for trade');
+                        this.state.activeTrade = null;
+                    }
+                    // Track this trade zone so we don't interfere by picking up dropped items
+                    // (will be updated with position when TRADE_AT arrives)
+                    if (selectedPartner !== this.bot.username) {
+                        this.state.tradeZones = this.state.tradeZones.filter(
+                            z => !(z.giver === username && z.receiver === selectedPartner)
+                        );
+                        this.state.tradeZones.push({
+                            giver: username,
+                            receiver: selectedPartner,
+                            position: new Vec3(0, 0, 0), // Will be updated by TRADE_AT
+                            radius: 8, // Trade zone radius
+                            timestamp: Date.now(),
+                        });
                     }
                     // Remove the offer (it's been accepted)
                     this.state.activeOffers = this.state.activeOffers.filter(o => o.from !== username);
@@ -507,6 +544,11 @@ export class VillageChat {
                         this.state.activeTrade.status = 'traveling';
                         this.log?.info({ from: username, pos: pos.toString() }, 'Trade meeting point received');
                         this.onTradeMeetingPointCallback?.(pos);
+                    }
+                    // Update the trade zone position for other bots' trades
+                    const zone = this.state.tradeZones.find(z => z.giver === username);
+                    if (zone) {
+                        zone.position = pos;
                     }
                 }
             }
@@ -537,6 +579,8 @@ export class VillageChat {
                     // Clear trade state
                     this.state.activeTrade = null;
                 }
+                // Clear trade zone for this trade (regardless of whether we're participating)
+                this.state.tradeZones = this.state.tradeZones.filter(z => z.giver !== username && z.receiver !== username);
             }
 
             // Parse cancel: [TRADE_CANCEL]
@@ -551,6 +595,8 @@ export class VillageChat {
                         this.state.activeTrade = null;
                     }
                 }
+                // Clear trade zone for this trade (regardless of whether we're participating)
+                this.state.tradeZones = this.state.tradeZones.filter(z => z.giver !== username && z.receiver !== username);
             }
 
             // Parse position update: [TRADE_POS] x y z
@@ -1367,14 +1413,35 @@ export class VillageChat {
 
     /**
      * Get the trade meeting point.
+     * Tries multiple offsets to avoid existing trade zones.
      * Defaults to village center + offset, or spawn position + offset.
      */
     getTradeMeetingPoint(spawnPos: Vec3): Vec3 {
         const center = this.state.villageCenter;
-        if (center) {
-            return center.offset(3, 0, 3);
+        const basePos = center ?? spawnPos;
+
+        // Try multiple offsets to find one that's not in a trade zone
+        const offsets = [
+            new Vec3(3, 0, 3),
+            new Vec3(-3, 0, 3),
+            new Vec3(3, 0, -3),
+            new Vec3(-3, 0, -3),
+            new Vec3(5, 0, 0),
+            new Vec3(-5, 0, 0),
+            new Vec3(0, 0, 5),
+            new Vec3(0, 0, -5),
+        ];
+
+        for (const offset of offsets) {
+            const point = basePos.plus(offset);
+            if (!this.isInOtherTradeZone(point)) {
+                return point;
+            }
         }
-        return spawnPos.offset(3, 0, 3);
+
+        // If all points are in trade zones, return the first one anyway
+        this.log?.warn('All meeting points are in trade zones, using default');
+        return basePos.offset(3, 0, 3);
     }
 
     /**
@@ -1391,6 +1458,55 @@ export class VillageChat {
      */
     clearActiveTrade(): void {
         this.state.activeTrade = null;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TRADE ZONE METHODS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Get all active trade zones (where other bots are trading).
+     */
+    getTradeZones(): TradeZone[] {
+        return this.state.tradeZones;
+    }
+
+    /**
+     * Check if a position is inside an active trade zone.
+     * Returns true if the position is within the radius of any trade zone
+     * that this bot is NOT participating in.
+     */
+    isInOtherTradeZone(pos: Vec3): boolean {
+        const myUsername = this.bot.username;
+        return this.state.tradeZones.some(zone => {
+            // Skip if we're a participant in this trade
+            if (zone.giver === myUsername || zone.receiver === myUsername) {
+                return false;
+            }
+            // Check if position is within the trade zone radius
+            // Only check if zone has a valid position (not 0,0,0 placeholder)
+            if (zone.position.x === 0 && zone.position.y === 0 && zone.position.z === 0) {
+                return false;
+            }
+            return pos.distanceTo(zone.position) <= zone.radius;
+        });
+    }
+
+    /**
+     * Get trade zones that would block picking up items at a position.
+     * Returns the zones the position falls within (excluding our own trades).
+     */
+    getBlockingTradeZones(pos: Vec3): TradeZone[] {
+        const myUsername = this.bot.username;
+        return this.state.tradeZones.filter(zone => {
+            if (zone.giver === myUsername || zone.receiver === myUsername) {
+                return false;
+            }
+            if (zone.position.x === 0 && zone.position.y === 0 && zone.position.z === 0) {
+                return false;
+            }
+            return pos.distanceTo(zone.position) <= zone.radius;
+        });
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
