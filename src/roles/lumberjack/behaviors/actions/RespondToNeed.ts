@@ -3,6 +3,12 @@ import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import { BaseRespondToNeed } from '../../../../shared/actions/BaseRespondToNeed';
 import type { ItemStack, NeedOffer } from '../../../../shared/needs/types';
 
+// Tool items that lumberjack can offer
+const TOOL_PATTERNS = [
+    'wooden_hoe', 'stone_hoe', 'iron_hoe', 'golden_hoe', 'diamond_hoe', 'netherite_hoe',
+    'wooden_axe', 'stone_axe', 'iron_axe', 'golden_axe', 'diamond_axe', 'netherite_axe',
+];
+
 /**
  * RespondToNeed - Respond to intent-based needs from other bots.
  *
@@ -28,8 +34,9 @@ export class RespondToNeed extends BaseRespondToNeed<LumberjackBlackboard> {
 
     /**
      * Get current inventory as ItemStacks.
+     * Scans both blackboard (for cached counts) and actual bot inventory (for tools).
      */
-    protected getInventory(bb: LumberjackBlackboard): ItemStack[] {
+    protected getInventory(bot: Bot, bb: LumberjackBlackboard): ItemStack[] {
         const inventory: ItemStack[] = [];
 
         // Count logs by type
@@ -49,18 +56,42 @@ export class RespondToNeed extends BaseRespondToNeed<LumberjackBlackboard> {
             inventory.push({ name: 'stick', count: bb.stickCount });
         }
 
-        // Check for tools in inventory
-        // TODO: Add more detailed inventory scanning for actual tools
+        // Scan actual bot inventory for tools
+        for (const item of bot.inventory.items()) {
+            if (TOOL_PATTERNS.includes(item.name)) {
+                // Check if we already have this item type
+                const existing = inventory.find(i => i.name === item.name);
+                if (existing) {
+                    existing.count += item.count;
+                } else {
+                    inventory.push({ name: item.name, count: item.count });
+                }
+            }
+        }
 
         return inventory;
     }
 
     /**
      * Check if we can spare the given items.
-     * Lumberjack should keep some logs for themselves.
+     * Lumberjack should keep some logs for themselves, but can give away spare tools.
      */
     protected canSpareItems(bb: LumberjackBlackboard, items: ItemStack[]): boolean {
-        // Calculate what we'd be giving away
+        // Check if giving away tools
+        const toolsToGive = items.filter(i => TOOL_PATTERNS.includes(i.name));
+        if (toolsToGive.length > 0) {
+            // Willing to give away tools (especially hoes which lumberjack doesn't need)
+            // But keep our axe
+            const givingAwayAxe = toolsToGive.some(i => i.name.includes('axe'));
+            if (givingAwayAxe && bb.hasAxe) {
+                // Only give away axe if we have another one
+                // For now, assume we can spare non-axe tools
+                return false;
+            }
+            return true;
+        }
+
+        // Calculate what we'd be giving away for materials
         const logsToGive = items
             .filter(i => i.name.includes('log'))
             .reduce((sum, i) => sum + i.count, 0);

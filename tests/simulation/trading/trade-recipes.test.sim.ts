@@ -348,10 +348,11 @@ async function testFarmerNeedsHoeLumberjackOffersMaterials() {
 
   // Lumberjack with planks and sticks (materials for hoe, NOT a hoe itself)
   // wooden_hoe requires: 2 planks + 2 sticks
+  // NOTE: Give extra planks because lumberjack will use 4 to craft a crafting table
   const lumberjackBot = await test.addBot('Test_Lmbr', new Vec3(0, 65, 0), [
     { name: 'iron_axe', count: 1 },
-    { name: 'oak_planks', count: 8 },  // Enough for multiple hoes
-    { name: 'stick', count: 8 },       // Enough for multiple hoes
+    { name: 'oak_planks', count: 16 },  // Extra planks (4 for crafting table, need 4 minimum, 2 for trade)
+    { name: 'stick', count: 8 },        // Enough for multiple hoes
   ]);
 
   // Farmer with NO hoe and NO materials - will broadcast [NEED] hoe
@@ -369,8 +370,8 @@ async function testFarmerNeedsHoeLumberjackOffersMaterials() {
   );
   test.assertEqual(
     test.getBotInventoryCount('Test_Lmbr', 'oak_planks'),
-    8,
-    'Lumberjack starts with 8 planks'
+    16,
+    'Lumberjack starts with 16 planks'
   );
   test.assertEqual(
     test.getBotInventoryCount('Test_Lmbr', 'stick'),
@@ -619,9 +620,10 @@ async function testBestOfferWinsBasedOnCraftingSteps() {
   ]);
 
   // Lumberjack B with materials only (1 crafting step)
+  // NOTE: Give extra planks because lumberjack may use some for crafting table
   const lumberjackBBot = await test.addBot('Test_LmbrB', new Vec3(5, 65, 0), [
     { name: 'iron_axe', count: 1 },
-    { name: 'oak_planks', count: 8 },
+    { name: 'oak_planks', count: 16 },
     { name: 'stick', count: 8 },
   ]);
 
@@ -640,8 +642,8 @@ async function testBestOfferWinsBasedOnCraftingSteps() {
   );
   test.assertEqual(
     test.getBotInventoryCount('Test_LmbrB', 'oak_planks'),
-    8,
-    'Lumberjack B starts with 8 planks'
+    16,
+    'Lumberjack B starts with 16 planks'
   );
 
   // Start roles

@@ -246,12 +246,23 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
         }
 
         // Check for incoming needs from other bots that we can fulfill
-        const incomingNeeds = bb.villageChat.getIncomingBroadcastingNeeds();
-        bb.hasIncomingNeeds = incomingNeeds.length > 0;
+        // Include both broadcasting needs AND needs we've been accepted to provide for
+        const broadcastingNeeds = bb.villageChat.getIncomingBroadcastingNeeds();
+        const needsWeProvideFor = bb.villageChat.getNeedsWeAreProvidingFor();
+        bb.hasIncomingNeeds = broadcastingNeeds.length > 0 || needsWeProvideFor.length > 0;
 
         // Check if we can spare materials for needs (matching RespondToNeed.canSpareItems thresholds)
         // Keep: 2 logs, 4 planks, 2 sticks - so need 3+, 5+, 3+ to spare
-        bb.canSpareForNeeds = bb.logCount >= 3 || bb.plankCount >= 5 || bb.stickCount >= 3;
+        const hasSpareRawMaterials = bb.logCount >= 3 || bb.plankCount >= 5 || bb.stickCount >= 3;
+
+        // Also check for spare tools we can trade (hoes are useless to lumberjacks)
+        const SPARE_TOOL_PATTERNS = ['wooden_hoe', 'stone_hoe', 'iron_hoe', 'golden_hoe', 'diamond_hoe', 'netherite_hoe'];
+        const hasSpareTools = bot.inventory.items().some(item => SPARE_TOOL_PATTERNS.includes(item.name));
+
+        // If we've been accepted as provider, we MUST deliver - don't check spare thresholds
+        const hasCommittedDelivery = needsWeProvideFor.length > 0;
+
+        bb.canSpareForNeeds = hasSpareRawMaterials || hasSpareTools || hasCommittedDelivery;
     }
 
     // ═══════════════════════════════════════════════

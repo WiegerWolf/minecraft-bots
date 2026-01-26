@@ -1,9 +1,13 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { goals } from 'mineflayer-pathfinder';
 import type { VillageChat } from '../VillageChat';
 import type { Logger } from '../logger';
 import type { Need, NeedOffer, ItemStack, DeliveryMethod } from '../needs/types';
 import { RecipeService } from '../needs/RecipeService';
+import { smartPathfinderGoto } from '../PathfindingUtils';
+
+const { GoalNear } = goals;
 
 export type BehaviorStatus = 'success' | 'failure' | 'running';
 
@@ -96,8 +100,10 @@ export abstract class BaseRespondToNeed<TBlackboard extends RespondToNeedBlackbo
     /**
      * Get the current inventory as ItemStacks.
      * Subclasses must implement this.
+     * @param bot The bot instance (for scanning actual inventory)
+     * @param bb The blackboard (for cached inventory state)
      */
-    protected abstract getInventory(bb: TBlackboard): ItemStack[];
+    protected abstract getInventory(bot: Bot, bb: TBlackboard): ItemStack[];
 
     /**
      * Check if we can spare the given items.
@@ -207,9 +213,15 @@ export abstract class BaseRespondToNeed<TBlackboard extends RespondToNeedBlackbo
                 bb.lastAction = 'waiting_for_acceptance';
             }
 
-            if (state.status === 'accepted' || state.status === 'delivering') {
+            if (state.status === 'delivering') {
                 bb.lastAction = 'delivering_need';
-                return 'running';
+                // Actually perform delivery
+                const result = await this.performDelivery(bot, bb, state);
+                if (result === 'success') {
+                    state.status = 'delivered';
+                    bb.villageChat!.markNeedFulfilled(state.needId);
+                }
+                return result;
             }
 
             if (state.status === 'delivered') {
@@ -233,25 +245,39 @@ export abstract class BaseRespondToNeed<TBlackboard extends RespondToNeedBlackbo
     private async handleNewNeeds(bot: Bot, bb: TBlackboard): Promise<boolean> {
         const incomingNeeds = bb.villageChat!.getIncomingBroadcastingNeeds();
 
+        if (incomingNeeds.length === 0) {
+            return false;
+        }
+
         for (const need of incomingNeeds) {
+
             // Skip if we're already responding to this need
-            if (this.respondingNeeds.has(need.id)) continue;
+            if (this.respondingNeeds.has(need.id)) {
+                continue;
+            }
 
             // Check if this is a category we can provide for
-            if (!this.canProvideForCategory(need.category)) continue;
+            if (!this.canProvideForCategory(need.category)) {
+                continue;
+            }
 
             // Check what we can offer
-            const inventory = this.getInventory(bb);
+            const inventory = this.getInventory(bot, bb);
             const satisfaction = this.recipeService.whatCanSatisfy(
                 need.category,
                 inventory,
                 bot.username
             );
 
-            if (!satisfaction.canSatisfy || !satisfaction.bestOffer) continue;
+            if (!satisfaction.canSatisfy || !satisfaction.bestOffer) {
+                continue;
+            }
 
             // Check if we can spare the items
-            if (!this.canSpareItems(bb, satisfaction.bestOffer.items)) continue;
+            const canSpare = this.canSpareItems(bb, satisfaction.bestOffer.items);
+            if (!canSpare) {
+                continue;
+            }
 
             // Send the offer
             const offer = satisfaction.bestOffer;
@@ -338,6 +364,73 @@ export abstract class BaseRespondToNeed<TBlackboard extends RespondToNeedBlackbo
         state.status = 'delivering';
 
         return 'running';
+    }
+
+    /**
+     * Perform the actual delivery - walk to location and drop items.
+     */
+    private async performDelivery(
+        bot: Bot,
+        bb: TBlackboard,
+        state: RespondingNeedState
+    ): Promise<BehaviorStatus> {
+        if (!state.deliveryLocation) {
+            return 'failure';
+        }
+
+        const location = state.deliveryLocation;
+        const distanceToLocation = bot.entity.position.distanceTo(location);
+
+        // Walk to delivery location if not already there
+        if (distanceToLocation > 3) {
+            bb.log?.info(
+                { needId: state.needId, location: `(${location.x}, ${location.y}, ${location.z})`, distance: distanceToLocation.toFixed(1) },
+                `[${this.config.roleLabel}] Walking to delivery location`
+            );
+
+            try {
+                await smartPathfinderGoto(bot, new GoalNear(location.x, location.y, location.z, 2));
+            } catch (error) {
+                bb.log?.warn(
+                    { err: error, location: `(${location.x}, ${location.y}, ${location.z})` },
+                    `[${this.config.roleLabel}] Failed to reach delivery location`
+                );
+                return 'running'; // Keep trying
+            }
+        }
+
+        // Drop the items for the requester
+        for (const itemStack of state.offer.items) {
+            const item = bot.inventory.items().find(i => i.name === itemStack.name);
+            if (item) {
+                const dropCount = Math.min(item.count, itemStack.count);
+                try {
+                    await bot.toss(item.type, item.metadata, dropCount);
+                    bb.log?.info(
+                        { item: itemStack.name, count: dropCount },
+                        `[${this.config.roleLabel}] Dropped items for delivery`
+                    );
+                } catch (error) {
+                    bb.log?.warn(
+                        { err: error, item: itemStack.name },
+                        `[${this.config.roleLabel}] Failed to drop item`
+                    );
+                    return 'failure';
+                }
+            } else {
+                bb.log?.warn(
+                    { item: itemStack.name },
+                    `[${this.config.roleLabel}] Item not found in inventory for delivery`
+                );
+            }
+        }
+
+        bb.log?.info(
+            { needId: state.needId },
+            `[${this.config.roleLabel}] Delivery complete`
+        );
+
+        return 'success';
     }
 
     /**
