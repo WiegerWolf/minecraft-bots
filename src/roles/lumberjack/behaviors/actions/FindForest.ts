@@ -19,6 +19,7 @@ import {
     dismountAndBreakBoat,
     type BoatNavigationResult,
 } from '../../../../shared/BoatUtils';
+import { hasClearSky } from '../../../../shared/TerrainUtils';
 
 // Minimum water distance to warrant using a boat (shorter distances can be swam)
 const MIN_BOAT_DISTANCE = 8;
@@ -340,6 +341,13 @@ export class FindForest implements BehaviorNode {
         if (targetY < MIN_EXPLORATION_Y) {
             bb.log?.trace?.({ y: targetY, min: MIN_EXPLORATION_Y }, 'Position too low (ravine/underground)');
             return { score: -50, requiresBoat: false, waterStartPos: null }; // Underground/ravine - hard no
+        }
+
+        // CRITICAL: Check for clear sky at target position (avoid caves!)
+        // Lumberjacks must stay above ground to find forests
+        if (!hasClearSky(bot, targetPos, 0)) {
+            bb.log?.trace?.({ pos: targetPos.floored().toString() }, 'Position has no clear sky (cave)');
+            return { score: -100, requiresBoat: false, waterStartPos: null }; // Cave - hard no
         }
 
         // Sample points along the path to check for water

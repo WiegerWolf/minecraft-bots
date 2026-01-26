@@ -5,6 +5,7 @@ import { recordExploredPosition, getExplorationScore } from '../../LandscaperBla
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
+import { hasClearSky, isYLevelSafe, NO_SKY_PENALTY, UNSAFE_Y_PENALTY } from '../../../../shared/TerrainUtils';
 
 const { GoalNear } = goals;
 
@@ -28,12 +29,41 @@ export class Explore implements BehaviorNode {
         for (let i = 0; i < 8; i++) {
             const angle = (Math.PI * 2 * i) / 8;
             const dist = 10 + Math.random() * 25;
-            const pos = new Vec3(
+            const basePos = new Vec3(
                 center.x + Math.cos(angle) * dist,
                 center.y,
                 center.z + Math.sin(angle) * dist
             );
-            const score = getExplorationScore(bb, pos);
+
+            // Find actual surface Y at this position
+            let surfaceY = basePos.y;
+            const searchStart = Math.max(basePos.y, bot.entity.position.y);
+            for (let y = searchStart; y >= searchStart - 20; y--) {
+                const checkPos = new Vec3(basePos.x, y, basePos.z);
+                const block = bot.blockAt(checkPos);
+                const below = bot.blockAt(checkPos.offset(0, -1, 0));
+                if (below && below.boundingBox === 'block' && block && block.name === 'air') {
+                    surfaceY = y;
+                    break;
+                }
+            }
+
+            const pos = new Vec3(basePos.x, surfaceY, basePos.z);
+            let score = getExplorationScore(bb, pos);
+
+            // CRITICAL: Strongly penalize positions without clear sky (caves!)
+            // Landscapers must stay above ground to terraform effectively
+            if (!hasClearSky(bot, pos, 0)) {
+                score += NO_SKY_PENALTY;  // Very heavy penalty for underground
+                bb.log?.trace?.({ pos: pos.floored().toString() }, 'Penalizing exploration target - no clear sky (cave)');
+            }
+
+            // Penalize positions at unsafe Y levels (too deep or too high)
+            if (!isYLevelSafe(surfaceY)) {
+                score += UNSAFE_Y_PENALTY;
+                bb.log?.trace?.({ y: surfaceY }, 'Penalizing exploration target - unsafe Y level');
+            }
+
             candidates.push({ pos, score });
         }
 

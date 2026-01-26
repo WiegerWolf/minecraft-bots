@@ -417,6 +417,31 @@ Binary "visited/not visited" doesn't capture:
 
 Scoring enables nuanced exploration decisions.
 
+### Cave Avoidance (Sky Access Check)
+
+```typescript
+// In exploration candidate scoring (all roles)
+if (!hasClearSky(bot, candidatePos, 0)) {
+    score += NO_SKY_PENALTY;  // -200 very heavy penalty
+}
+```
+
+**Why check for clear sky?**
+
+Without this check, bots can wander into caves and get lost:
+1. Pathfinder finds path into cave entrance
+2. Bot explores deeper looking for resources
+3. Complex cave geometry confuses navigation
+4. Bot spends hours underground instead of working
+
+The `hasClearSky()` function from `src/shared/TerrainUtils.ts` scans upward from a position to check if there's any solid block (stone, dirt, etc.) blocking the sky. Trees and vegetation are ignored since bots can clear them.
+
+**Penalty values:**
+- `NO_SKY_PENALTY = -200`: Positions without clear sky (caves)
+- `UNSAFE_Y_PENALTY = -100`: Positions below Y=55 or above Y=85
+
+This makes surface exploration candidates vastly more attractive than underground ones, effectively preventing cave exploration while still allowing bots to path through short overhangs or under trees.
+
 ## Pathfinding Failure Handling
 
 ### Expected Errors

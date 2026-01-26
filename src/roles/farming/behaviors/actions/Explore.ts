@@ -8,6 +8,7 @@ import type { BehaviorNode, BehaviorStatus } from '../types';
 import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
+import { hasClearSky, isYLevelSafe, NO_SKY_PENALTY, UNSAFE_Y_PENALTY } from '../../../../shared/TerrainUtils';
 
 const { GoalNear } = goals;
 
@@ -63,6 +64,19 @@ export class Explore implements BehaviorNode {
 
                 // Add small randomness to break ties
                 score += Math.random() * 10;
+
+                // CRITICAL: Strongly penalize positions without clear sky (caves!)
+                // Farmers must stay above ground to find water and farmland
+                if (!hasClearSky(bot, candidatePos, 0)) {
+                    score += NO_SKY_PENALTY;  // Very heavy penalty for underground
+                    bb.log?.trace?.({ pos: candidatePos.floored().toString() }, 'Penalizing exploration target - no clear sky (cave)');
+                }
+
+                // Penalize positions at unsafe Y levels (too deep or too high)
+                if (!isYLevelSafe(surfaceY)) {
+                    score += UNSAFE_Y_PENALTY;
+                    bb.log?.trace?.({ y: surfaceY }, 'Penalizing exploration target - unsafe Y level');
+                }
 
                 // STRONGLY prefer lower elevations when looking for water
                 // Water is most common near sea level

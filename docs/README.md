@@ -212,6 +212,10 @@ Press Enter on a bot to see full details:
 | FindForest base radius | 32 blocks | Starting exploration distance |
 | FindForest radius expansion | +8 blocks/4 attempts | Expands when nearby exhausted (max 80) |
 | Exploration memory TTL | 5 minutes | Time before explored area becomes "new" again |
+| Cave avoidance penalty | -200 score | Positions without clear sky (prevents cave exploration) |
+| Unsafe Y penalty | -100 score | Positions below Y=55 or above Y=85 |
+| Min safe exploration Y | 55 | Below this is considered underground/caves |
+| Max safe exploration Y | 85 | Above this is considered mountains |
 | Max swimming distance | 20 blocks | Water crossing >20 blocks requires a boat (prevents ocean exploration) |
 | Full chest memory | 5 minutes | Time before retrying a full chest |
 | Trade offer threshold | 4+ items | Minimum unwanted items before offering trade |
@@ -245,6 +249,7 @@ Press Enter on a bot to see full details:
 | GOAPRole base | `src/roles/GOAPRole.ts` |
 | VillageChat | `src/shared/VillageChat.ts` |
 | SignKnowledge | `src/shared/SignKnowledge.ts` |
+| TerrainUtils | `src/shared/TerrainUtils.ts` |
 | ItemCategories | `src/shared/ItemCategories.ts` |
 | Shared Trade Actions | `src/shared/actions/BaseTrade.ts` |
 | Logger | `src/shared/logger.ts` |
