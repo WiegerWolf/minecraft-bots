@@ -84,6 +84,7 @@ class TradingEdgeCaseTest {
       enableViewer: false,
       botPosition: new Vec3(0, 65, 0),
       botInventory: [],
+      testName: this.name,  // Display test name in game chat
     });
 
     tempBot.quit();
