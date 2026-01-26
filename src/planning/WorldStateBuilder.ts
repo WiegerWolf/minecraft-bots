@@ -249,6 +249,14 @@ export class WorldStateBuilder {
     // Curious bot - unknown sign discovery
     ws.set('nearby.unknownSigns', bb.unknownSigns.length);
 
+    // Lumberjack tracking (for following during exploration)
+    ws.set('nearby.hasLumberjack', bb.lumberjackPosition !== null);
+    if (bb.lumberjackPosition) {
+      ws.set('nearby.lumberjackDistance', bot.entity.position.distanceTo(bb.lumberjackPosition));
+    } else {
+      ws.set('nearby.lumberjackDistance', -1);  // -1 means no lumberjack visible
+    }
+
     // Dirtpit - dedicated dirt gathering location
     ws.set('has.dirtpit', bb.hasDirtpit);
 

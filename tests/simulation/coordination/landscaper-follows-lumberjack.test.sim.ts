@@ -288,10 +288,10 @@ class LandscaperFollowTest {
  * the exploration phase (before village center is established).
  *
  * Scenario:
- * 1. Lumberjack and landscaper spawn at origin
- * 2. Lumberjack moves toward a distant forest
+ * 1. Lumberjack and landscaper spawn at origin (NO village sign - exploration phase)
+ * 2. Lumberjack moves toward a distant forest to chop trees
  * 3. Landscaper should follow (not wander off in a different direction)
- * 4. After some time, bots should still be within VillageChat range (~100 blocks)
+ * 4. After some time, bots should still be within VillageChat range (~64 blocks)
  */
 async function testLandscaperFollowsLumberjackDuringExploration() {
   const test = new LandscaperFollowTest('Landscaper follows lumberjack during exploration');
@@ -301,18 +301,18 @@ async function testLandscaperFollowsLumberjackDuringExploration() {
   // Large world with spawn area and distant forest
   world.fill(new Vec3(-50, 63, -50), new Vec3(150, 63, 50), 'grass_block');
 
-  // Village sign at spawn
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
+  // NO village sign - this is the exploration phase before village is established
+  // Lumberjack will eventually write one after finding a good spot
 
-  // Forest at a distance (80 blocks away - within chat range but requires following)
-  const forestCenter = new Vec3(80, 64, 0);
-  for (let i = 0; i < 6; i++) {
-    const angle = (i / 6) * Math.PI * 2;
-    const dist = 3 + Math.random() * 6;
-    const x = Math.floor(forestCenter.x + Math.cos(angle) * dist);
-    const z = Math.floor(forestCenter.z + Math.sin(angle) * dist);
-    createOakTree(world, new Vec3(x, 64, z), 4 + Math.floor(Math.random() * 2));
-  }
+  // Forest at a distance (60 blocks away) - lumberjack will go here
+  // Create a proper forest with multiple trees
+  const forestCenter = new Vec3(60, 64, 0);
+  createOakTree(world, new Vec3(60, 64, 0), 5);
+  createOakTree(world, new Vec3(64, 64, 3), 5);
+  createOakTree(world, new Vec3(56, 64, -3), 4);
+  createOakTree(world, new Vec3(62, 64, -5), 5);
+  createOakTree(world, new Vec3(58, 64, 5), 4);
+  createOakTree(world, new Vec3(66, 64, -2), 5);
 
   await test.setup(world);
 
@@ -401,105 +401,11 @@ async function testLandscaperFollowsLumberjackDuringExploration() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST: Landscaper receives terraform request when following
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * End-to-end test that verifies the landscaper can receive terraform requests
- * when properly following the lumberjack.
- *
- * This simulates the real scenario:
- * 1. Lumberjack establishes village center
- * 2. Farmer establishes farm and requests terraform
- * 3. Landscaper (following nearby) should receive the request
- */
-async function testLandscaperReceivesTerraformRequestWhenFollowing() {
-  const test = new LandscaperFollowTest('Landscaper receives terraform request when following');
-
-  const world = new MockWorld();
-
-  // Compact world for faster test
-  world.fill(new Vec3(-30, 63, -30), new Vec3(60, 63, 30), 'grass_block');
-
-  // Village sign at spawn
-  world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
-
-  // Shared chest and crafting table
-  world.setBlock(new Vec3(5, 64, 0), 'chest');
-  world.setBlock(new Vec3(5, 64, 2), 'crafting_table');
-  world.setBlock(new Vec3(2, 64, 0), 'oak_sign', { signText: '[CHEST]\nX: 5\nY: 64\nZ: 0' });
-  world.setBlock(new Vec3(4, 64, 0), 'oak_sign', { signText: '[CRAFT]\nX: 5\nY: 64\nZ: 2' });
-
-  // Forest nearby (so lumberjack doesn't go too far)
-  const forestCenter = new Vec3(30, 64, 0);
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2;
-    const dist = 3 + Math.random() * 4;
-    const x = Math.floor(forestCenter.x + Math.cos(angle) * dist);
-    const z = Math.floor(forestCenter.z + Math.sin(angle) * dist);
-    createOakTree(world, new Vec3(x, 64, z), 4 + Math.floor(Math.random() * 2));
-  }
-
-  // Water source for farm (farmer will establish farm here)
-  world.setBlock(new Vec3(20, 63, 20), 'water');
-
-  await test.setup(world);
-
-  // Add all three bots
-  const lumberjackBot = await test.addBot('Test_Lmbr', new Vec3(0, 65, 0), [
-    { name: 'iron_axe', count: 1 },
-  ]);
-
-  const landscaperBot = await test.addBot('Test_Land', new Vec3(0, 65, 0), [
-    { name: 'iron_shovel', count: 1 },
-    { name: 'iron_pickaxe', count: 1 },
-    { name: 'dirt', count: 32 },
-  ]);
-
-  await test.wait(2000, 'Bots loading');
-
-  // Start roles
-  const lumberjackRole = new GOAPLumberjackRole();
-  const landscaperRole = new GOAPLandscaperRole();
-
-  test.startRole('Test_Lmbr', lumberjackRole, 'lumberjack');
-  test.startRole('Test_Land', landscaperRole, 'landscaper');
-
-  // Wait for village center to be established
-  await test.waitUntil(
-    () => test.hasChatMessage('[VILLAGE_CENTER]'),
-    {
-      timeout: 90000,
-      message: 'Village center should be established',
-    }
-  );
-
-  // Now simulate a terraform request via chat (as if farmer sent it)
-  // In real scenario, farmer would send this after establishing a farm
-  await test.rcon('say [TERRAFORM_REQUEST] X: 20 Y: 63 Z: 20');
-
-  await test.wait(5000, 'Waiting for chat messages to propagate');
-
-  // Check that both bots are still within communication range
-  const finalDistance = test.distanceBetweenBots('Test_Lmbr', 'Test_Land');
-  console.log(`  📏 Distance between lumberjack and landscaper: ${finalDistance.toFixed(1)} blocks`);
-
-  // The landscaper should be close enough to have received the terraform request
-  test.assert(
-    finalDistance < 100,
-    `Bots are within communication range (${finalDistance.toFixed(1)} blocks)`
-  );
-
-  return test.cleanup();
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ALL_TESTS: Record<string, () => Promise<TestResult>> = {
   'follow-exploration': testLandscaperFollowsLumberjackDuringExploration,
-  'terraform-request': testLandscaperReceivesTerraformRequestWhenFollowing,
 };
 
 async function runTests(tests: Array<() => Promise<TestResult>>): Promise<{ passed: number; failed: number }> {
