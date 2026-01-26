@@ -123,7 +123,13 @@ export interface LandscaperBlackboard {
     // Chest checking cooldown (prevent loop when chest is empty)
     lastChestCheckTime: number;                 // When we last checked chest (for cooldown)
     lastChestWasEmpty: boolean;                 // Whether last check found no materials
+
+    // Action preemption
+    preemptionRequested: boolean;
 }
+
+// Helper to yield to event loop, allowing keepalives to be processed
+const yieldToEventLoop = () => new Promise<void>(resolve => setImmediate(resolve));
 
 export function createLandscaperBlackboard(): LandscaperBlackboard {
     return {
@@ -196,6 +202,9 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
         // Chest checking cooldown
         lastChestCheckTime: 0,
         lastChestWasEmpty: false,
+
+        // Action preemption
+        preemptionRequested: false,
     };
 }
 
@@ -203,8 +212,15 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
     const pos = bot.entity.position;
     const inv = bot.inventory.items();
 
+    // Check if we're actively trading - if so, skip expensive world perception
+    const isTrading = bb.villageChat?.getActiveTrade()?.status !== undefined &&
+                      bb.villageChat?.getActiveTrade()?.status !== 'idle';
+
+    // Yield early to let keepalives through
+    await yieldToEventLoop();
+
     // ═══════════════════════════════════════════════
-    // INVENTORY ANALYSIS
+    // INVENTORY ANALYSIS (cheap, do first)
     // ═══════════════════════════════════════════════
     bb.hasShovel = inv.some(i => i.name.includes('shovel'));
     bb.hasPickaxe = inv.some(i => i.name.includes('pickaxe'));
@@ -219,7 +235,7 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
     bb.slabCount = inv.filter(i => i.name.endsWith('_slab')).reduce((s, i) => s + i.count, 0);
 
     // ═══════════════════════════════════════════════
-    // VILLAGE STATE (from chat)
+    // VILLAGE STATE (from chat) - always update, even when trading
     // ═══════════════════════════════════════════════
     if (bb.villageChat) {
         bb.villageCenter = bb.villageChat.getVillageCenter();
@@ -246,8 +262,26 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
     }
 
     // ═══════════════════════════════════════════════
-    // WORLD PERCEPTION
+    // WORLD PERCEPTION (expensive, cache results)
     // ═══════════════════════════════════════════════
+    // Skip expensive world perception during active trading to keep event loop responsive
+    if (isTrading) {
+        // Keep existing perception, just yield and return
+        await yieldToEventLoop();
+
+        // Still update trade state even when skipping perception
+        if (bb.villageChat) {
+            const invItems: InventoryItem[] = inv.map(i => ({ name: i.name, count: i.count }));
+            bb.tradeableItems = getTradeableItems(invItems, 'landscaper');
+            bb.tradeableItemCount = bb.tradeableItems.reduce((sum, item) => sum + item.count, 0);
+            bb.pendingTradeOffers = bb.villageChat.getActiveOffers()
+                .filter(o => isWantedByRole(o.item, 'landscaper'));
+            bb.activeTrade = bb.villageChat.getActiveTrade();
+            bb.villageChat.periodicCleanup();
+        }
+        return;
+    }
+
     const searchCenter = bb.villageCenter || pos;
     const SEARCH_RADIUS = bb.villageCenter ? 80 : 64;
 
@@ -292,6 +326,9 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
         }
     }).map(p => bot.blockAt(p)).filter((b): b is Block => b !== null);
 
+    // Yield to event loop after expensive findBlocks operations
+    await yieldToEventLoop();
+
     // ═══════════════════════════════════════════════
     // SIGN DETECTION (curious bot)
     // ═══════════════════════════════════════════════
@@ -307,6 +344,9 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
     bb.unknownSigns = nearbySigns
         .filter(signPos => !bb.readSignPositions.has(posToKey(signPos)))
         .map(p => new Vec3(p.x, p.y, p.z));
+
+    // Yield after sign detection
+    await yieldToEventLoop();
 
     // ═══════════════════════════════════════════════
     // SPAWN POSITION (set once on first update)
