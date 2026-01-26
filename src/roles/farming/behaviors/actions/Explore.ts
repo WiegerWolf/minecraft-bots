@@ -27,9 +27,10 @@ export class Explore implements BehaviorNode {
         // Don't explore too frequently - check blackboard cooldown
         // Note: The cooldown is checked both here (behavior) and in GOAP preconditions
         // The precondition prevents the planner from selecting Explore during cooldown
-        // This check is a safety net in case the behavior is called directly
+        // Return 'success' when on cooldown to indicate intentional waiting - NOT 'failure'
+        // Returning 'failure' would trigger a goal cooldown, compounding the cooldown effect
         if (Date.now() < bb.exploreOnCooldownUntil) {
-            return 'failure';
+            return 'success';
         }
 
         // Note: Removed the consecutiveIdleTicks guard - it conflicted with GOAPRole
@@ -102,9 +103,11 @@ export class Explore implements BehaviorNode {
         }
 
         if (candidates.length === 0) {
-            bb.log?.debug(`[BT] No valid exploration targets found`);
+            bb.log?.debug(`[BT] No valid exploration targets found, waiting...`);
             bb.exploreOnCooldownUntil = Date.now() + EXPLORE_COOLDOWN_MS;
-            return 'failure';
+            // Return 'success' to indicate intentional waiting - NOT 'failure'
+            // Returning 'failure' would trigger goal cooldown on top of action cooldown
+            return 'success';
         }
 
         // Sort by score (highest first) and pick the best
@@ -114,7 +117,9 @@ export class Explore implements BehaviorNode {
         if (!best || best.score < -50) {
             bb.log?.debug(`[BT] All exploration targets have poor scores, waiting...`);
             bb.exploreOnCooldownUntil = Date.now() + EXPLORE_COOLDOWN_MS;
-            return 'failure';
+            // Return 'success' to indicate intentional waiting - NOT 'failure'
+            // Returning 'failure' would trigger goal cooldown on top of action cooldown
+            return 'success';
         }
 
         bb.log?.debug(`[BT] Exploring to ${best.pos.floored()} (score: ${best.score.toFixed(0)})`);

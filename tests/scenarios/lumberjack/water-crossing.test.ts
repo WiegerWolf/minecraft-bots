@@ -25,7 +25,7 @@ describe('Lumberjack Water Crossing', () => {
       ws.set('has.studiedSigns', true);
       ws.set('has.knownForest', false);
       ws.set('has.boat', false);
-      ws.set('exploration.waterAhead', 25); // 25 blocks of water ahead
+      ws.set('exploration.minWaterAhead', 25); // 25 blocks of water ahead
 
       const findForestGoal = goals.find((g) => g.name === 'FindForest')!;
       expect(findForestGoal.isValid(ws)).toBe(false);
@@ -36,7 +36,7 @@ describe('Lumberjack Water Crossing', () => {
       ws.set('has.studiedSigns', true);
       ws.set('has.knownForest', false);
       ws.set('has.boat', true);
-      ws.set('exploration.waterAhead', 25); // 25 blocks of water ahead
+      ws.set('exploration.minWaterAhead', 25); // 25 blocks of water ahead
 
       const findForestGoal = goals.find((g) => g.name === 'FindForest')!;
       expect(findForestGoal.isValid(ws)).toBe(true);
@@ -47,7 +47,7 @@ describe('Lumberjack Water Crossing', () => {
       ws.set('has.studiedSigns', true);
       ws.set('has.knownForest', false);
       ws.set('has.boat', false);
-      ws.set('exploration.waterAhead', 15); // Only 15 blocks - swimable
+      ws.set('exploration.minWaterAhead', 15); // Only 15 blocks - swimable
 
       const findForestGoal = goals.find((g) => g.name === 'FindForest')!;
       expect(findForestGoal.isValid(ws)).toBe(true);
@@ -58,7 +58,7 @@ describe('Lumberjack Water Crossing', () => {
       ws.set('has.studiedSigns', true);
       ws.set('has.knownForest', false);
       ws.set('has.boat', false);
-      ws.set('exploration.waterAhead', 0); // No water
+      ws.set('exploration.minWaterAhead', 0); // No water
 
       const findForestGoal = goals.find((g) => g.name === 'FindForest')!;
       expect(findForestGoal.isValid(ws)).toBe(true);
@@ -70,7 +70,7 @@ describe('Lumberjack Water Crossing', () => {
       const ws = lumberjackReadyToChopState();
       ws.set('nearby.reachableTrees', 0); // No trees, would normally patrol
       ws.set('has.boat', false);
-      ws.set('exploration.waterAhead', 30); // Large water body
+      ws.set('exploration.minWaterAhead', 30); // Large water body
 
       const patrolGoal = goals.find((g) => g.name === 'PatrolForest')!;
       expect(patrolGoal.getUtility(ws)).toBe(0);
@@ -80,7 +80,7 @@ describe('Lumberjack Water Crossing', () => {
       const ws = lumberjackReadyToChopState();
       ws.set('nearby.reachableTrees', 0); // No trees
       ws.set('has.boat', true);
-      ws.set('exploration.waterAhead', 30);
+      ws.set('exploration.minWaterAhead', 30);
 
       const patrolGoal = goals.find((g) => g.name === 'PatrolForest')!;
       expect(patrolGoal.getUtility(ws)).toBeGreaterThan(0);
@@ -90,7 +90,7 @@ describe('Lumberjack Water Crossing', () => {
       const ws = lumberjackReadyToChopState();
       ws.set('nearby.reachableTrees', 0);
       ws.set('has.boat', false);
-      ws.set('exploration.waterAhead', 10); // Small water - swimable
+      ws.set('exploration.minWaterAhead', 10); // Small water - swimable
 
       const patrolGoal = goals.find((g) => g.name === 'PatrolForest')!;
       expect(patrolGoal.getUtility(ws)).toBeGreaterThan(0);
@@ -107,15 +107,15 @@ describe('Lumberjack Water Crossing', () => {
       const findForestGoal = goals.find((g) => g.name === 'FindForest')!;
 
       // 19 blocks should be allowed (under threshold)
-      ws.set('exploration.waterAhead', 19);
+      ws.set('exploration.minWaterAhead', 19);
       expect(findForestGoal.isValid(ws)).toBe(true);
 
       // 21 blocks should be blocked (over threshold)
-      ws.set('exploration.waterAhead', 21);
+      ws.set('exploration.minWaterAhead', 21);
       expect(findForestGoal.isValid(ws)).toBe(false);
 
       // Exactly 20 blocks should be blocked (at threshold)
-      ws.set('exploration.waterAhead', 20);
+      ws.set('exploration.minWaterAhead', 20);
       expect(findForestGoal.isValid(ws)).toBe(false);
     });
   });

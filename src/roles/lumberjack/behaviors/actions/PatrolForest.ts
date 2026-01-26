@@ -76,13 +76,16 @@ export class PatrolForest implements BehaviorNode {
 
         if (viableCandidates.length === 0) {
             // All areas well-explored, wait
+            // Return 'success' to indicate intentional waiting - NOT 'failure'
+            // Returning 'failure' would trigger a goal cooldown, leaving the bot
+            // cycling between limited goal options.
             bb.consecutiveIdleTicks++;
             if (bb.consecutiveIdleTicks > 10) {
                 bb.log?.debug(`[Lumberjack] Waiting for trees to grow...`);
                 await new Promise(resolve => setTimeout(resolve, 5000));
                 bb.consecutiveIdleTicks = 0;
             }
-            return 'failure';
+            return 'success';
         }
 
         bb.consecutiveIdleTicks = 0;

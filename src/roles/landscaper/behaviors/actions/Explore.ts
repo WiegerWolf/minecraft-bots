@@ -72,14 +72,17 @@ export class Explore implements BehaviorNode {
 
         const target = candidates[0];
         if (!target || target.score < 20) {
-            // All areas explored, wait
+            // All areas explored or all candidates have low scores (underground/unsafe)
+            // Return 'success' to indicate intentional waiting - NOT 'failure'
+            // Returning 'failure' would trigger a goal cooldown, leaving the bot
+            // with no valid goals when Explore is the only available goal.
             bb.consecutiveIdleTicks++;
             if (bb.consecutiveIdleTicks > 10) {
                 bb.log?.debug(`[Landscaper] Waiting for terraform requests...`);
                 await new Promise(resolve => setTimeout(resolve, 3000));
                 bb.consecutiveIdleTicks = 0;
             }
-            return 'failure';
+            return 'success';
         }
 
         bb.consecutiveIdleTicks = 0;
