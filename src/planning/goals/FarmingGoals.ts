@@ -551,9 +551,11 @@ export class BroadcastTradeOfferGoal extends BaseGoal {
     // Use computed boolean from WorldStateBuilder (single source of truth)
     if (!ws.getBool('trade.canBroadcastOffer')) return 0;
 
-    // Low priority - do when idle, scale with tradeable items
+    // Medium priority - trading is cooperative and should happen when idle
+    // Base 40 + scaling ensures 8+ items beats Explore (45)
+    // Range: 44 (4 items) to 60 (20+ items)
     const tradeableCount = ws.getNumber('trade.tradeableCount');
-    return 30 + Math.min(tradeableCount / 4, 5) * 4;
+    return 40 + Math.min(tradeableCount / 4, 5) * 4;
   }
 
   override isValid(ws: WorldState): boolean {

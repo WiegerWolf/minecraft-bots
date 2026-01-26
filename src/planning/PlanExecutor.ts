@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { GOAPAction, ActionResult } from './Action';
 import { ActionResult as ActionResultEnum } from './Action';
 import { WorldState } from './WorldState';
+import { WorldStateBuilder } from './WorldStateBuilder';
 import type { FarmingBlackboard } from '../roles/farming/Blackboard';
 import type { Logger } from '../shared/logger';
 
@@ -261,15 +262,17 @@ export class PlanExecutor {
   checkWorldStateChange(currentState: WorldState): void {
     if (!this.initialWorldState) return;
 
-    // Calculate significant changes (using helper from WorldStateBuilder)
-    const changes = currentState.diff(this.initialWorldState);
+    // Calculate significant changes using WorldStateBuilder's helper
+    // This only counts changes to important facts (tools, trade state, nearby resources)
+    const significantChanges = WorldStateBuilder.calculateSignificantChanges(
+      this.initialWorldState,
+      currentState
+    );
 
-    // Threshold for replanning (tune this value)
-    const CHANGE_THRESHOLD = 5;
-
-    if (changes >= CHANGE_THRESHOLD) {
+    // Any significant change triggers replan (e.g., trade.canBroadcastOffer changing)
+    if (significantChanges >= 1) {
       if (this.config.debug) {
-        this.log?.debug({ changes }, 'World state changed significantly, requesting replan');
+        this.log?.debug({ significantChanges }, 'World state changed significantly, requesting replan');
       }
       this.requestReplan(ReplanReason.WORLD_CHANGED);
     }

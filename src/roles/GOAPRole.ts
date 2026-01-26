@@ -521,6 +521,11 @@ export abstract class GOAPRole implements Role {
   private async planNextGoal(): Promise<void> {
     if (!this.currentWorldState || !this.arbiter || !this.planner || !this.executor) return;
 
+    // Clear current goal to avoid stale hysteresis when plan exhausted naturally.
+    // Without this, a completed plan's goal would persist in the arbiter, causing
+    // hysteresis to prevent switching to a higher-utility goal.
+    this.arbiter.clearCurrentGoal();
+
     // Clean up expired cooldowns and build skip set
     const now = Date.now();
     const goalsOnCooldown = new Set<string>();

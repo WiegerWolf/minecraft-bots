@@ -440,6 +440,8 @@ export class WorldStateBuilder {
       'trade.inTrade',
       'trade.status',
       'trade.pendingOffers',
+      'trade.canBroadcastOffer', // Triggers replan when we gain enough items to offer
+      'trade.canRespondToOffers', // Triggers replan when new offers arrive
     ];
 
     let changes = 0;
