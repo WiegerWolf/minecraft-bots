@@ -23,7 +23,6 @@ const PICKUP_VERIFICATION_WAIT = 1000;      // Time to wait for items to settle 
 const MAX_PARTNER_DISTANCE = 4;             // Maximum allowed distance between trading partners
 const MAX_TRADE_RETRIES = 3;                // Maximum number of trade retry attempts
 const OTHER_BOT_EXCLUSION_RADIUS = 8;       // Distance at which other bots make a meeting point unsuitable
-const POSITION_SHARE_INTERVAL = 2000;       // How often to share position with partner (ms)
 
 /**
  * Minimal blackboard interface required by trade actions.

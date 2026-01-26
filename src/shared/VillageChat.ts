@@ -4,6 +4,9 @@ import type { Logger } from './logger';
 import type { Need, NeedOffer, NeedStatus, DeliveryMethod, ItemStack } from './needs/types.js';
 import { generateNeedId, rankOffers } from './needs/types.js';
 
+// How often to share position with trade partner (prevents chat spam)
+const POSITION_SHARE_INTERVAL = 2000;  // 2 seconds
+
 /**
  * Chat-based village communication system.
  * Bots communicate via in-game chat using prefixed messages.
@@ -105,6 +108,7 @@ export interface ActiveTrade {
     retryCount: number;             // Number of trade retry attempts
     giverDroppedCount: number;      // Items giver dropped (for verification)
     partnerPosition: Vec3 | null;   // Partner's position (for facing/proximity)
+    lastPositionShareTime: number;  // When we last shared our position (for rate limiting)
 }
 
 export interface VillageChatState {
@@ -1102,6 +1106,7 @@ export class VillageChat {
             retryCount: 0,
             giverDroppedCount: 0,
             partnerPosition: null,
+            lastPositionShareTime: 0,
         };
 
         const msg = `[OFFER] ${item} ${quantity}`;
@@ -1134,6 +1139,7 @@ export class VillageChat {
             retryCount: 0,
             giverDroppedCount: 0,
             partnerPosition: null,
+            lastPositionShareTime: 0,
         };
 
         const msg = `[WANT] ${offer.item} ${offer.quantity} from ${offer.from} (have ${currentCount})`;
@@ -1228,10 +1234,20 @@ export class VillageChat {
 
     /**
      * Send our position to the trade partner (for facing/proximity checks).
+     * Rate-limited to prevent chat spam.
      */
     sendTradePosition(pos: Vec3): void {
         if (!this.state.activeTrade) return;
 
+        const now = Date.now();
+        const lastShare = this.state.activeTrade.lastPositionShareTime;
+
+        // Rate limit position sharing to prevent chat spam
+        if (now - lastShare < POSITION_SHARE_INTERVAL) {
+            return;
+        }
+
+        this.state.activeTrade.lastPositionShareTime = now;
         const msg = `[TRADE_POS] ${pos.x.toFixed(1)} ${pos.y.toFixed(1)} ${pos.z.toFixed(1)}`;
         this.bot.chat(msg);
         this.log?.debug({ pos: pos.toString() }, 'Sent trade position');
