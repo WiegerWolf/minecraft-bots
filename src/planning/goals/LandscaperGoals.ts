@@ -630,6 +630,9 @@ export class CompleteTradeGoal extends BaseGoal {
  *
  * The goal is satisfied when we've responded (trade.status == 'wanting')
  * or entered an active trade.
+ *
+ * For landscaper: Must be high enough to preempt active terraforming (120 + 30 = 150).
+ * Using 160 to ensure trade offers are always responded to promptly.
  */
 export class RespondToTradeOfferGoal extends BaseGoal {
   name = 'RespondToTradeOffer';
@@ -648,9 +651,10 @@ export class RespondToTradeOfferGoal extends BaseGoal {
     // Use computed boolean from WorldStateBuilder (single source of truth)
     if (!ws.getBool('trade.canRespondToOffers')) return 0;
 
-    // Very high priority - trading should preempt most activities
-    // Utility 140 ensures preemption of goals at 100+ (100 + 30 threshold = 130)
-    return 140;
+    // Very high priority - trading should preempt ALL activities including active terraform
+    // Active terraform is 120, preemption threshold is 30, so need > 150
+    // Using 160 to ensure trade offers can always interrupt
+    return 160;
   }
 
   override isValid(ws: WorldState): boolean {
