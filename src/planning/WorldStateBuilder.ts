@@ -93,7 +93,8 @@ export class WorldStateBuilder {
     ws.set('trade.onCooldown', onCooldown);
 
     // Computed trade booleans (used by goals - single source of truth)
-    const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'awaiting_pickup', 'picking_up'];
+    // Note: 'wanting' is active because receiver sent WANT and is waiting to be accepted
+    const activeStatuses = ['wanting', 'accepted', 'traveling', 'ready', 'dropping', 'awaiting_pickup', 'picking_up'];
     const blockedStatuses = ['wanting', 'accepted', 'traveling'];
     const broadcastBlockedStatuses = ['wanting', 'offering', 'accepted', 'traveling'];
 

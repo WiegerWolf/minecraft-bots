@@ -639,11 +639,11 @@ export class CompleteTradeAction extends BaseGOAPAction {
   private impl = new CompleteTrade();
 
   preconditions = [
-    // Active trade statuses
+    // Active trade statuses (including 'wanting' for receiver waiting to be accepted)
     {
       key: 'trade.status',
       check: (value: any) => {
-        const activeStatuses = ['accepted', 'traveling', 'ready', 'dropping', 'awaiting_pickup', 'picking_up'];
+        const activeStatuses = ['wanting', 'accepted', 'traveling', 'ready', 'dropping', 'awaiting_pickup', 'picking_up'];
         return activeStatuses.includes(value);
       },
       description: 'has active trade',

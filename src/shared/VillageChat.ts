@@ -109,6 +109,7 @@ export interface ActiveTrade {
     giverDroppedCount: number;      // Items giver dropped (for verification)
     partnerPosition: Vec3 | null;   // Partner's position (for facing/proximity)
     lastPositionShareTime: number;  // When we last shared our position (for rate limiting)
+    pickupStartCount: number;       // Receiver's inventory count when entering 'picking_up' (for verification)
 }
 
 export interface VillageChatState {
@@ -1107,6 +1108,7 @@ export class VillageChat {
             giverDroppedCount: 0,
             partnerPosition: null,
             lastPositionShareTime: 0,
+            pickupStartCount: 0,
         };
 
         const msg = `[OFFER] ${item} ${quantity}`;
@@ -1140,6 +1142,7 @@ export class VillageChat {
             giverDroppedCount: 0,
             partnerPosition: null,
             lastPositionShareTime: 0,
+            pickupStartCount: currentCount, // Record inventory at start of trade for verification
         };
 
         const msg = `[WANT] ${offer.item} ${offer.quantity} from ${offer.from} (have ${currentCount})`;

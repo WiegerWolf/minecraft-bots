@@ -9,6 +9,7 @@ import {
 import { createLandscaperActions } from '../planning/actions/LandscaperActions';
 import { createLandscaperGoals } from '../planning/goals/LandscaperGoals';
 import { VillageChat } from '../shared/VillageChat';
+import { createChildLogger } from '../shared/logger';
 import type { GOAPAction } from '../planning/Action';
 import type { Goal } from '../planning/Goal';
 
@@ -81,13 +82,20 @@ export class GOAPLandscaperRole extends GOAPRole {
 
     // Initialize village chat if blackboard was created
     if (this.blackboard) {
-      const villageChat = new VillageChat(bot);
+      const villageChatLogger = this.logger ? createChildLogger(this.logger, 'VillageChat') : undefined;
+      const villageChat = new VillageChat(bot, villageChatLogger);
       this.blackboard.villageChat = villageChat;
     }
   }
 
   override stop(bot: Bot): void {
     this.log?.info('Stopping GOAP landscaper bot');
+
+    // Cleanup VillageChat listeners before stopping
+    if (this.blackboard?.villageChat) {
+      this.blackboard.villageChat.cleanup();
+    }
+
     super.stop(bot);
   }
 

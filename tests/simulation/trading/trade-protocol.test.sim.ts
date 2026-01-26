@@ -455,7 +455,7 @@ async function testFarmerOffersDirtToLandscaper() {
 
   // Add water and farm sign so farmer has an established farm
   world.setBlock(new Vec3(10, 63, 10), 'water');
-  world.setBlock(new Vec3(-6, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 10\nY: 64\nZ: 10' });
+  world.setBlock(new Vec3(-6, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 10\nY: 63\nZ: 10' });
 
   // Add work area sign for landscaper
   world.setBlock(new Vec3(-6, 64, 2), 'oak_sign', { signText: '[WORK]\nX: 20\nY: 64\nZ: 20' });
@@ -463,10 +463,12 @@ async function testFarmerOffersDirtToLandscaper() {
   await test.setup(world);
 
   // Farmer with dirt (helpful item for landscaper)
+  // Give sign materials so WriteKnowledgeSign can complete
   const farmerBot = await test.addBot('Test_Farmer', new Vec3(0, 65, 0), [
     { name: 'iron_hoe', count: 1 },
     { name: 'wheat_seeds', count: 16 },
     { name: 'dirt', count: 10 }, // Farmer will offer this to landscaper
+    { name: 'oak_sign', count: 8 }, // For writing knowledge signs
   ]);
 
   // Landscaper with no dirt (will want it)
@@ -475,7 +477,7 @@ async function testFarmerOffersDirtToLandscaper() {
     { name: 'iron_pickaxe', count: 1 },
   ]);
 
-  await test.wait(3000, 'Bots loading and reading signs');
+  await test.wait(8000, 'Bots loading, reading signs, and settling');
 
   // Verify initial state
   test.assertEqual(
