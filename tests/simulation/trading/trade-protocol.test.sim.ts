@@ -636,21 +636,22 @@ async function testNeediestSelection() {
   world.setBlock(new Vec3(0, 64, 0), 'oak_sign', { signText: '[VILLAGE]\nX: 0\nY: 64\nZ: 0' });
   world.setBlock(new Vec3(10, 64, 0), 'chest');
 
-  // Add forest for lumberjack
-  world.setBlock(new Vec3(-5, 64, -5), 'oak_sign', { signText: '[FOREST]\nX: -25\nY: 64\nZ: -25' });
-  createOakTree(world, new Vec3(-25, 64, -25), 5);
-  createOakTree(world, new Vec3(-28, 64, -22), 5);
+  // Add forest CLOSE so lumberjack detects reachable trees immediately
+  // When reachableTreeCount > 0, PatrolForest drops to low utility
+  // This allows BroadcastTradeOffer (utility ~50) to become the active goal
+  world.setBlock(new Vec3(-5, 64, -5), 'oak_sign', { signText: '[FOREST]\nX: -8\nY: 64\nZ: 0' });
+  createOakTree(world, new Vec3(-8, 64, 0), 5);
+  createOakTree(world, new Vec3(-12, 64, 3), 5);
 
-  // Add farm areas for farmers
-  world.setBlock(new Vec3(15, 63, 15), 'water');
+  // Add farm sign but NO water - keeps farmers idle and responsive to trades
   world.setBlock(new Vec3(12, 64, 0), 'oak_sign', { signText: '[FARM]\nX: 15\nY: 64\nZ: 15' });
 
   await test.setup(world);
 
-  // Lumberjack with seeds to offer
+  // Lumberjack with seeds to offer (32 for max BroadcastTradeOffer utility)
   const lumberjackBot = await test.addBot('Test_Lmbr', new Vec3(0, 65, 0), [
     { name: 'iron_axe', count: 1 },
-    { name: 'wheat_seeds', count: 8 },
+    { name: 'wheat_seeds', count: 32 },
   ]);
 
   // Farmer A with 0 seeds (should be selected - neediest)
