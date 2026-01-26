@@ -276,6 +276,8 @@ export async function updateLumberjackBlackboard(bot: Bot, bb: LumberjackBlackbo
             .filter(o => isWantedByRole(o.item, 'lumberjack'));
         bb.activeTrade = bb.villageChat.getActiveTrade();
         bb.villageChat.periodicCleanup();
+        // Check connection health during active trades
+        bb.villageChat.checkConnectionHealth();
     }
 
     // Skip expensive world perception during active trading to keep event loop responsive

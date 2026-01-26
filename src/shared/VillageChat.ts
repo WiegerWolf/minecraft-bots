@@ -185,10 +185,79 @@ export class VillageChat {
     // Store reference to chat handler for cleanup
     private chatHandler: ((username: string, message: string) => void) | null = null;
 
+    // Connection health monitoring
+    private lastChatReceivedAt: number = 0;
+    private lastChatSentAt: number = 0;
+    private healthCheckWarningLogged: boolean = false;
+    private static readonly MESSAGE_GAP_WARNING_THRESHOLD = 10000; // 10 seconds
+
     constructor(bot: Bot, logger?: Logger) {
         this.bot = bot;
         this.log = logger ?? null;
+        this.lastChatReceivedAt = Date.now();
+        this.lastChatSentAt = Date.now();
         this.setupChatListener();
+    }
+
+    /**
+     * Check connection health during active trades.
+     * Logs warnings if message reception appears delayed.
+     * Call this from blackboard update.
+     */
+    checkConnectionHealth(): void {
+        // Only check during active trades when message flow matters
+        if (!this.state.activeTrade) {
+            this.healthCheckWarningLogged = false;
+            return;
+        }
+
+        const tradeStatus = this.state.activeTrade.status;
+        // Check health during trade phases where message exchange is expected
+        const criticalPhases: TradeStatus[] = ['wanting', 'accepted', 'traveling', 'ready', 'awaiting_pickup'];
+        if (!criticalPhases.includes(tradeStatus)) {
+            this.healthCheckWarningLogged = false;
+            return;
+        }
+
+        const now = Date.now();
+        const gapSinceReceived = now - this.lastChatReceivedAt;
+        const gapSinceSent = now - this.lastChatSentAt;
+
+        // If we're sending but not receiving for a significant time, that's suspicious
+        if (gapSinceReceived > VillageChat.MESSAGE_GAP_WARNING_THRESHOLD &&
+            gapSinceSent < VillageChat.MESSAGE_GAP_WARNING_THRESHOLD) {
+            if (!this.healthCheckWarningLogged) {
+                this.log?.warn({
+                    lastReceivedMs: gapSinceReceived,
+                    lastSentMs: gapSinceSent,
+                    tradeStatus,
+                    partner: this.state.activeTrade.partner,
+                }, 'Connection health warning: sending messages but not receiving any');
+                this.healthCheckWarningLogged = true;
+            }
+        } else {
+            this.healthCheckWarningLogged = false;
+        }
+    }
+
+    /**
+     * Get connection health stats for debugging.
+     */
+    getHealthStats(): { lastReceivedMs: number; lastSentMs: number; isHealthy: boolean } {
+        const now = Date.now();
+        const lastReceivedMs = now - this.lastChatReceivedAt;
+        const lastSentMs = now - this.lastChatSentAt;
+        const isHealthy = lastReceivedMs < VillageChat.MESSAGE_GAP_WARNING_THRESHOLD ||
+                          lastSentMs >= VillageChat.MESSAGE_GAP_WARNING_THRESHOLD;
+        return { lastReceivedMs, lastSentMs, isHealthy };
+    }
+
+    /**
+     * Send a chat message and track timing for health monitoring.
+     */
+    private sendChat(msg: string): void {
+        this.lastChatSentAt = Date.now();
+        this.bot.chat(msg);
     }
 
     /**
@@ -249,6 +318,9 @@ export class VillageChat {
         this.chatHandler = (username: string, message: string) => {
             // Ignore own messages
             if (username === this.bot.username) return;
+
+            // Track message reception for health monitoring
+            this.lastChatReceivedAt = Date.now();
 
             // Debug: log all received village-related chat
             if (message.startsWith('[')) {
@@ -1158,7 +1230,7 @@ export class VillageChat {
         };
 
         const msg = `[OFFER] ${item} ${quantity}`;
-        this.bot.chat(msg);
+        this.sendChat(msg);
         this.log?.info({ item, qty: quantity }, 'Broadcast trade offer');
     }
 
@@ -1192,7 +1264,7 @@ export class VillageChat {
         };
 
         const msg = `[WANT] ${offer.item} ${offer.quantity} from ${offer.from} (have ${currentCount})`;
-        this.bot.chat(msg);
+        this.sendChat(msg);
         this.log?.info({ item: offer.item, from: offer.from, have: currentCount }, 'Sent want response');
     }
 
@@ -1209,7 +1281,7 @@ export class VillageChat {
         this.state.activeTrade.status = 'accepted';
 
         const msg = `[TRADE_ACCEPT] ${partner}`;
-        this.bot.chat(msg);
+        this.sendChat(msg);
         this.log?.info({ partner }, 'Accepted trade with partner');
     }
 
@@ -1223,7 +1295,7 @@ export class VillageChat {
         this.state.activeTrade.status = 'traveling';
 
         const msg = `[TRADE_AT] ${Math.floor(pos.x)} ${Math.floor(pos.y)} ${Math.floor(pos.z)}`;
-        this.bot.chat(msg);
+        this.sendChat(msg);
         this.log?.info({ pos: pos.toString() }, 'Sent trade meeting point');
     }
 
@@ -1236,7 +1308,7 @@ export class VillageChat {
         this.state.activeTrade.status = 'ready';
 
         const msg = '[TRADE_READY]';
-        this.bot.chat(msg);
+        this.sendChat(msg);
         this.log?.debug('Sent trade ready');
     }
 
@@ -1251,7 +1323,7 @@ export class VillageChat {
         this.state.activeTrade.status = 'awaiting_pickup';
 
         const msg = '[TRADE_DROPPED]';
-        this.bot.chat(msg);
+        this.sendChat(msg);
         this.log?.info('Sent trade dropped');
     }
 
@@ -1260,7 +1332,7 @@ export class VillageChat {
      */
     sendTradeDone(): void {
         const msg = '[TRADE_DONE]';
-        this.bot.chat(msg);
+        this.sendChat(msg);
         this.log?.info('Sent trade done');
 
         // Clear trade state
@@ -1298,7 +1370,7 @@ export class VillageChat {
 
         this.state.activeTrade.lastPositionShareTime = now;
         const msg = `[TRADE_POS] ${pos.x.toFixed(1)} ${pos.y.toFixed(1)} ${pos.z.toFixed(1)}`;
-        this.bot.chat(msg);
+        this.sendChat(msg);
         this.log?.debug({ pos: pos.toString() }, 'Sent trade position');
     }
 
@@ -1313,7 +1385,7 @@ export class VillageChat {
         this.state.activeTrade.partnerReady = false;
 
         const msg = '[TRADE_RETRY]';
-        this.bot.chat(msg);
+        this.sendChat(msg);
         this.log?.info({ retryCount: this.state.activeTrade.retryCount }, 'Sent trade retry');
     }
 

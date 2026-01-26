@@ -278,6 +278,7 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
                 .filter(o => isWantedByRole(o.item, 'landscaper'));
             bb.activeTrade = bb.villageChat.getActiveTrade();
             bb.villageChat.periodicCleanup();
+            bb.villageChat.checkConnectionHealth();
         }
         return;
     }
@@ -417,6 +418,7 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
 
         // Clean up stale trade offers, needs, terraform requests
         bb.villageChat.periodicCleanup();
+        bb.villageChat.checkConnectionHealth();
     }
 }
 

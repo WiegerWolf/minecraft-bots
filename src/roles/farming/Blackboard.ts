@@ -266,6 +266,8 @@ export async function updateBlackboard(bot: Bot, bb: FarmingBlackboard): Promise
             .filter(o => isWantedByRole(o.item, 'farmer'));
         bb.activeTrade = bb.villageChat.getActiveTrade();
         bb.villageChat.periodicCleanup();
+        // Check connection health during active trades
+        bb.villageChat.checkConnectionHealth();
     }
 
     // ═══════════════════════════════════════════════
