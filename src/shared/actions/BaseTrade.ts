@@ -1,4 +1,5 @@
 import type { Bot } from 'mineflayer';
+import type { Entity } from 'prismarine-entity';
 import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
 import { smartPathfinderGoto, sleep } from '../PathfindingUtils';
@@ -10,6 +11,58 @@ import { isWantedByRole, getItemCount, getTradeableItems } from '../ItemCategori
 const { GoalNear } = goals;
 
 export type BehaviorStatus = 'success' | 'failure' | 'running';
+
+/**
+ * Walk toward an item and wait for pickup using event-driven approach.
+ * Resolves immediately when item is collected, or after timeout.
+ */
+function walkTowardAndCollect(
+    bot: Bot,
+    drop: Entity,
+    maxWalkTimeMs: number
+): Promise<boolean> {
+    return new Promise(resolve => {
+        const dropId = drop.id;
+        let resolved = false;
+        let timeoutHandle: ReturnType<typeof setTimeout>;
+
+        const cleanup = () => {
+            if (resolved) return;
+            resolved = true;
+            bot.clearControlStates();
+            bot.removeListener('playerCollect', onCollect);
+            clearTimeout(timeoutHandle);
+        };
+
+        const onCollect = (collector: Entity, collected: Entity) => {
+            if (collected.id === dropId) {
+                cleanup();
+                resolve(true);
+            }
+        };
+
+        bot.on('playerCollect', onCollect);
+
+        // Look at item and walk forward
+        if (drop.position) {
+            const direction = drop.position.minus(bot.entity.position);
+            const yaw = Math.atan2(-direction.x, -direction.z);
+            bot.look(yaw, 0).then(() => {
+                if (!resolved) {
+                    bot.setControlState('forward', true);
+                }
+            });
+        }
+
+        // Timeout fallback
+        timeoutHandle = setTimeout(() => {
+            cleanup();
+            // Check if item still exists
+            const stillExists = Object.values(bot.entities).some(e => e.id === dropId);
+            resolve(!stillExists);
+        }, maxWalkTimeMs);
+    });
+}
 
 // Trade timing constants
 const OFFER_COLLECTION_WINDOW = 15000;     // 15 seconds to collect WANT responses
@@ -1013,7 +1066,7 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                             try {
                                 await smartPathfinderGoto(
                                     bot,
-                                    new GoalNear(searchCenter.x, searchCenter.y, searchCenter.z, 1),
+                                    new GoalNear(searchCenter.x, searchCenter.y, searchCenter.z, 0.5),
                                     { timeoutMs: 5000 }
                                 );
                             } catch {
@@ -1021,8 +1074,14 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                             }
                         }
 
-                        // Wait for auto-pickup
-                        await sleep(1000);
+                        // Actively walk through the area to collect any items
+                        // Look at and walk toward the drop location
+                        const direction = searchCenter.minus(bot.entity.position);
+                        const yaw = Math.atan2(-direction.x, -direction.z);
+                        await bot.look(yaw, 0);
+                        bot.setControlState('forward', true);
+                        await sleep(600);
+                        bot.clearControlStates();
 
                         // Check if inventory increased
                         const countNow = bot.inventory.items()
@@ -1065,9 +1124,13 @@ export abstract class BaseCompleteTrade<TBlackboard extends TradeBlackboard> {
                                     // Continue trying other items
                                 }
                             }
-                            await sleep(300);
+                            // Actively walk into the item to collect it (don't just stand nearby)
+                            const collected = await walkTowardAndCollect(bot, drop, 800);
+                            if (collected) {
+                                bb.log?.debug({ dropId: drop.id }, `[${this.config.roleLabel}] Collected item via walk-into`);
+                            }
                         }
-                        await sleep(500);
+                        await sleep(300);
                     }
                 } else {
                     bb.log?.info({ received: currentCount - countBefore },
