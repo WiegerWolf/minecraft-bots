@@ -543,21 +543,23 @@ async function testTradeMeetingPoint() {
   world.setBlock(new Vec3(10, 64, 0), 'chest');
   world.setBlock(new Vec3(10, 64, 2), 'crafting_table');
 
-  // Add forest for lumberjack
-  world.setBlock(new Vec3(-5, 64, -5), 'oak_sign', { signText: '[FOREST]\nX: -20\nY: 64\nZ: -20' });
-  createOakTree(world, new Vec3(-20, 64, -20), 5);
-  createOakTree(world, new Vec3(-23, 64, -17), 5);
+  // Add forest CLOSE so lumberjack detects reachable trees immediately
+  // When reachableTreeCount > 0, PatrolForest drops to utility 5
+  // This allows BroadcastTradeOffer (utility ~50) to become the active goal
+  world.setBlock(new Vec3(-5, 64, -5), 'oak_sign', { signText: '[FOREST]\nX: -8\nY: 64\nZ: 0' });
+  createOakTree(world, new Vec3(-8, 64, 0), 5);
+  createOakTree(world, new Vec3(-12, 64, 3), 5);
 
-  // Add farm for farmer
-  world.setBlock(new Vec3(10, 63, 10), 'water');
+  // Add farm for farmer (no water - keeps farmer idle and responsive to trades)
   world.setBlock(new Vec3(5, 64, 5), 'oak_sign', { signText: '[FARM]\nX: 10\nY: 64\nZ: 10' });
 
   await test.setup(world);
 
-  // Start bots at different positions
+  // Start bots at different positions (far apart to test meeting point)
+  // Give 32 seeds so BroadcastTradeOffer utility (50) beats PatrolForest
   const lumberjackBot = await test.addBot('Test_Lmbr', new Vec3(-15, 65, 0), [
     { name: 'iron_axe', count: 1 },
-    { name: 'wheat_seeds', count: 8 },
+    { name: 'wheat_seeds', count: 32 },
   ]);
 
   const farmerBot = await test.addBot('Test_Farmer', new Vec3(15, 65, 0), [
