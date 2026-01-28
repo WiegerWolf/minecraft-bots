@@ -56,9 +56,9 @@ diff --git a/node_modules/mineflayer/lib/plugins/place_entity.js b/node_modules/
 index 33d4c1e..f8b2a3c 100644
 --- a/node_modules/mineflayer/lib/plugins/place_entity.js
 +++ b/node_modules/mineflayer/lib/plugins/place_entity.js
-@@ -35,9 +35,16 @@ function inject (bot) {
+@@ -35,9 +35,17 @@ function inject (bot) {
      const pos = await bot._genericPlace(referenceBlock, faceVector, options)
-
+ 
      if (type === 'boat') {
        if (bot.supportFeature('useItemWithOwnPacket')) {
 +        // Fix for MC 1.21+: use_item requires sequence and rotation fields
