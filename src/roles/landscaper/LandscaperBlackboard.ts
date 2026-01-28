@@ -115,6 +115,7 @@ export interface LandscaperBlackboard {
     // ═══════════════════════════════════════════════════════════════
     lumberjackPosition: Vec3 | null;            // Last known position of a lumberjack
     lumberjackName: string | null;              // Name of the lumberjack being followed
+    lumberjackEntity: any | null;               // Entity reference for GoalFollow (dynamic tracking)
 
     // ═══════════════════════════════════════════════════════════════
     // TRADE STATE
@@ -200,6 +201,7 @@ export function createLandscaperBlackboard(): LandscaperBlackboard {
         // Lumberjack tracking
         lumberjackPosition: null,
         lumberjackName: null,
+        lumberjackEntity: null,
 
         // Trade state
         tradeableItems: [],
@@ -279,6 +281,7 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
     if (!bb.villageCenter) {
         bb.lumberjackPosition = null;
         bb.lumberjackName = null;
+        bb.lumberjackEntity = null;
 
         // Find the closest lumberjack player
         let lumberjackOutOfRange = false;
@@ -300,6 +303,7 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
             if (!bb.lumberjackPosition || distance < pos.distanceTo(bb.lumberjackPosition)) {
                 bb.lumberjackPosition = entity.position.clone();
                 bb.lumberjackName = playerName;
+                bb.lumberjackEntity = entity;  // Store entity for GoalFollow
             }
         }
 
@@ -316,6 +320,7 @@ export async function updateLandscaperBlackboard(bot: Bot, bb: LandscaperBlackbo
         // Village established, no need to follow
         bb.lumberjackPosition = null;
         bb.lumberjackName = null;
+        bb.lumberjackEntity = null;
     }
 
     // ═══════════════════════════════════════════════

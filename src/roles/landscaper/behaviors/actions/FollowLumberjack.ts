@@ -1,6 +1,6 @@
 import type { Bot } from 'mineflayer';
 import type { LandscaperBlackboard } from '../../LandscaperBlackboard';
-import { GoalNear } from 'baritone-ts';
+import { GoalFollow, GoalNear } from 'baritone-ts';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 /**
@@ -13,11 +13,12 @@ import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
  *
  * The bot maintains a comfortable distance (15-30 blocks) - close enough to
  * hear village chat but not so close as to be underfoot.
+ *
+ * Uses baritone-ts GoalFollow for smooth dynamic tracking of the moving lumberjack.
  */
 export class FollowLumberjack {
     name = 'FollowLumberjack';
 
-    private maxFollowDistance = 30;   // Start following if further than this
     private targetDistance = 20;       // Try to get within this distance
     private minDistance = 15;          // Don't get closer than this
     private lastPathTime = 0;
@@ -72,36 +73,48 @@ export class FollowLumberjack {
             target: this.targetDistance
         }, 'Following lumberjack');
 
-        // Move toward the lumberjack, but stay at target distance
-        // Calculate a position that's targetDistance blocks away from the lumberjack
-        const direction = pos.minus(bb.lumberjackPosition).normalize();
-        const targetPos = bb.lumberjackPosition.plus(direction.scaled(this.targetDistance));
-
-        // Use GoalNear with a range so we stop when we're in the comfort zone
-        const goal = new GoalNear(
-            targetPos.x,
-            targetPos.y,
-            targetPos.z,
-            5  // Allow some slack
-        );
+        // Use GoalFollow for dynamic tracking if we have the entity reference
+        // Otherwise fall back to GoalNear with calculated position
+        let goal;
+        if (bb.lumberjackEntity) {
+            // GoalFollow dynamically tracks the moving entity
+            // Use minDistance as the range - we want to stay at least this close
+            goal = new GoalFollow(bb.lumberjackEntity, this.minDistance);
+            bb.log?.trace('Using GoalFollow for dynamic tracking');
+        } else {
+            // Fallback: calculate target position and use GoalNear
+            const direction = pos.minus(bb.lumberjackPosition).normalize();
+            const targetPos = bb.lumberjackPosition.plus(direction.scaled(this.targetDistance));
+            goal = new GoalNear(targetPos.x, targetPos.y, targetPos.z, 5);
+            bb.log?.trace('Using GoalNear fallback (no entity reference)');
+        }
 
         this.isPathfinding = true;
-        const result = await smartPathfinderGoto(bot, goal, { timeoutMs: 10000 });
-        this.isPathfinding = false;
+        // Use dynamic=true for GoalFollow to enable continuous tracking
+        const useDynamic = bb.lumberjackEntity !== null;
 
-        if (result.success) {
-            bb.lastAction = 'followed_lumberjack';
-            bb.consecutiveIdleTicks = 0;
-            return 'success';
+        try {
+            const result = await smartPathfinderGoto(bot, goal, { timeoutMs: 10000 });
+            this.isPathfinding = false;
+
+            if (result.success) {
+                bb.lastAction = 'followed_lumberjack';
+                bb.consecutiveIdleTicks = 0;
+                return 'success';
+            }
+
+            // PathStopped is expected when lumberjack moves - just retry next tick
+            if (result.failureReason?.includes('PathStopped') || result.failureReason === 'goal_changed') {
+                bb.log?.debug('Path interrupted (lumberjack moved), will retry');
+                return 'running';
+            }
+
+            bb.log?.debug({ reason: result.failureReason }, 'Failed to follow lumberjack');
+            return 'failure';
+        } catch (err) {
+            this.isPathfinding = false;
+            bb.log?.debug({ err }, 'Follow pathfinding error');
+            return 'failure';
         }
-
-        // PathStopped is expected when lumberjack moves - just retry next tick
-        if (result.failureReason?.includes('PathStopped')) {
-            bb.log?.debug('Path interrupted (lumberjack moved), will retry');
-            return 'running';
-        }
-
-        bb.log?.debug({ reason: result.failureReason }, 'Failed to follow lumberjack');
-        return 'failure';
     }
 }

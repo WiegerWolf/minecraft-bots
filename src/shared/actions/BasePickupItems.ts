@@ -97,7 +97,7 @@ const DEFAULT_CONFIG: Required<PickupItemsConfig> = {
     maxAttempts: 5,
     closeDistanceThreshold: 1.5,
     closeDistanceWaitMs: 300,
-    goalRadius: 1,
+    goalRadius: 0.5,  // Tight radius for accurate pickup (matches baritone-ts GatherProcess)
     pathfindingTimeoutMs: 15000,
     roleLabel: 'Bot',
     lastActionMoving: 'pickup_moving',

@@ -1,5 +1,13 @@
 import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
-import pathfinder, { GoalNear } from 'baritone-ts';
+import pathfinder, {
+    GoalNear,
+    createTaskRunner,
+    FoodChain,
+    MobDefenseChain,
+    MLGBucketChain,
+    WorldSurvivalChain,
+    type TaskRunner,
+} from 'baritone-ts';
 import { faker } from '@faker-js/faker';
 import { Vec3 } from 'vec3';
 import { GOAPFarmingRole } from './roles/GOAPFarmingRole';
@@ -59,6 +67,7 @@ const roles: Record<string, Role> = {
 };
 
 let currentRole: Role | null = null;
+let taskRunner: TaskRunner | null = null;
 
 function setRole(roleName: string | null, options?: any) {
     if (currentRole) {
@@ -85,6 +94,50 @@ bot.once('spawn', () => {
         allowParkour: true,
         allowSprint: true,
     });
+
+    // Initialize TaskRunner with survival chains for automatic safety behaviors
+    // These run alongside GOAP and only interrupt for safety (eating, combat, hazards)
+    taskRunner = createTaskRunner(bot as any);
+
+    // FoodChain: Auto-eat when hungry (priority 55, above user tasks)
+    const foodChain = new FoodChain(bot as any, {
+        eatWhenHunger: 14,      // Start eating at 14/20 hunger (7 drumsticks)
+        eatRottenFlesh: true,   // Allow rotten flesh as emergency food
+        rottenFleshPenalty: 5,  // But prefer other foods
+    });
+    taskRunner.registerChain(foodChain);
+
+    // MobDefenseChain: Handle hostile mobs (priority 100, high priority)
+    // Using a passive approach - flee from threats rather than fight
+    const mobDefenseChain = new MobDefenseChain(bot as any, {
+        detectionRange: 12,     // Detect hostiles within 12 blocks
+        engageRange: 0,         // Don't engage - flee instead
+        creeperFleeDistance: 12,
+        threatThreshold: 5,     // React to lower threats
+    });
+    taskRunner.registerChain(mobDefenseChain);
+
+    // MLGBucketChain: Water bucket fall protection (priority 100)
+    // Uses physics-based prediction and cone casting for accurate timing
+    const mlgBucketChain = new MLGBucketChain(bot as any, {
+        triggerVelocity: -0.7,  // Trigger when falling at this velocity
+        lookAheadBlocks: 40,    // Max look-ahead for landing prediction
+        bucketCooldown: 0.25,   // Time between bucket attempts
+    });
+    taskRunner.registerChain(mlgBucketChain);
+
+    // WorldSurvivalChain: Escape hazards like lava, fire, suffocation
+    // Automatically detects all hazard types and attempts escape
+    const worldSurvivalChain = new WorldSurvivalChain(bot as any, {
+        drowningThreshold: 3,   // Air bubbles before drowning action
+        portalStuckTicks: 100,  // Ticks stuck before shimmy escape
+        voidLevel: -64,         // Y level considered void
+    });
+    taskRunner.registerChain(worldSurvivalChain);
+
+    // Start the task runner (attaches to physics tick)
+    taskRunner.start();
+    botLog.info('Survival chains initialized (food, mob defense, MLG bucket, world survival)');
 
     // Capture spawn position for persistent knowledge system (signs at spawn)
     spawnPosition = bot.entity.position.clone();
@@ -202,6 +255,10 @@ async function emergencyDropAndExit() {
 
     // 1. Stop all bot actions
     setRole(null);
+    if (taskRunner) {
+        taskRunner.stop();
+        taskRunner = null;
+    }
     bot.pathfinder.stop();
     bot.clearControlStates();
 
