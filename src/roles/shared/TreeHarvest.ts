@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { GoalNear, GoalGetToBlock } from 'baritone-ts';
 import { Vec3 } from 'vec3';
-import { pathfinderGotoWithRetry } from '../../shared/PathfindingUtils';
+import { smartPathfinderGoto } from '../../shared/PathfindingUtils';
 import type { Logger } from '../../shared/logger';
 
 // Module-level logger reference (set by caller)
@@ -161,9 +161,9 @@ export async function chopLogs(bot: Bot, state: TreeHarvestState): Promise<TreeH
             state.busy = true;
             try {
                 const goal = new GoalGetToBlock(block.position.x, block.position.y, block.position.z);
-                const success = await pathfinderGotoWithRetry(bot, goal);
-                if (!success) {
-                    moduleLog?.warn('Failed to reach log after retries');
+                const result = await smartPathfinderGoto(bot, goal, { timeoutMs: 10000 });
+                if (!result.success) {
+                    moduleLog?.warn({ reason: result.failureReason }, 'Failed to reach log');
                     state.busy = false;
                     break;
                 }
@@ -304,9 +304,9 @@ export async function clearLeaves(bot: Bot, state: TreeHarvestState): Promise<Tr
     state.busy = true;
     try {
         const goal = new GoalGetToBlock(leafBlock.position.x, leafBlock.position.y, leafBlock.position.z);
-        const success = await pathfinderGotoWithRetry(bot, goal);
-        if (!success) {
-            moduleLog?.warn('Failed to reach leaf after retries');
+        const result = await smartPathfinderGoto(bot, goal, { timeoutMs: 10000 });
+        if (!result.success) {
+            moduleLog?.warn({ reason: result.failureReason }, 'Failed to reach leaf');
             state.phase = 'replanting';
             state.busy = false;
             return 'success';
@@ -409,10 +409,10 @@ export async function replantSapling(
     state.busy = true;
     try {
         // Move close to the planting spot
-        const success = await pathfinderGotoWithRetry(bot, new GoalNear(plantSpot.x, plantSpot.y, plantSpot.z, 3));
-        if (!success) {
+        const result = await smartPathfinderGoto(bot, new GoalNear(plantSpot.x, plantSpot.y, plantSpot.z, 3), { timeoutMs: 10000 });
+        if (!result.success) {
             state.replantFailures = (state.replantFailures || 0) + 1;
-            moduleLog?.warn({ failures: state.replantFailures, max: MAX_REPLANT_FAILURES }, 'Failed to reach planting spot');
+            moduleLog?.warn({ failures: state.replantFailures, max: MAX_REPLANT_FAILURES, reason: result.failureReason }, 'Failed to reach planting spot');
             state.busy = false;
 
             // Give up after too many consecutive failures (likely stuck in a hole)

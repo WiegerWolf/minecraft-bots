@@ -10,7 +10,7 @@ import { recordExploredPosition, getExplorationScore } from '../../LumberjackBla
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
 import { GoalNear, GoalXZ } from 'baritone-ts';
-import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
+import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
 import { LOG_NAMES } from '../../../shared/TreeHarvest';
 import {
     placeBoatOnWater,
@@ -171,7 +171,8 @@ export class FindForest implements BehaviorNode {
             } else {
                 // Move toward the exploration target via land
                 const goal = new GoalXZ(target.pos.x, target.pos.z);
-                success = await pathfinderGotoWithRetry(bot, goal, 3, 20000);
+                const result = await smartPathfinderGoto(bot, goal, { timeoutMs: 20000 });
+                success = result.success;
 
                 // Fallback: if land pathfinding failed and we have a boat, try crossing water
                 if (!success && bb.hasBoat) {
@@ -550,9 +551,9 @@ export class FindForest implements BehaviorNode {
             // Step 1: Walk to water's edge - need to be within 1 block to place boat
             bb.log?.debug({ pos: waterStartPos.floored().toString() }, 'Walking to water edge');
             const walkGoal = new GoalNear(waterStartPos.x, waterStartPos.y, waterStartPos.z, 1);
-            const walkSuccess = await pathfinderGotoWithRetry(bot, walkGoal, 2, 15000);
-            if (!walkSuccess) {
-                bb.log?.warn('Could not reach water edge');
+            const walkResult = await smartPathfinderGoto(bot, walkGoal, { timeoutMs: 15000 });
+            if (!walkResult.success) {
+                bb.log?.warn({ reason: walkResult.failureReason }, 'Could not reach water edge');
                 return false;
             }
             bb.log?.debug({ botPos: bot.entity.position.floored().toString() }, 'Reached water edge');
@@ -625,8 +626,8 @@ export class FindForest implements BehaviorNode {
                 }
                 const finalGoal = new GoalXZ(destination.x, destination.z);
                 // Give more time for swimming/walking (it's slower)
-                const continueSuccess = await pathfinderGotoWithRetry(bot, finalGoal, 2, 45000);
-                return continueSuccess;
+                const continueResult = await smartPathfinderGoto(bot, finalGoal, { timeoutMs: 45000 });
+                return continueResult.success;
             }
 
             return navResult.success; // Close enough to destination

@@ -1,6 +1,7 @@
 import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
 import pathfinder, {
     GoalNear,
+    GoalFollow,
     createTaskRunner,
     FoodChain,
     MobDefenseChain,
@@ -194,10 +195,13 @@ bot.on('chat', (username: string, message: string) => {
 
     if (command === 'come') {
         const player = bot.players[username];
-        const position = player?.entity?.position;
-        if (position) {
-            bot.pathfinder.goto(new GoalNear(position.x, position.y, position.z, 1));
-            bot.chat("Coming to you!");
+        const entity = player?.entity;
+        if (entity) {
+            // Use GoalFollow with dynamic=true to track the player as they move
+            bot.pathfinder.setGoal(new GoalFollow(entity, 2), true);
+            bot.chat("Following you!");
+        } else if (player) {
+            bot.chat("I can't see you - you're too far away.");
         }
     }
 

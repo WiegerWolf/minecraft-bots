@@ -3,7 +3,7 @@ import type { FarmingBlackboard, PendingSignWrite } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
 import { GoalNear } from 'baritone-ts';
-import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
+import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
 import {
     formatSignText,
     getSignPositionForType,
@@ -71,12 +71,13 @@ export class WriteKnowledgeSign implements BehaviorNode {
     ): Promise<boolean> {
         try {
             // Move near the sign
-            const success = await pathfinderGotoWithRetry(
+            const result = await smartPathfinderGoto(
                 bot,
-                new GoalNear(signBlock.position.x, signBlock.position.y, signBlock.position.z, 3)
+                new GoalNear(signBlock.position.x, signBlock.position.y, signBlock.position.z, 3),
+                { timeoutMs: 10000 }
             );
-            if (!success) {
-                bb.log?.debug('Failed to reach existing sign');
+            if (!result.success) {
+                bb.log?.debug({ reason: result.failureReason }, 'Failed to reach existing sign');
                 return false;
             }
 
@@ -176,11 +177,12 @@ export class WriteKnowledgeSign implements BehaviorNode {
 
         try {
             // Move to crafting table - get within 2 blocks (closer for crafting to work)
-            const success = await pathfinderGotoWithRetry(
+            const result = await smartPathfinderGoto(
                 bot,
-                new GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 2)
+                new GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 2),
+                { timeoutMs: 10000 }
             );
-            if (!success) {
+            if (!result.success) {
                 return false;
             }
 
@@ -273,18 +275,16 @@ export class WriteKnowledgeSign implements BehaviorNode {
         try {
             // Move near the placement position
             const pathStartTime = Date.now();
-            const success = await pathfinderGotoWithRetry(
+            const pathResult = await smartPathfinderGoto(
                 bot,
                 new GoalNear(targetPos.x, targetPos.y, targetPos.z, 3),
-                2,  // maxRetries
-                5000,  // timeoutMs
-                bb.log  // pass logger for pathfinding debug
+                { timeoutMs: 10000, logger: bb.log }
             );
             const pathDuration = Date.now() - pathStartTime;
 
-            if (!success) {
+            if (!pathResult.success) {
                 bb.log?.debug(
-                    { pos: targetPos.toString(), attempt: attemptLabel, durationMs: pathDuration },
+                    { pos: targetPos.toString(), attempt: attemptLabel, durationMs: pathDuration, reason: pathResult.failureReason },
                     'Pathfinding failed for sign placement'
                 );
                 return false;

@@ -3,7 +3,7 @@ import type { LumberjackBlackboard, PendingSignWrite } from '../../LumberjackBla
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
 import { GoalNear } from 'baritone-ts';
-import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
+import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
 import {
     formatSignText,
     getSignPositionForType,
@@ -67,12 +67,13 @@ export class WriteKnowledgeSign implements BehaviorNode {
     ): Promise<boolean> {
         try {
             // Move near the sign
-            const success = await pathfinderGotoWithRetry(
+            const result = await smartPathfinderGoto(
                 bot,
-                new GoalNear(signBlock.position.x, signBlock.position.y, signBlock.position.z, 3)
+                new GoalNear(signBlock.position.x, signBlock.position.y, signBlock.position.z, 3),
+                { timeoutMs: 10000 }
             );
-            if (!success) {
-                bb.log?.debug('Failed to reach existing sign');
+            if (!result.success) {
+                bb.log?.debug({ reason: result.failureReason }, 'Failed to reach existing sign');
                 return false;
             }
 
@@ -166,11 +167,12 @@ export class WriteKnowledgeSign implements BehaviorNode {
 
         try {
             // Move to crafting table
-            const success = await pathfinderGotoWithRetry(
+            const result = await smartPathfinderGoto(
                 bot,
-                new GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 3)
+                new GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 3),
+                { timeoutMs: 10000 }
             );
-            if (!success) {
+            if (!result.success) {
                 return false;
             }
 
@@ -226,11 +228,12 @@ export class WriteKnowledgeSign implements BehaviorNode {
 
         try {
             // Move near the placement position
-            const success = await pathfinderGotoWithRetry(
+            const result = await smartPathfinderGoto(
                 bot,
-                new GoalNear(targetPos.x, targetPos.y, targetPos.z, 3)
+                new GoalNear(targetPos.x, targetPos.y, targetPos.z, 3),
+                { timeoutMs: 10000 }
             );
-            if (!success) {
+            if (!result.success) {
                 return false;
             }
 

@@ -4,7 +4,7 @@ import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
 import { GoalNear } from 'baritone-ts';
 import { SAPLING_NAMES, CLEARABLE_VEGETATION } from '../../../shared/TreeHarvest';
-import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
+import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
 
 // Minimum spacing between saplings to allow trees to grow
 const SAPLING_SPACING = 5;
@@ -72,9 +72,9 @@ export class PlantSaplings implements BehaviorNode {
                 // If we're far from the forest, go there first
                 if (distToForest > 20) {
                     bb.log?.debug({ forest: nearestForest.toString(), dist: Math.round(distToForest) }, '[Lumberjack] Going to forest to plant saplings');
-                    const success = await pathfinderGotoWithRetry(bot, new GoalNear(nearestForest.x, nearestForest.y, nearestForest.z, 10));
-                    if (!success) {
-                        bb.log?.debug('[Lumberjack] Failed to reach forest for planting');
+                    const result = await smartPathfinderGoto(bot, new GoalNear(nearestForest.x, nearestForest.y, nearestForest.z, 10), { timeoutMs: 20000 });
+                    if (!result.success) {
+                        bb.log?.debug({ reason: result.failureReason }, '[Lumberjack] Failed to reach forest for planting');
                         return 'failure';
                     }
                 }
@@ -159,9 +159,9 @@ export class PlantSaplings implements BehaviorNode {
 
         try {
             // Move close to the planting spot
-            const success = await pathfinderGotoWithRetry(bot, new GoalNear(plantSpot.x, plantSpot.y, plantSpot.z, 3));
-            if (!success) {
-                bb.log?.debug('[Lumberjack] Failed to reach planting spot');
+            const result = await smartPathfinderGoto(bot, new GoalNear(plantSpot.x, plantSpot.y, plantSpot.z, 3), { timeoutMs: 10000 });
+            if (!result.success) {
+                bb.log?.debug({ reason: result.failureReason }, '[Lumberjack] Failed to reach planting spot');
                 return 'failure';
             }
 

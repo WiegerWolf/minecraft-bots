@@ -3,7 +3,7 @@ import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { GoalNear, GoalGetToBlock } from 'baritone-ts';
 import { Vec3 } from 'vec3';
-import { sleep, pathfinderGotoWithRetry, isPathfinderTimeoutError } from '../../../../shared/PathfindingUtils';
+import { sleep, smartPathfinderGoto, isPathfinderTimeoutError } from '../../../../shared/PathfindingUtils';
 
 /**
  * Sets up a chest near the farm for storing harvest.
@@ -113,9 +113,9 @@ export class SetupFarmChest implements BehaviorNode {
             bb.lastAction = 'place_chest';
 
             try {
-                const success = await pathfinderGotoWithRetry(bot, new GoalNear(pos.x, pos.y, pos.z, 3));
-                if (!success) {
-                    bb.log?.debug(`[BT] Failed to reach chest placement position after retries`);
+                const result = await smartPathfinderGoto(bot, new GoalNear(pos.x, pos.y, pos.z, 3), { timeoutMs: 10000 });
+                if (!result.success) {
+                    bb.log?.debug({ reason: result.failureReason }, `[BT] Failed to reach chest placement position`);
                     continue;
                 }
                 bot.pathfinder.stop();
@@ -206,8 +206,8 @@ export class SetupFarmChest implements BehaviorNode {
         if (!block) return 'failure';
 
         try {
-            const success = await pathfinderGotoWithRetry(bot, new GoalGetToBlock(logPos.x, logPos.y, logPos.z));
-            if (!success) {
+            const result = await smartPathfinderGoto(bot, new GoalGetToBlock(logPos.x, logPos.y, logPos.z), { timeoutMs: 10000 });
+            if (!result.success) {
                 return 'failure';
             }
             await bot.dig(block);
@@ -304,9 +304,9 @@ export class SetupFarmChest implements BehaviorNode {
             const tableBlock = bot.blockAt(craftingTable);
             if (!tableBlock) return 'failure';
 
-            const success = await pathfinderGotoWithRetry(bot, new GoalGetToBlock(craftingTable.x, craftingTable.y, craftingTable.z));
-            if (!success) {
-                bb.log?.debug(`[BT] Failed to reach crafting table for chest after retries`);
+            const result = await smartPathfinderGoto(bot, new GoalGetToBlock(craftingTable.x, craftingTable.y, craftingTable.z), { timeoutMs: 10000 });
+            if (!result.success) {
+                bb.log?.debug({ reason: result.failureReason }, `[BT] Failed to reach crafting table for chest`);
                 return 'failure';
             }
 

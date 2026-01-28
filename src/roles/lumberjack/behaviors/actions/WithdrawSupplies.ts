@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { GoalNear } from 'baritone-ts';
-import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
+import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
 
 /**
  * WithdrawSupplies - Check chest for useful supplies on spawn
@@ -41,9 +41,9 @@ export class WithdrawSupplies implements BehaviorNode {
         // Walk to chest
         try {
             const chestGoal = new GoalNear(chestPos.x, chestPos.y, chestPos.z, 3);
-            const reached = await pathfinderGotoWithRetry(bot, chestGoal, 2, 10000);
-            if (!reached) {
-                bb.log?.warn('Could not reach chest');
+            const result = await smartPathfinderGoto(bot, chestGoal, { timeoutMs: 10000 });
+            if (!result.success) {
+                bb.log?.warn({ reason: result.failureReason }, 'Could not reach chest');
                 bb.hasCheckedStorage = true;
                 return 'failure';
             }
