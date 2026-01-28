@@ -407,7 +407,7 @@ You can also join with a real Minecraft client at `localhost:25566` to observe t
 
 ```typescript
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from './SimulationTest';
 import { MockWorld, createOakTree } from '../mocks/MockWorld';
 import { LumberjackRole } from '../../src/roles/lumberjack/LumberjackRole';
@@ -427,8 +427,8 @@ async function testChopsTree() {
     botInventory: [{ name: 'iron_axe', count: 1 }],
   });
 
-  // Load plugins and start role
-  test.bot.loadPlugin(pathfinderPlugin);
+  // Initialize pathfinder and start role
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new LumberjackRole();

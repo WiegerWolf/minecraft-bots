@@ -225,7 +225,7 @@ Reusable capabilities added via TypeScript mixins:
 ## Key Libraries
 
 - `mineflayer` - Minecraft bot framework
-- `mineflayer-pathfinder` - A* pathfinding with goals (`GoalNear`, `GoalLookAtBlock`)
+- `baritone-ts` - Advanced pathfinding ported from Baritone (goals: `GoalNear`, `GoalGetToBlock`, `GoalXZ`)
 - `vec3` - 3D vector math
 - `prismarine-*` - Minecraft data types (blocks, entities, items)
 

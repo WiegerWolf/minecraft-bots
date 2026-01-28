@@ -105,7 +105,7 @@ bun run dev:farmer
 ## Key Libraries
 
 - `mineflayer` - Minecraft bot framework
-- `mineflayer-pathfinder` - A* pathfinding
+- `baritone-ts` - Advanced pathfinding (ported from Baritone)
 - `pino` / `pino-pretty` - Structured logging
 - `vec3` - 3D vector math
 - `prismarine-*` - Minecraft data types
