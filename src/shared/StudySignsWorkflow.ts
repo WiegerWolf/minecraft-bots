@@ -1,7 +1,7 @@
 import type { Bot } from 'mineflayer';
 import type { Logger } from 'pino';
 import { Vec3 } from 'vec3';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { smartPathfinderGoto, sleep } from './PathfindingUtils';
 import {
     findSignsNear,
@@ -11,8 +11,6 @@ import {
     SIGN_SEARCH_RADIUS,
     type SignKnowledgeType
 } from './SignKnowledge';
-
-const { GoalNear } = goals;
 
 /**
  * Parsed sign entry with position info

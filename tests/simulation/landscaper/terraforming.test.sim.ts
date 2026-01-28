@@ -11,7 +11,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld } from '../../mocks/MockWorld';
 import { GOAPLandscaperRole } from '../../../src/roles/GOAPLandscaperRole';
@@ -80,7 +80,7 @@ async function testFillsRiverWaterAroundFarmCenter() {
   await test.rcon('fill 35 62 35 45 62 45 minecraft:stone');
   await test.rcon('fill 35 63 35 45 63 45 minecraft:dirt');
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLandscaperRole();
@@ -241,7 +241,7 @@ async function testReplacesSandWithDirt() {
   await test.rcon('fill 35 62 35 45 62 45 minecraft:stone');
   await test.rcon('fill 35 63 35 45 63 45 minecraft:dirt');
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLandscaperRole();
@@ -397,7 +397,7 @@ async function testHandlesMixedTerrain() {
   await test.rcon('fill 35 62 35 45 62 45 minecraft:stone');
   await test.rcon('fill 35 63 35 45 63 45 minecraft:dirt');
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLandscaperRole();

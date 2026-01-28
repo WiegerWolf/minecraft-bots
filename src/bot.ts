@@ -1,5 +1,5 @@
 import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
-import { pathfinder, goals } from 'mineflayer-pathfinder';
+import pathfinder, { GoalNear } from 'baritone-ts';
 import { faker } from '@faker-js/faker';
 import { Vec3 } from 'vec3';
 import { GOAPFarmingRole } from './roles/GOAPFarmingRole';
@@ -7,7 +7,6 @@ import { GOAPLumberjackRole } from './roles/GOAPLumberjackRole';
 import { GOAPLandscaperRole } from './roles/GOAPLandscaperRole';
 import type { Role } from './roles/Role';
 import { createBotLogger, createChildLogger, type Logger } from './shared/logger';
-const { GoalNear } = goals;
 
 // Track spawn position for persistent knowledge system
 let spawnPosition: Vec3 | null = null;
@@ -51,7 +50,13 @@ const config: BotOptions = {
 
 const bot: Bot = mineflayer.createBot(config);
 
-bot.loadPlugin(pathfinder);
+// Initialize baritone-ts pathfinder
+// Type assertion needed because baritone-ts has its own mineflayer dependency
+pathfinder(bot as any, {
+    canDig: true,
+    allowParkour: true,
+    allowSprint: true,
+});
 
 // Register all available roles (all using GOAP)
 // Keys must match BOT_ROLE values sent by the manager (see manager/types.ts)

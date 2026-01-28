@@ -1,14 +1,12 @@
 import type { Bot } from 'mineflayer';
 import type { Entity } from 'prismarine-entity';
 import { Vec3 } from 'vec3';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { smartPathfinderGoto, sleep } from '../PathfindingUtils';
 import type { Logger } from '../logger';
 import type { VillageChat, TradeOffer, ActiveTrade, TradeStatus } from '../VillageChat';
 import type { InventoryItem, RoleName } from '../ItemCategories';
 import { isWantedByRole, getItemCount, getTradeableItems } from '../ItemCategories';
-
-const { GoalNear } = goals;
 
 export type BehaviorStatus = 'success' | 'failure' | 'running';
 

@@ -2,11 +2,9 @@ import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear, GoalGetToBlock } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
-
-const { GoalNear, GoalLookAtBlock } = goals;
 
 // Blocks that should be cleared from the farm area
 const CLEARABLE_BLOCKS = [
@@ -66,7 +64,7 @@ export class ClearFarmArea implements BehaviorNode {
         try {
             // Move close enough to break if we can't already
             if (!bot.canDigBlock(blockToClear)) {
-                const goal = new GoalLookAtBlock(blockToClear.position, bot.world, { reach: 4 });
+                const goal = new GoalGetToBlock(blockToClear.position.x, blockToClear.position.y, blockToClear.position.z);
                 const result = await smartPathfinderGoto(bot, goal, { timeoutMs: 15000 });
                 if (!result.success) {
                     // Pathfinding failed, try from current position if close enough

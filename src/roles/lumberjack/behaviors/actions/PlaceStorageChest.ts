@@ -1,11 +1,9 @@
 import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
-
-const { GoalNear } = goals;
 
 // Blocks suitable for placing a chest on (natural surface blocks)
 const VALID_SURFACE_BLOCKS = [

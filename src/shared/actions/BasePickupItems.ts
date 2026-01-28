@@ -1,10 +1,8 @@
 import type { Bot } from 'mineflayer';
 import type { Entity } from 'prismarine-entity';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { smartPathfinderGoto } from '../PathfindingUtils';
 import type { Logger } from '../logger';
-
-const { GoalNear } = goals;
 
 // Cooldown for unreachable items - long enough that they might despawn (5 minutes)
 const UNREACHABLE_COOLDOWN = 5 * 60 * 1000;

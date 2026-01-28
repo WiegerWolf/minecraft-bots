@@ -1,12 +1,10 @@
 import type { Bot } from 'mineflayer';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
 import { shouldPreemptForTrade } from '../../../../shared/TradePreemption';
-
-const { GoalNear } = goals;
 
 // Track unreachable positions temporarily (cleared after 5 minutes)
 const unreachableTillPositions = new Map<string, number>();

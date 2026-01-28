@@ -4,11 +4,9 @@ import {
     hasClearSky,
 } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
-
-const { GoalNear } = goals;
 
 /**
  * Find and establish a farm center at a water source block.

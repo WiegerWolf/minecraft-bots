@@ -1,10 +1,8 @@
 import type { Bot } from 'mineflayer';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
-
-const { GoalNear } = goals;
 
 /**
  * Wait near the farm center when there's nothing else to do.

@@ -2,11 +2,9 @@ import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { SAPLING_NAMES, CLEARABLE_VEGETATION } from '../../../shared/TreeHarvest';
 import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
-
-const { GoalNear } = goals;
 
 // Minimum spacing between saplings to allow trees to grow
 const SAPLING_SPACING = 5;

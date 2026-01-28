@@ -1,9 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { smartPathfinderGoto } from '../../shared/PathfindingUtils';
-
-const { GoalNear } = goals;
 
 export type Constructor<T = {}> = new (...args: any[]) => T;
 

@@ -14,7 +14,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld } from '../../mocks/MockWorld';
 import { GOAPLumberjackRole } from '../../../src/roles/GOAPLumberjackRole';
@@ -54,7 +54,7 @@ async function testRecoversFromStrandedOnTree() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Create the pillar via RCON (after world is loaded)
@@ -140,7 +140,7 @@ async function testRecoversFromModerateHeight() {
     botInventory: [{ name: 'iron_axe', count: 1 }],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Create shorter pillar - 4 blocks (safe fall damage)
@@ -198,7 +198,7 @@ async function testNoFalsePositiveOnGround() {
     botInventory: [{ name: 'iron_axe', count: 1 }],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLumberjackRole();

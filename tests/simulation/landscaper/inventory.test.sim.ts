@@ -10,7 +10,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld } from '../../mocks/MockWorld';
 import { GOAPLandscaperRole } from '../../../src/roles/GOAPLandscaperRole';
@@ -31,7 +31,7 @@ async function testCollectsDrops() {
     botInventory: [{ name: 'iron_shovel', count: 1 }],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Spread 10 dirt drops across the map at various distances from the bot
@@ -91,7 +91,7 @@ async function testDepositsToChest() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
 
   // Place the chest via RCON with destroy to clear any existing data
   await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest destroy`);
@@ -171,7 +171,7 @@ async function testHighItemCountTriggersDeposit() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
 
   // Place chest via RCON with destroy to clear any existing data
   await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest destroy`);
@@ -251,7 +251,7 @@ async function testFullInventoryTriggersDeposit() {
     botInventory: inventoryItems,
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   // Clear and place chest fresh (destroy=true removes any existing block data)
   await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest destroy`);
   await test.wait(2000, 'World loading');
@@ -315,7 +315,7 @@ async function testPreservesToolsWhenDepositing() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.rcon(`setblock ${chestPos.x} ${chestPos.y} ${chestPos.z} minecraft:chest destroy`);
   await test.wait(2000, 'World loading');
 

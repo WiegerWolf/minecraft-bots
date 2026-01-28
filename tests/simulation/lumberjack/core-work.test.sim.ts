@@ -12,7 +12,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld, createOakTree, createStump } from '../../mocks/MockWorld';
 import { GOAPLumberjackRole } from '../../../src/roles/GOAPLumberjackRole';
@@ -40,7 +40,7 @@ async function testChopsTreesInForest() {
     botInventory: [{ name: 'iron_axe', count: 1 }],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLumberjackRole();
@@ -84,7 +84,7 @@ async function testIgnoresStumps() {
     botInventory: [{ name: 'iron_axe', count: 1 }],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLumberjackRole();
@@ -150,7 +150,7 @@ async function testIgnoresStructures() {
     botInventory: [{ name: 'iron_axe', count: 1 }],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLumberjackRole();
@@ -199,7 +199,7 @@ async function testPrefersForestsOverIsolated() {
     clearRadius: 50,
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLumberjackRole();
@@ -248,7 +248,7 @@ async function testCollectsDrops() {
     botInventory: [{ name: 'iron_axe', count: 1 }],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Spread 10 logs across the map at various distances from the bot
@@ -305,7 +305,7 @@ async function testPlantsSaplings() {
     clearRadius: 80,
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const initialSaplings = test.botInventoryCount('oak_sapling');

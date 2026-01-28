@@ -13,7 +13,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld, createOakTree } from '../../mocks/MockWorld';
 import { GOAPLumberjackRole } from '../../../src/roles/GOAPLumberjackRole';
@@ -43,7 +43,7 @@ async function testDepositsToChest() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Debug: verify signs are placed correctly in the world
@@ -109,7 +109,7 @@ async function testProcessesWood() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLumberjackRole();
@@ -156,7 +156,7 @@ async function testCraftsAndPlacesChest() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Verify no chest exists initially
@@ -247,7 +247,7 @@ async function testHighLogCountTriggersDeposit() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const initialLogs = test.botInventoryCount('oak_log');
@@ -303,7 +303,7 @@ async function testCraftsAxeFromScratch() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Verify bot starts without axe
@@ -377,7 +377,7 @@ async function testSharingEtiquette() {
     botInventory: [],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Stock the chest with plenty of supplies
@@ -494,7 +494,7 @@ async function testFullChestHandledGracefully() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Fill the chest completely (27 slots × 64 items each)

@@ -1,11 +1,9 @@
 import type { Bot } from 'mineflayer';
 import type { LandscaperBlackboard, TerraformTask } from '../../LandscaperBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
-
-const { GoalNear } = goals;
 
 function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));

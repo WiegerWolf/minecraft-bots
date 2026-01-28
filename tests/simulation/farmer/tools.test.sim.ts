@@ -10,7 +10,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld } from '../../mocks/MockWorld';
 import { GOAPFarmingRole } from '../../../src/roles/GOAPFarmingRole';
@@ -44,7 +44,7 @@ async function testCraftsHoe() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPFarmingRole();
@@ -89,7 +89,7 @@ async function testObtainsHoeFromStorage() {
     botInventory: [{ name: 'wheat_seeds', count: 20 }],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Put a hoe in the chest via RCON
@@ -141,7 +141,7 @@ async function testCraftsHoeFromLogs() {
     botInventory: [{ name: 'wheat_seeds', count: 20 }],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Put logs in the chest (2 logs = 8 planks, enough for hoe + sticks)

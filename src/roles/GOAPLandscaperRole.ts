@@ -1,5 +1,4 @@
 import type { Bot } from 'mineflayer';
-import { Movements } from 'mineflayer-pathfinder';
 import { GOAPRole, type GOAPRoleConfig } from './GOAPRole';
 import {
   createLandscaperBlackboard,
@@ -57,33 +56,16 @@ export class GOAPLandscaperRole extends GOAPRole {
   }
 
   override start(bot: Bot, options?: any): void {
-    // Configure pathfinder to allow digging and limited scaffolding
+    // Configure pathfinder via ctx settings
     // Landscapers need to conserve DIRT for terraforming, but can use cobblestone for navigation
-    const movements = new Movements(bot);
-    movements.canDig = true;
-    movements.digCost = 5; // Lower dig cost since digging is our job
-    movements.allowParkour = true;
-    movements.allowSprinting = true;
+    const ctx = (bot.pathfinder as any).ctx;
+    ctx.canDig = true;
+    ctx.canPlace = true; // Allow placing scaffolding blocks
+    ctx.allowParkour = true;
+    ctx.allowSprint = true;
 
-    // Allow slabs and cobblestone for scaffolding - preserve DIRT for terraforming
-    // Wooden slabs are ideal: easy to break, logs are abundant, less obstructive
-    // Cobblestone is also fine - landscapers dig up stone and it shouldn't be wasted
-    const mcData = require('minecraft-data')(bot.version);
-    const scaffoldingBlockTypes = [
-      // Wooden slabs
-      'oak_slab', 'spruce_slab', 'birch_slab', 'jungle_slab',
-      'acacia_slab', 'dark_oak_slab', 'mangrove_slab', 'cherry_slab',
-      'bamboo_slab', 'crimson_slab', 'warped_slab',
-      // Stone materials (from digging)
-      'cobblestone', 'stone', 'andesite', 'diorite', 'granite',
-      'cobbled_deepslate', 'deepslate',
-    ];
-    const scaffoldingIds = scaffoldingBlockTypes
-      .map(name => mcData.blocksByName[name]?.id)
-      .filter((id): id is number => id !== undefined);
-    movements.scafoldingBlocks = scaffoldingIds;
-
-    bot.pathfinder.setMovements(movements);
+    // Note: baritone-ts doesn't have the scaffoldingBlocks configuration like mineflayer-pathfinder
+    // It determines placeable blocks automatically based on inventory
 
     this.log?.info('Starting GOAP landscaper bot');
     super.start(bot, options);

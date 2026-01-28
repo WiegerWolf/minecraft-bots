@@ -1,11 +1,9 @@
 import type { Bot } from 'mineflayer';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import minecraftData from 'minecraft-data';
 import prismarineBlock from 'prismarine-block';
 import { smartPathfinderGoto } from '../../shared/PathfindingUtils';
-
-const { GoalNear } = goals;
 
 export type Constructor<T = {}> = new (...args: any[]) => T;
 

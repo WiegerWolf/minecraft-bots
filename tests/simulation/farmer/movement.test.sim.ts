@@ -11,7 +11,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld } from '../../mocks/MockWorld';
 import { GOAPFarmingRole } from '../../../src/roles/GOAPFarmingRole';
@@ -85,7 +85,7 @@ async function testParkourAndFarmObstacleCourse() {
     skipDefaultGround: true, // Void world - only our platforms exist
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPFarmingRole();

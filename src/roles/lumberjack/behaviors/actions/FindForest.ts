@@ -9,7 +9,7 @@ import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import { recordExploredPosition, getExplorationScore } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear, GoalXZ } from 'baritone-ts';
 import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
 import { LOG_NAMES } from '../../../shared/TreeHarvest';
 import {
@@ -23,8 +23,6 @@ import { hasClearSky } from '../../../../shared/TerrainUtils';
 
 // Minimum water distance to warrant using a boat (shorter distances can be swam)
 const MIN_BOAT_DISTANCE = 8;
-
-const { GoalNear, GoalXZ } = goals;
 
 // Minimum trees in cluster to be considered a forest
 const MIN_FOREST_SIZE = 3;

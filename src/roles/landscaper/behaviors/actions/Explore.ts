@@ -2,12 +2,10 @@ import type { Bot } from 'mineflayer';
 import type { LandscaperBlackboard } from '../../LandscaperBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { recordExploredPosition, getExplorationScore } from '../../LandscaperBlackboard';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 import { hasClearSky, isYLevelSafe, NO_SKY_PENALTY, UNSAFE_Y_PENALTY } from '../../../../shared/TerrainUtils';
-
-const { GoalNear } = goals;
 
 /**
  * Explore - Wander around waiting for terraform requests

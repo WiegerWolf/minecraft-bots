@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { FarmingBlackboard, PendingSignWrite } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
 import {
     formatSignText,
@@ -11,8 +11,6 @@ import {
     findValidSignPosition,
     getAlternativeSignPositions,
 } from '../../../../shared/SignKnowledge';
-
-const { GoalNear } = goals;
 
 /**
  * WriteKnowledgeSign - Write pending knowledge to signs at spawn

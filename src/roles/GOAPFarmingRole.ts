@@ -1,6 +1,5 @@
 import type { Bot } from 'mineflayer';
 import type { Entity } from 'prismarine-entity';
-import { Movements } from 'mineflayer-pathfinder';
 import { GOAPRole, type GOAPRoleConfig } from './GOAPRole';
 import { createBlackboard, updateBlackboard, type FarmingBlackboard } from './farming/Blackboard';
 import { createFarmingActions } from '../planning/actions/FarmingActions';
@@ -43,9 +42,7 @@ export class GOAPFarmingRole extends GOAPRole {
   private lastDropReplanTime = 0;
   private static readonly DROP_REPLAN_DEBOUNCE_MS = 2000; // Only replan for drops every 2 seconds max
 
-  // Dynamic movement configurations - switch based on location
-  private normalMovements: Movements | null = null;
-  private farmSafeMovements: Movements | null = null;
+  // Track farm mode for dynamic movement configuration
   private isInFarmMode = false;
 
   // Cache actions and goals to avoid recreating on every tick
@@ -84,21 +81,12 @@ export class GOAPFarmingRole extends GOAPRole {
   }
 
   override start(bot: Bot, options?: any): void {
-    // Create two movement configurations: normal (full freedom) and farm-safe (no jumping)
-    this.normalMovements = new Movements(bot);
-    this.normalMovements.canDig = true;
-    this.normalMovements.digCost = 10;
-    this.normalMovements.allowParkour = true;
-    this.normalMovements.allowSprinting = true;
-
-    this.farmSafeMovements = new Movements(bot);
-    this.farmSafeMovements.canDig = true;
-    this.farmSafeMovements.digCost = 10;
-    this.farmSafeMovements.allowParkour = false; // Prevent gap-jumping over water/farmland
-    this.farmSafeMovements.allowSprinting = false; // Sprinting momentum can cause jumps
-
-    // Start with normal movements
-    bot.pathfinder.setMovements(this.normalMovements);
+    // Configure pathfinder with full freedom initially
+    // Farm protection interval below will toggle allowParkour/allowSprint when near farmland
+    const ctx = (bot.pathfinder as any).ctx;
+    ctx.canDig = true;
+    ctx.allowParkour = true;
+    ctx.allowSprint = true;
     this.isInFarmMode = false;
 
     this.log?.info('Starting GOAP farming bot');
@@ -118,17 +106,20 @@ export class GOAPFarmingRole extends GOAPRole {
       }
     }
 
-    // Set up farmland protection - dynamically switch movement config based on location
+    // Set up farmland protection - dynamically switch movement settings based on location
     this.farmlandProtectionInterval = setInterval(() => {
       const nearFarmland = isNearFarmland(bot);
+      const ctx = (bot.pathfinder as any).ctx;
 
       if (nearFarmland && !this.isInFarmMode) {
-        // Entering farm area - switch to safe movements
-        bot.pathfinder.setMovements(this.farmSafeMovements!);
+        // Entering farm area - disable parkour and sprint to prevent trampling
+        ctx.allowParkour = false;
+        ctx.allowSprint = false;
         this.isInFarmMode = true;
       } else if (!nearFarmland && this.isInFarmMode) {
         // Leaving farm area - restore normal movements
-        bot.pathfinder.setMovements(this.normalMovements!);
+        ctx.allowParkour = true;
+        ctx.allowSprint = true;
         this.isInFarmMode = false;
       }
 

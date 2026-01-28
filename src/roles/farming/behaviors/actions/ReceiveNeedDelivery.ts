@@ -1,10 +1,8 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import type { FarmingBlackboard } from '../../Blackboard';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
-
-const { GoalNear } = goals;
 
 export type BehaviorStatus = 'success' | 'failure' | 'running';
 

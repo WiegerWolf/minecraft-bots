@@ -1,5 +1,4 @@
 import type { Bot } from 'mineflayer';
-import { Movements } from 'mineflayer-pathfinder';
 import { GOAPRole, type GOAPRoleConfig } from './GOAPRole';
 import {
   createLumberjackBlackboard,
@@ -56,11 +55,11 @@ export class GOAPLumberjackRole extends GOAPRole {
   }
 
   override start(bot: Bot, options?: any): void {
-    // Configure pathfinder
-    const movements = new Movements(bot);
-    movements.canDig = true;
-    movements.digCost = 10;
-    bot.pathfinder.setMovements(movements);
+    // Configure pathfinder via ctx settings
+    const ctx = (bot.pathfinder as any).ctx;
+    ctx.canDig = true;
+    ctx.allowParkour = true;
+    ctx.allowSprint = true;
 
     this.log?.info('Starting GOAP lumberjack bot');
     super.start(bot, options);

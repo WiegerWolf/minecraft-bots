@@ -1,11 +1,9 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalGetToBlock } from 'baritone-ts';
 import type { FarmingBlackboard } from '../../Blackboard';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
-
-const { GoalLookAtBlock } = goals;
 
 type BehaviorStatus = 'success' | 'failure' | 'running';
 
@@ -133,7 +131,7 @@ export class CheckSharedChest {
         try {
             const result = await smartPathfinderGoto(
                 bot,
-                new GoalLookAtBlock(chestPos, bot.world, { reach: 4 }),
+                new GoalGetToBlock(chestPos.x, chestPos.y, chestPos.z),
                 { timeoutMs: 15000 }
             );
 

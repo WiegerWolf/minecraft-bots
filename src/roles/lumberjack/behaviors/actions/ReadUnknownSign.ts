@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
 import {
     readSignText,
@@ -10,8 +10,6 @@ import {
     getTypeName,
     type SignKnowledgeType
 } from '../../../../shared/SignKnowledge';
-
-const { GoalNear } = goals;
 
 /**
  * ReadUnknownSign - Curious bot behavior to read unknown signs

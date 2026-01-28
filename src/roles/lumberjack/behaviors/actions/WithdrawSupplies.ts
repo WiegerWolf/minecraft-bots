@@ -1,10 +1,8 @@
 import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
-
-const { GoalNear } = goals;
 
 /**
  * WithdrawSupplies - Check chest for useful supplies on spawn

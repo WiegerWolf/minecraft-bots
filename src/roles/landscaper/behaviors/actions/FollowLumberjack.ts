@@ -1,6 +1,6 @@
 import type { Bot } from 'mineflayer';
 import type { LandscaperBlackboard } from '../../LandscaperBlackboard';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 
 /**
@@ -78,7 +78,7 @@ export class FollowLumberjack {
         const targetPos = bb.lumberjackPosition.plus(direction.scaled(this.targetDistance));
 
         // Use GoalNear with a range so we stop when we're in the comfort zone
-        const goal = new goals.GoalNear(
+        const goal = new GoalNear(
             targetPos.x,
             targetPos.y,
             targetPos.z,

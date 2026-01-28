@@ -1,11 +1,9 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear, GoalGetToBlock } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { pathfinderGotoWithRetry } from '../../shared/PathfindingUtils';
 import type { Logger } from '../../shared/logger';
-
-const { GoalNear, GoalLookAtBlock } = goals;
 
 // Module-level logger reference (set by caller)
 let moduleLog: Logger | null = null;
@@ -162,7 +160,7 @@ export async function chopLogs(bot: Bot, state: TreeHarvestState): Promise<TreeH
             // Mark as busy before starting async operations
             state.busy = true;
             try {
-                const goal = new GoalLookAtBlock(block.position, bot.world, { reach: 4 });
+                const goal = new GoalGetToBlock(block.position.x, block.position.y, block.position.z);
                 const success = await pathfinderGotoWithRetry(bot, goal);
                 if (!success) {
                     moduleLog?.warn('Failed to reach log after retries');
@@ -305,7 +303,7 @@ export async function clearLeaves(bot: Bot, state: TreeHarvestState): Promise<Tr
     // Mark as busy before starting async operations
     state.busy = true;
     try {
-        const goal = new GoalLookAtBlock(leafBlock.position, bot.world, { reach: 4 });
+        const goal = new GoalGetToBlock(leafBlock.position.x, leafBlock.position.y, leafBlock.position.z);
         const success = await pathfinderGotoWithRetry(bot, goal);
         if (!success) {
             moduleLog?.warn('Failed to reach leaf after retries');

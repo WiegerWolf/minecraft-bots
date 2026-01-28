@@ -2,11 +2,9 @@ import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
 import { shouldPreemptForTrade } from '../../../../shared/TradePreemption';
-
-const { GoalNear } = goals;
 
 // Cooldown for unreachable grass - 2 minutes
 const UNREACHABLE_GRASS_COOLDOWN = 2 * 60 * 1000;

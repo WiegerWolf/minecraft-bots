@@ -1,12 +1,10 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalGetToBlock } from 'baritone-ts';
 import { smartPathfinderGoto, sleep } from '../PathfindingUtils';
 import type { VillageChat } from '../VillageChat';
 import type { Logger } from '../logger';
-
-const { GoalLookAtBlock } = goals;
 
 export type BehaviorStatus = 'success' | 'failure' | 'running';
 
@@ -145,7 +143,7 @@ export abstract class BaseDepositItems<TBlackboard extends DepositItemsBlackboar
         try {
             const result = await smartPathfinderGoto(
                 bot,
-                new GoalLookAtBlock(chestPos, bot.world, { reach: 4 }),
+                new GoalGetToBlock(chestPos.x, chestPos.y, chestPos.z),
                 { timeoutMs: this.config.pathfindingTimeoutMs }
             );
 

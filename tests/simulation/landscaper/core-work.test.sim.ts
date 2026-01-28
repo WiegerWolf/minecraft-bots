@@ -12,7 +12,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld } from '../../mocks/MockWorld';
 import { GOAPLandscaperRole } from '../../../src/roles/GOAPLandscaperRole';
@@ -83,7 +83,7 @@ async function testFlattensTerrain() {
 
   // Signs are placed via MockWorld buildWorldFromMockWorld (uses placeSign with proper text)
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Start the role - it will study signs, learn about the farm, and detect obstacles
@@ -229,7 +229,7 @@ async function testFillsHoles() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLandscaperRole();
@@ -378,7 +378,7 @@ async function testGathersDirt() {
     await test.rcon(`setblock ${pos.x} ${pos.y} ${pos.z} minecraft:air`);
   }
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLandscaperRole();
@@ -543,7 +543,7 @@ async function testEstablishesDirtpit() {
     await test.rcon(`setblock ${pos.x} ${pos.y} ${pos.z} minecraft:air`);
   }
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLandscaperRole();
@@ -718,7 +718,7 @@ async function testReadsUnknownSigns() {
   // Unknown sign is already placed via MockWorld (synced during setup)
   // No need to place via RCON - MockWorld signs are synced before bot connects
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   console.log('  📋 Unknown Sign Discovery Test:');
@@ -880,7 +880,7 @@ async function testCompleteMaintenanceCycle() {
     await test.rcon(`setblock ${pos.x} ${pos.y} ${pos.z} minecraft:dirt`);
   }
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLandscaperRole();

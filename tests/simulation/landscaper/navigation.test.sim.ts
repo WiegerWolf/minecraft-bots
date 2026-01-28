@@ -11,7 +11,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld } from '../../mocks/MockWorld';
 import { GOAPLandscaperRole } from '../../../src/roles/GOAPLandscaperRole';
@@ -43,7 +43,7 @@ async function testCraftsSlabsForNavigation() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
 
   // Place crafting table via RCON to ensure it exists in the server
   await test.rcon('setblock 5 64 0 minecraft:crafting_table');
@@ -130,7 +130,7 @@ async function testPreservesDirtForTerraforming() {
     clearRadius: 40,
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const initialDirt = test.botInventoryCount('dirt');
@@ -210,7 +210,7 @@ async function testNavigatesToElevatedSite() {
     clearRadius: 30,
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLandscaperRole();

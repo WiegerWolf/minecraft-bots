@@ -2,13 +2,11 @@ import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { recordExploredPosition, getExplorationScore } from '../../LumberjackBlackboard';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { LOG_NAMES } from '../../../shared/TreeHarvest';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 import { shouldPreemptForTrade } from '../../../../shared/TradePreemption';
-
-const { GoalNear } = goals;
 
 /**
  * PatrolForest - Explore for more trees within village radius

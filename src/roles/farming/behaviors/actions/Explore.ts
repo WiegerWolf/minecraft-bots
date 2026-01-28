@@ -5,12 +5,10 @@ import {
     getExplorationScore
 } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
 import { hasClearSky, isYLevelSafe, NO_SKY_PENALTY, UNSAFE_Y_PENALTY } from '../../../../shared/TerrainUtils';
-
-const { GoalNear } = goals;
 
 interface ExplorationCandidate {
     pos: Vec3;

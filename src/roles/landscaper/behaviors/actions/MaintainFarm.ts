@@ -3,9 +3,7 @@ import type { LandscaperBlackboard, FarmIssue } from '../../LandscaperBlackboard
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
-import { goals } from 'mineflayer-pathfinder';
-
-const { GoalNear } = goals;
+import { GoalNear } from 'baritone-ts';
 
 function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));

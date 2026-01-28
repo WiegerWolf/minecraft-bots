@@ -1,11 +1,9 @@
 import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalGetToBlock } from 'baritone-ts';
 import { LOG_NAMES } from '../../../shared/TreeHarvest';
 import { pathfinderGotoWithRetry, sleep } from '../../../../shared/PathfindingUtils';
-
-const { GoalLookAtBlock } = goals;
 
 // How long to remember a chest is full (5 minutes)
 const FULL_CHEST_MEMORY_MS = 5 * 60 * 1000;
@@ -117,7 +115,7 @@ export class DepositLogs implements BehaviorNode {
         bb.log?.debug(`[Lumberjack] Depositing items to chest at ${chestPos}`);
 
         try {
-            const success = await pathfinderGotoWithRetry(bot, new GoalLookAtBlock(chest.position, bot.world, { reach: 4 }));
+            const success = await pathfinderGotoWithRetry(bot, new GoalGetToBlock(chest.position.x, chest.position.y, chest.position.z));
             if (!success) {
                 bb.log?.warn(`[Lumberjack] Failed to reach chest after retries`);
                 return 'failure';

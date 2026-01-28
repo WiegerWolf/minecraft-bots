@@ -11,7 +11,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld } from '../../mocks/MockWorld';
 import { GOAPLandscaperRole } from '../../../src/roles/GOAPLandscaperRole';
@@ -42,7 +42,7 @@ async function testStudiesSignsFirst() {
     botInventory: [{ name: 'iron_shovel', count: 1 }],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLandscaperRole();
@@ -104,7 +104,7 @@ async function testObtainsToolsWithMaterials() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLandscaperRole();
@@ -156,7 +156,7 @@ async function testWaitsAtSpawnWhenIdle() {
     clearRadius: 40,
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const spawnArea = new Vec3(0, 64, 0);
@@ -218,7 +218,7 @@ async function testChecksKnownFarmsAfterStudy() {
     clearRadius: 50,
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLandscaperRole();
@@ -297,7 +297,7 @@ async function testLearnsFarmLocationsFromSigns() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLandscaperRole();

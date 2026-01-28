@@ -1,13 +1,11 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import type { VillageChat } from '../VillageChat';
 import type { Logger } from '../logger';
 import type { Need, NeedOffer, ItemStack, DeliveryMethod } from '../needs/types';
 import { RecipeService } from '../needs/RecipeService';
 import { smartPathfinderGoto } from '../PathfindingUtils';
-
-const { GoalNear } = goals;
 
 export type BehaviorStatus = 'success' | 'failure' | 'running';
 

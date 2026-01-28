@@ -12,7 +12,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld, createOakTree } from '../../mocks/MockWorld';
 import { GOAPLumberjackRole } from '../../../src/roles/GOAPLumberjackRole';
@@ -47,7 +47,7 @@ async function testExploresForDistantForest() {
     clearRadius: 80, // Match other tests in this file to ensure proper cleanup
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLumberjackRole();
@@ -132,7 +132,7 @@ async function testUsesBoatToCrossWater() {
   await test.rcon('fill 42 62 -8 58 62 8 minecraft:dirt');
   await test.rcon('fill 42 63 -8 58 63 8 minecraft:grass_block');
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLumberjackRole();
@@ -229,7 +229,7 @@ async function testAvoidsWaterBarriersOnFoot() {
   // Water from x=36 to x=65, z=-35 to 35 (island starts at x=66)
   await test.rcon('fill 36 63 -35 65 63 35 minecraft:water');
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLumberjackRole();
@@ -299,7 +299,7 @@ async function testEstablishesVillageWhenCrafting() {
     clearRadius: 90, // Match other tests to clear any leftover water/blocks
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLumberjackRole();
@@ -365,7 +365,7 @@ async function testReturnsToSpawnForSigns() {
     clearRadius: 90, // Clear any leftover blocks from previous tests
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLumberjackRole();
@@ -436,7 +436,7 @@ async function testNavigatesBackToForest() {
     clearRadius: 90, // Clear any leftover blocks from previous tests
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPLumberjackRole();

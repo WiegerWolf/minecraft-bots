@@ -1,11 +1,9 @@
 import type { Bot } from 'mineflayer';
 import type { LumberjackBlackboard } from '../../LumberjackBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalGetToBlock, GoalNear } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
-
-const { GoalLookAtBlock, GoalNear } = goals;
 
 function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -304,7 +302,7 @@ export class CraftChest implements BehaviorNode {
             // Move to crafting table
             const result = await smartPathfinderGoto(
                 bot,
-                new GoalLookAtBlock(craftingTable.position, bot.world, { reach: 4 }),
+                new GoalGetToBlock(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z),
                 { timeoutMs: 15000 }
             );
             if (!result.success) {

@@ -15,7 +15,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld, createOakTree } from '../../mocks/MockWorld';
 import { GOAPLumberjackRole } from '../../../src/roles/GOAPLumberjackRole';
@@ -52,7 +52,7 @@ async function testLumberjackFindsSurfaceForest() {
         clearRadius: 60,
     });
 
-    test.bot.loadPlugin(pathfinderPlugin);
+    pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
     await test.wait(2000, 'World loading');
 
     const role = new GOAPLumberjackRole();
@@ -112,7 +112,7 @@ async function testFarmerFindsSurfaceWater() {
         clearRadius: 60,
     });
 
-    test.bot.loadPlugin(pathfinderPlugin);
+    pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
     await test.wait(2000, 'World loading');
 
     const role = new GOAPFarmingRole();
@@ -170,7 +170,7 @@ async function testBotStaysOnSurface() {
         clearRadius: 60,
     });
 
-    test.bot.loadPlugin(pathfinderPlugin);
+    pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
     await test.wait(2000, 'World loading');
 
     const role = new GOAPLumberjackRole();
@@ -233,7 +233,7 @@ async function testFarmerFarmsUnderSky() {
         clearRadius: 60,
     });
 
-    test.bot.loadPlugin(pathfinderPlugin);
+    pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
     await test.wait(2000, 'World loading');
 
     const role = new GOAPFarmingRole();

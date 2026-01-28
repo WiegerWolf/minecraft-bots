@@ -1,11 +1,9 @@
 import type { Bot } from 'mineflayer';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear, GoalGetToBlock } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
-
-const { GoalNear, GoalLookAtBlock } = goals;
 
 /**
  * Repairs holes in the farm field by finding dirt elsewhere and placing it.
@@ -157,7 +155,7 @@ export class RepairField implements BehaviorNode {
             try {
                 const result = await smartPathfinderGoto(
                     bot,
-                    new GoalLookAtBlock(pos, bot.world),
+                    new GoalGetToBlock(pos.x, pos.y, pos.z),
                     { timeoutMs: 15000 }
                 );
                 if (!result.success) {

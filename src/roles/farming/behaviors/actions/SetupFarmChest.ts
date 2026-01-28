@@ -1,11 +1,9 @@
 import type { Bot } from 'mineflayer';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear, GoalGetToBlock } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { sleep, pathfinderGotoWithRetry, isPathfinderTimeoutError } from '../../../../shared/PathfindingUtils';
-
-const { GoalNear, GoalLookAtBlock } = goals;
 
 /**
  * Sets up a chest near the farm for storing harvest.
@@ -208,7 +206,7 @@ export class SetupFarmChest implements BehaviorNode {
         if (!block) return 'failure';
 
         try {
-            const success = await pathfinderGotoWithRetry(bot, new GoalLookAtBlock(logPos, bot.world));
+            const success = await pathfinderGotoWithRetry(bot, new GoalGetToBlock(logPos.x, logPos.y, logPos.z));
             if (!success) {
                 return 'failure';
             }
@@ -306,7 +304,7 @@ export class SetupFarmChest implements BehaviorNode {
             const tableBlock = bot.blockAt(craftingTable);
             if (!tableBlock) return 'failure';
 
-            const success = await pathfinderGotoWithRetry(bot, new GoalLookAtBlock(craftingTable, bot.world));
+            const success = await pathfinderGotoWithRetry(bot, new GoalGetToBlock(craftingTable.x, craftingTable.y, craftingTable.z));
             if (!success) {
                 bb.log?.debug(`[BT] Failed to reach crafting table for chest after retries`);
                 return 'failure';

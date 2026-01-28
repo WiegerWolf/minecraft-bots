@@ -3,9 +3,7 @@ import type { LandscaperBlackboard } from '../../LandscaperBlackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto } from '../../../../shared/PathfindingUtils';
-import { goals } from 'mineflayer-pathfinder';
-
-const { GoalNear } = goals;
+import { GoalNear } from 'baritone-ts';
 
 /**
  * CraftSlabs - Craft wooden slabs for pathfinding scaffolding.

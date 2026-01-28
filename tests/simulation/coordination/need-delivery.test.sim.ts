@@ -23,7 +23,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import type { Bot } from 'mineflayer';
 import { PaperSimulationServer } from '../PaperSimulationServer';
 import { MockWorld, createOakTree } from '../../mocks/MockWorld';
@@ -124,7 +124,7 @@ class NeedDeliveryTest {
       bot.once('kicked', (reason: string) => reject(new Error(`Kicked: ${reason}`)));
     });
 
-    bot.loadPlugin(pathfinderPlugin);
+    pathfinder(bot as any, { canDig: true, allowParkour: true, allowSprint: true });
 
     bot.on('chat', (username: string, message: string) => {
       this.chatLog.push({ from: username, message, timestamp: Date.now() });

@@ -2,11 +2,9 @@ import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import type { FarmingBlackboard } from '../../Blackboard';
 import type { BehaviorNode, BehaviorStatus } from '../types';
-import { goals } from 'mineflayer-pathfinder';
+import { GoalNear } from 'baritone-ts';
 import { Vec3 } from 'vec3';
 import { smartPathfinderGoto, sleep } from '../../../../shared/PathfindingUtils';
-
-const { GoalNear } = goals;
 
 /**
  * Find or place a crafting table and return it

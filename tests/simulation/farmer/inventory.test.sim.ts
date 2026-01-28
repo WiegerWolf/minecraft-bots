@@ -11,7 +11,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { pathfinder as pathfinderPlugin } from 'mineflayer-pathfinder';
+import pathfinder from 'baritone-ts';
 import { SimulationTest, runSimulationTests } from '../SimulationTest';
 import { MockWorld } from '../../mocks/MockWorld';
 import { GOAPFarmingRole } from '../../../src/roles/GOAPFarmingRole';
@@ -32,7 +32,7 @@ async function testCollectsDrops() {
     botInventory: [{ name: 'iron_hoe', count: 1 }],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   // Spread 10 seeds across the map at various distances from the bot
@@ -93,7 +93,7 @@ async function testDepositsToChest() {
     ],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const initialWheat = test.botInventoryCount('wheat');
@@ -143,7 +143,7 @@ async function testDropsInterruptWork() {
     botInventory: [{ name: 'iron_hoe', count: 1 }],
   });
 
-  test.bot.loadPlugin(pathfinderPlugin);
+  pathfinder(test.bot as any, { canDig: true, allowParkour: true, allowSprint: true });
   await test.wait(2000, 'World loading');
 
   const role = new GOAPFarmingRole();
