@@ -50,14 +50,6 @@ const config: BotOptions = {
 
 const bot: Bot = mineflayer.createBot(config);
 
-// Initialize baritone-ts pathfinder
-// Type assertion needed because baritone-ts has its own mineflayer dependency
-pathfinder(bot as any, {
-    canDig: true,
-    allowParkour: true,
-    allowSprint: true,
-});
-
 // Register all available roles (all using GOAP)
 // Keys must match BOT_ROLE values sent by the manager (see manager/types.ts)
 const roles: Record<string, Role> = {
@@ -85,6 +77,14 @@ bot.once('spawn', () => {
     // Keep console.log for this message - manager watches for it to reset backoff
     console.log('✅ Bot has spawned!');
     botLog.info('Bot spawned');
+
+    // Initialize baritone-ts pathfinder (must be after spawn when bot.inventory exists)
+    // Type assertion needed because baritone-ts has its own mineflayer dependency
+    pathfinder(bot as any, {
+        canDig: true,
+        allowParkour: true,
+        allowSprint: true,
+    });
 
     // Capture spawn position for persistent knowledge system (signs at spawn)
     spawnPosition = bot.entity.position.clone();
